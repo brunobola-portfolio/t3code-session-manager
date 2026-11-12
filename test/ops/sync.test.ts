@@ -307,7 +307,11 @@ test("runSyncCycle --dry-run writes no discovery cache; an idle real cycle does 
   const f = fakeT3();
   const e = cycleEnv(f);
   const adapter = createClaudeAdapter();
-  const items = [transcript(f, e.dir, ROOT, Date.now() - 3 * DAY)];
+  // A whole-second file time. The import cycle moves the file's time and puts it back through utimes, which takes
+  // seconds as a double and keeps microseconds: a time with a fraction can come back 1 microsecond lower on Linux and
+  // macOS (inside the +-2 ms the restore promises). The cache keys on the exact time, so such a file would be read
+  // again and the cache rewritten once: nothing this test is about. Whole seconds survive the round trip exactly.
+  const items = [transcript(f, e.dir, ROOT, Math.floor((Date.now() - 3 * DAY) / 1000) * 1000)];
   const cache = join(e.state, "cache", "claude-discovery.json");
   await writeConfig(e.home, e.state);
   const d = await runSyncCycle(e.deps(items, { dryRun: true, adapters: [adapter] }));

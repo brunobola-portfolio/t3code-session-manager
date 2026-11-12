@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { writeFileSync, mkdirSync } from "node:fs";
+import { mkdirSync, renameSync, statSync } from "node:fs";
+import { createServer } from "node:net";
 import { join } from "node:path";
 import {
   BACKOFF_MS, acquireWatcherSingleton, createDirWatch, singletonAddress, startWatch, type Clock, type DirWatch, type Heartbeat, type SingletonNet, type WatchDeps,
@@ -296,9 +297,19 @@ test("acquireWatcherSingleton: an OS-released endpoint (named pipe / unix socket
 test("acquireWatcherSingleton (POSIX): a stale socket file left by a crash is removed", { skip: process.platform === "win32" }, async () => {
   const t = tempRoot();
   mkdirSync(t.state, { recursive: true });
-  writeFileSync(singletonAddress(t.state), ""); // not a listening socket: connect fails
+  const addr = singletonAddress(t.state);
+  // A real socket file nobody listens on, as a crashed watcher leaves it. (An empty regular file would not do: a
+  // connect to one is refused on Linux but fails with ENOTSOCK on macOS, where the file is rightly left alone.)
+  // close() unlinks the path the server bound, so the socket is moved aside while it closes.
+  const crashed = createServer();
+  await new Promise<void>((ok, fail) => { crashed.once("error", fail); crashed.listen(addr, ok); });
+  renameSync(addr, `${addr}.aside`);
+  await new Promise<void>((ok) => crashed.close(() => ok()));
+  renameSync(`${addr}.aside`, addr);
+  assert.ok(statSync(addr).isSocket(), "a socket file is left behind");
   const a = await acquireWatcherSingleton(t.state);
-  assert.ok(a);
+  assert.ok(a, "the stale socket was removed and the address bound");
+  assert.equal(await acquireWatcherSingleton(t.state), null, "now held: a second watcher is refused");
   await a!.release();
 });
 

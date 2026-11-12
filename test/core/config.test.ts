@@ -64,8 +64,8 @@ test("validateConfig: default config is valid", () => {
   assert.equal(r.ok, true);
 });
 
-function errorsOf(u: unknown): string[] {
-  const r = validateConfig(u);
+function errorsOf(u: unknown, platform?: NodeJS.Platform): string[] {
+  const r = validateConfig(u, platform);
   assert.equal(r.ok, false);
   return r.ok ? [] : r.errors;
 }
@@ -80,7 +80,7 @@ test("validateConfig: duplicate homes after expandHome + normalizeCwd", () => {
     { id: "a", home: "C:\\Users\\u\\.claude", displayName: "A", accentColor: null },
     { id: "b", home: "C:/Users/u/.claude/", displayName: "B", accentColor: null },
   ];
-  const errs = errorsOf({ ...defaultConfig(dup), accounts: dup });
+  const errs = errorsOf({ ...defaultConfig(dup), accounts: dup }, "win32");
   assert.ok(errs.some((e) => e.startsWith("accounts[1].home:") && e.includes("duplicate")), errs.join("|"));
 });
 

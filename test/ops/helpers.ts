@@ -6,6 +6,7 @@ import { dirname, join, relative } from "node:path";
 import { createHash } from "node:crypto";
 import { Journal } from "../../src/core/journal.ts";
 import type { JournalEntry } from "../../src/core/types.ts";
+import { scheduleFileBytes, type ScheduleFs } from "../../src/ops/schedule.ts";
 
 export const DAY = 86_400_000;
 export const OLD = Date.now() - 40 * DAY;
@@ -86,4 +87,18 @@ export class FailingJournal extends Journal {
     if (this.okCount-- > 0) return super.append(e);
     return Promise.reject(Object.assign(new Error("ENOSPC: no space left on device"), { code: "ENOSPC" }));
   }
+}
+
+/**
+ * In-memory ScheduleFs. A win32 spec names its task XML with a Windows path on every host; on Linux or macOS the real
+ * file system would take that whole path as one file name in the current directory.
+ */
+export function memScheduleFs(): ScheduleFs & { files: Map<string, Buffer> } {
+  const files = new Map<string, Buffer>();
+  return {
+    files,
+    write: async (f) => void files.set(f.path, scheduleFileBytes(f)),
+    remove: async (p) => void files.delete(p),
+    exists: (p) => files.has(p),
+  };
 }

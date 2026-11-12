@@ -29,6 +29,8 @@ export interface FakeOpts {
   onScan?: () => void | Promise<void>;
   onImport?: (projectId: string) => void | Promise<void>;
   instances?: ProviderInstanceInfo[];
+  /** The platform this T3 Code runs on: how it compares workspace roots (default: the host). */
+  platform?: NodeJS.Platform;
 }
 
 export interface FakeT3 {
@@ -88,11 +90,11 @@ export function fakeT3(opts: FakeOpts = {}): FakeT3 {
       if (err) throw err;
       const p = f.projects.find((x) => x.id === projectId);
       if (!p) throw new Error("project not found");
-      if (!sameCwd(p.workspaceRoot, root)) throw new Error("root changed");
+      if (!sameCwd(p.workspaceRoot, root, opts.platform)) throw new Error("root changed");
       const now = Date.now();
       let n = 0;
       for (const x of f.files) {
-        if (!sameCwd(x.root, p.workspaceRoot)) continue;
+        if (!sameCwd(x.root, p.workspaceRoot, opts.platform)) continue;
         const m = f.scanned.get(x.path);
         if (m === undefined || m < now - 30 * DAY || m > now) continue;
         let threadId = x.threadId;

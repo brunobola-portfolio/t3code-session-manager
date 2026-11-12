@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { stateDir } from "../../core/paths.ts";
 import { ConfigError, DEFAULT_SCHEDULE_MINUTES, loadConfig } from "../../core/config.ts";
 import {
-  ScheduleError, defaultBinPath, installSchedule, realRunner, removeSchedule, scheduleSpec, scheduleStatus, type CommandRunner, type ScheduleSpec,
+  ScheduleError, defaultBinPath, installSchedule, realRunner, removeSchedule, scheduleSpec, scheduleStatus, type CommandRunner, type ScheduleFs, type ScheduleSpec,
 } from "../../ops/schedule.ts";
 import { pidAlive, readHeartbeat } from "../../ops/watch.ts";
 import type { Io } from "../main.ts";
@@ -19,6 +19,8 @@ export interface ScheduleCommandDeps {
   /** win32: conhost.exe for a hidden window (undefined = detect). */
   conhost?: string | null;
   isAlive?: (pid: number) => boolean;
+  /** Where install and remove write the task XML or plist (default: the real file system). */
+  fs?: ScheduleFs;
 }
 
 const USAGE = "Usage: t3sm schedule install [--watch] | remove | status. Run `t3sm schedule --help`.\n";
@@ -47,12 +49,12 @@ export async function scheduleCommand(args: string[], io: Io, deps: ScheduleComm
       systemRoot: io.env["SystemRoot"] ?? io.env["windir"],
     });
     if (sub === "install") {
-      await installSchedule(spec, run);
+      await installSchedule(spec, run, deps.fs);
       io.stdout(`Installed (${spec.kind}): ${describe(spec, every)}.\nEach cycle logs one line to ${join(dir, "logs", "sync.log")}. Undo with \`t3sm schedule remove\`.\n`);
       return 0;
     }
     if (sub === "remove") {
-      const r = await removeSchedule(spec, run);
+      const r = await removeSchedule(spec, run, deps.fs);
       io.stdout(r.removed ? "Removed the scheduled sync. A running watcher stops at its next Ctrl+C or logoff.\n" : "Not installed; nothing to remove.\n");
       return 0;
     }

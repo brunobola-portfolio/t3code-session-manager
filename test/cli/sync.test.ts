@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, win32 } from "node:path";
 import { main, type Io } from "../../src/cli/main.ts";
 import { syncCommand, type SyncCommandDeps } from "../../src/cli/commands/sync.ts";
 import { scheduleCommand } from "../../src/cli/commands/schedule.ts";
@@ -13,6 +13,7 @@ import { T3Incompatible, T3NotRunning } from "../../src/t3/errors.ts";
 import { acquireWatcherSingleton } from "../../src/ops/watch.ts";
 import { defaultConfig, saveConfig } from "../../src/core/config.ts";
 import { DAY, fakeT3, inst, tempHome, transcript, type FakeT3 } from "../apply/fake-t3.ts";
+import { memScheduleFs } from "../ops/helpers.ts";
 
 const ROOT = "C:/work/demo";
 
@@ -184,15 +185,17 @@ function fakeRunner() {
 test("schedule install --watch / status / remove through a fake runner (never a real task)", async () => {
   const s = setup(fakeT3());
   const r = fakeRunner();
-  const deps = { runner: r.run, platform: "win32" as const, home: s.home, nodePath: "C:\\Program Files\\nodejs\\node.exe", binPath: "C:\\t3sm\\bin\\t3sm.mjs", conhost: "C:\\Windows\\System32\\conhost.exe" };
+  // A win32 schedule names its task XML with a Windows path on every host: kept in memory, never on the real disk.
+  const fs = memScheduleFs();
+  const deps = { runner: r.run, platform: "win32" as const, home: s.home, nodePath: "C:\\Program Files\\nodejs\\node.exe", binPath: "C:\\t3sm\\bin\\t3sm.mjs", conhost: "C:\\Windows\\System32\\conhost.exe", fs };
   assert.equal(await scheduleCommand(["status"], s.io, deps), 0);
   assert.match(s.out(), /Scheduled sync: not installed/);
   assert.equal(await scheduleCommand(["install", "--watch"], s.io, deps), 0);
   assert.match(s.out(), /Installed/);
   const create = r.calls.find((c) => c[1] === "/Create")!;
   assert.equal(create[2], "/XML");
-  assert.match(readFileSync(create[3]!).subarray(2).toString("utf16le"), /<LogonTrigger>/);
-  assert.ok(create[3]!.startsWith(s.state), "task XML lives in the state dir");
+  assert.match(fs.files.get(create[3]!)!.subarray(2).toString("utf16le"), /<LogonTrigger>/);
+  assert.equal(create[3], win32.join(s.state, "schedule", "t3sm-task.xml"), "task XML lives in the state dir");
   assert.equal(await scheduleCommand(["install", "--watch"], s.io, deps), 0, "idempotent");
   mkdirSync(s.state, { recursive: true });
   writeFileSync(join(s.state, "sync-status.json"), JSON.stringify({ pid: 777, startedAt: "2026-11-11T10:00:00.000Z", lastCycleAt: "2026-11-11T11:00:00.000Z", lastResult: { outcome: "ok", imported: 2 }, nextCycleAt: "2026-11-11T11:15:00.000Z" }));
@@ -200,6 +203,7 @@ test("schedule install --watch / status / remove through a fake runner (never a 
   assert.match(s.out(), /Scheduled sync: installed \(schtasks\), next run N\/A/);
   assert.match(s.out(), /Watcher: running \(pid 777\), last cycle 2026-11-11T11:00:00\.000Z \(ok\), next 2026-11-11T11:15:00\.000Z/);
   assert.equal(await scheduleCommand(["remove"], s.io, deps), 0);
+  assert.equal(fs.files.size, 0, "task XML removed");
   assert.equal(await scheduleCommand(["remove"], s.io, deps), 0);
   assert.match(s.out(), /Not installed; nothing to remove\./);
   assert.equal(await scheduleCommand(["bogus"], s.io, deps), 2);

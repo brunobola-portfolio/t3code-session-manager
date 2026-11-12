@@ -281,29 +281,47 @@ function withoutTagged(crontab: string): string[] {
   return crontab.split(/\r?\n/).filter((l) => l !== "" && !l.trimEnd().endsWith(CRON_TAG));
 }
 
-async function writeFiles(files: ScheduleFile[]): Promise<void> {
-  for (const f of files) {
-    await mkdir(path.dirname(f.path), { recursive: true });
-    if (f.encoding === "utf16le-bom") {
-      // schtasks /XML wants UTF-16LE with a BOM (atomicWrite is UTF-8 text): temp file + rename, same directory.
-      const tmp = `${f.path}.${process.pid}.tmp`;
-      await writeFile(tmp, Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(f.content, "utf16le")]));
-      try { await rename(tmp, f.path); } catch (e) { await rm(tmp, { force: true }); throw e; }
-    } else await atomicWrite(f.path, f.content);
-  }
+/** The bytes of a schedule file: UTF-16LE with a BOM for the task XML (schtasks /XML requires it), else UTF-8. */
+export function scheduleFileBytes(f: ScheduleFile): Buffer {
+  return f.encoding === "utf16le-bom" ? Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(f.content, "utf16le")]) : Buffer.from(f.content, "utf8");
 }
+
+/**
+ * The file operations install and remove need. A spec's file paths are written for the spec's platform (a win32 spec
+ * holds Windows paths), so they are real files only on that platform: tests of another platform's spec inject a fake.
+ */
+export interface ScheduleFs {
+  /** Create the parent directory and write the file, replacing an older one. */
+  write(f: ScheduleFile): Promise<void>;
+  /** Delete the file; a missing one is fine. */
+  remove(path: string): Promise<void>;
+  exists(path: string): boolean;
+}
+
+export const realScheduleFs: ScheduleFs = {
+  write: async (f) => {
+    if (f.encoding !== "utf16le-bom") return atomicWrite(f.path, f.content);
+    // atomicWrite is UTF-8 text: temp file + rename, same directory.
+    await mkdir(path.dirname(f.path), { recursive: true });
+    const tmp = `${f.path}.${process.pid}.tmp`;
+    await writeFile(tmp, scheduleFileBytes(f));
+    try { await rename(tmp, f.path); } catch (e) { await rm(tmp, { force: true }); throw e; }
+  },
+  remove: (p) => rm(p, { force: true }),
+  exists: existsSync,
+};
 
 /**
  * Idempotent: schtasks /F replaces; launchd is booted out (failure ignored) and bootstrapped, with one more
  * bootout + bootstrap if the first bootstrap fails (a stale registration); cron replaces the tagged line.
  */
-export async function installSchedule(spec: ScheduleSpec, run: CommandRunner): Promise<void> {
+export async function installSchedule(spec: ScheduleSpec, run: CommandRunner, fs: ScheduleFs = realScheduleFs): Promise<void> {
   if (spec.kind === "cron") {
     const lines = withoutTagged(await readCrontab(run));
     await must(run, spec.install[0]!, [...lines, spec.cronLine!].join("\n") + "\n");
     return;
   }
-  await writeFiles(spec.files ?? []);
+  for (const f of spec.files ?? []) await fs.write(f);
   if (spec.kind === "launchd") {
     const bootout = async (): Promise<void> => { for (const c of spec.remove) await run(c[0]!, c.slice(1)); };
     await bootout(); // not loaded yet: fine
@@ -318,7 +336,7 @@ export async function installSchedule(spec: ScheduleSpec, run: CommandRunner): P
   for (const c of spec.install) await must(run, c);
 }
 
-export async function removeSchedule(spec: ScheduleSpec, run: CommandRunner): Promise<{ removed: boolean }> {
+export async function removeSchedule(spec: ScheduleSpec, run: CommandRunner, fs: ScheduleFs = realScheduleFs): Promise<{ removed: boolean }> {
   if (spec.kind === "cron") {
     const cur = await readCrontab(run);
     const kept = withoutTagged(cur);
@@ -327,14 +345,14 @@ export async function removeSchedule(spec: ScheduleSpec, run: CommandRunner): Pr
     return { removed: true };
   }
   const status = await scheduleStatus(spec, run);
-  const hasFiles = (spec.files ?? []).some((f) => existsSync(f.path));
+  const hasFiles = (spec.files ?? []).some((f) => fs.exists(f.path));
   if (!status.installed && !hasFiles) return { removed: false };
   if (spec.kind === "launchd") {
     for (const c of spec.remove) await run(c[0]!, c.slice(1));
   } else if (status.installed) {
     for (const c of spec.remove) await must(run, c);
   }
-  for (const f of spec.files ?? []) await rm(f.path, { force: true });
+  for (const f of spec.files ?? []) await fs.remove(f.path);
   return { removed: status.installed || hasFiles };
 }
 

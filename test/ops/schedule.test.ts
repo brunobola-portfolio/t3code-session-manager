@@ -1,11 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, win32 } from "node:path";
 import {
-  CRON_TAG, TASK_NAME, installSchedule, removeSchedule, scheduleSpec, scheduleStatus, taskXml, type CommandRunner, type SpecOptions,
+  CRON_TAG, TASK_NAME, installSchedule, realScheduleFs, removeSchedule, scheduleSpec, scheduleStatus, taskXml, type CommandRunner, type ScheduleFile, type SpecOptions,
 } from "../../src/ops/schedule.ts";
-import { tempRoot } from "./helpers.ts";
+import { memScheduleFs, tempRoot } from "./helpers.ts";
 
 const WIN_NODE = "C:\\Program Files\\nodejs\\node.exe";
 const WIN_BIN = "C:\\Users\\demo user\\t3sm\\bin\\t3sm.mjs";
@@ -146,7 +146,7 @@ test("scheduleSpec linux: shell metacharacters in paths are escaped; hourly inte
 });
 
 /** A fake command runner holding one schtasks task, one crontab and one launchd job. */
-function fakeRunner(o: { bootstrapFailsOnce?: boolean } = {}) {
+function fakeRunner(o: { bootstrapFailsOnce?: boolean; read?: (path: string) => Buffer } = {}) {
   const calls: string[][] = [];
   const st = { task: null as string[] | null, crontab: null as string | null, loaded: false, inputs: [] as string[], xml: "" };
   let failOnce = o.bootstrapFailsOnce ?? false;
@@ -155,7 +155,7 @@ function fakeRunner(o: { bootstrapFailsOnce?: boolean } = {}) {
     if (cmd === SCHTASKS) {
       if (args[0] === "/Create") {
         st.task = args;
-        st.xml = readFileSync(args[2]!).subarray(2).toString("utf16le");
+        st.xml = (o.read ?? readFileSync)(args[2]!).subarray(2).toString("utf16le");
         return { code: 0, stdout: "SUCCESS", stderr: "" };
       }
       if (args[0] === "/Query" && args.includes("/XML")) return st.task ? { code: 0, stdout: st.xml, stderr: "" } : { code: 1, stdout: "", stderr: "ERROR" };
@@ -186,31 +186,51 @@ function fakeRunner(o: { bootstrapFailsOnce?: boolean } = {}) {
   return { run, calls, st };
 }
 
+// The win32 spec's XML path is a Windows path on every host, so these go through an in-memory ScheduleFs; the real
+// writer has its own test below, on a path of the host.
 test("install/remove/status win32 via a fake runner: XML written UTF-16LE with BOM, idempotent, status reads the installed command", async () => {
   const t = tempRoot();
-  const f = fakeRunner();
+  const fs = memScheduleFs();
+  const f = fakeRunner({ read: (p) => fs.files.get(p)! });
   const node = join(t.root, "node.exe");
   const bin = join(t.root, "bin", "t3sm.mjs");
   writeFileSync(node, "");
-  const spec = scheduleSpec("win32", node, bin, 15, { ...WIN, stateDir: t.state });
+  const spec = scheduleSpec("win32", node, bin, 15, WIN);
   const xmlPath = spec.files![0]!.path;
+  assert.equal(xmlPath, XML_PATH);
   assert.deepEqual(await scheduleStatus(spec, f.run), { installed: false, nextRun: null, detail: null, command: null, missing: [] });
-  await installSchedule(spec, f.run);
-  const raw = readFileSync(xmlPath);
+  await installSchedule(spec, f.run, fs);
+  assert.deepEqual([...fs.files.keys()], [XML_PATH], "only the task XML, at its Windows path in the state dir");
+  const raw = fs.files.get(xmlPath)!;
   assert.deepEqual([raw[0], raw[1]], [0xff, 0xfe], "UTF-16LE BOM");
   assert.equal(raw.subarray(2).toString("utf16le"), spec.files![0]!.content);
   const first = f.st.task;
-  await installSchedule(spec, f.run);
+  await installSchedule(spec, f.run, fs);
   assert.deepEqual(f.st.task, first, "second install leaves the same task");
   const s = await scheduleStatus(spec, f.run);
   assert.equal(s.installed, true);
   assert.equal(s.nextRun, "11/11/2026 12:15:00");
   assert.match(s.command!, /node\.exe" ".*t3sm\.mjs" sync --quiet$/);
   assert.deepEqual(s.missing, [bin], "the installed bin path no longer exists");
-  assert.deepEqual(await removeSchedule(spec, f.run), { removed: true });
-  assert.ok(!existsSync(xmlPath), "task XML removed");
-  assert.deepEqual(await removeSchedule(spec, f.run), { removed: false }, "remove twice is a no-op");
+  assert.deepEqual(await removeSchedule(spec, f.run, fs), { removed: true });
+  assert.ok(!fs.exists(xmlPath), "task XML removed");
+  assert.deepEqual(await removeSchedule(spec, f.run, fs), { removed: false }, "remove twice is a no-op");
   assert.equal(f.calls.filter((c) => c[1] === "/Delete").length, 1);
+});
+
+test("realScheduleFs: writes the task XML as UTF-16LE with a BOM (parents created, replaced on a second write) and removes it", async () => {
+  const t = tempRoot();
+  const file: ScheduleFile = { path: join(t.state, "schedule", "t3sm-task.xml"), content: "<Task>demo</Task>", encoding: "utf16le-bom" };
+  assert.equal(realScheduleFs.exists(file.path), false);
+  await realScheduleFs.write(file);
+  await realScheduleFs.write({ ...file, content: "<Task>demo 2</Task>" });
+  const raw = readFileSync(file.path);
+  assert.deepEqual([raw[0], raw[1]], [0xff, 0xfe], "UTF-16LE BOM");
+  assert.equal(raw.subarray(2).toString("utf16le"), "<Task>demo 2</Task>");
+  assert.deepEqual(readdirSync(join(t.state, "schedule")), ["t3sm-task.xml"], "no temp file left");
+  await realScheduleFs.remove(file.path);
+  assert.equal(realScheduleFs.exists(file.path), false);
+  await realScheduleFs.remove(file.path);
 });
 
 test("install linux keeps the user's other crontab lines and replaces only the tagged one (idempotent)", async () => {
@@ -270,8 +290,7 @@ test("install darwin retries bootstrap once after a bootout when the first boots
 });
 
 test("a failing install command surfaces its stderr", async () => {
-  const t = tempRoot();
-  const spec = scheduleSpec("win32", WIN_NODE, WIN_BIN, 15, { ...WIN, stateDir: t.state, watch: true });
+  const spec = scheduleSpec("win32", WIN_NODE, WIN_BIN, 15, { ...WIN, watch: true });
   const denied: CommandRunner = async () => ({ code: 1, stdout: "", stderr: "ERROR: Access is denied." });
-  await assert.rejects(installSchedule(spec, denied), /Access is denied/);
+  await assert.rejects(installSchedule(spec, denied, memScheduleFs()), /Access is denied/);
 });

@@ -2,8 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
+import { createServer, type AddressInfo, type Socket } from "node:net";
 import { join } from "node:path";
 import { EventEmitter } from "node:events";
 import { defaultRunner, issueSessionToken, mintWsTicket, revokeSession, trackChild, type Runner, type RunOptions } from "../../src/t3/auth.ts";
@@ -170,7 +169,6 @@ test("mintWsTicket maps 401/403 to T3AuthError with a hint, never leaking the to
 });
 
 const win = process.platform === "win32";
-const execFileAsync = promisify(execFile);
 
 test("defaultRunner: .cmd in a path with & % ^ and spaces runs exactly once, no injection", { skip: !win }, async () => {
   const root = await mkdtemp(join(tmpdir(), "t3sm-cmd-"));
@@ -183,33 +181,59 @@ test("defaultRunner: .cmd in a path with & % ^ and spaces runs exactly once, no 
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
-test("defaultRunner timeout kills the grandchild process (taskkill /T before child.kill)", { skip: !win }, async () => {
+// Real cmd.exe, real taskkill, no clock: the grandchild (cmd.exe -> node) connects to a server of this test and then
+// lives until that connection closes. "Connected" proves it runs; "connection closed" proves it died, and since the test
+// keeps its end open until the `finally`, only a kill of the whole tree ends it. The runner's timeout is a mocked timer,
+// fired by hand once the grandchild is up, so a slow machine changes how long the test takes, never its result. (It used
+// to poll the process list through PowerShell against a real 4 s timeout: on a slow runner the first poll came back
+// after the timeout had already killed the grandchild.) If the tree kill regresses to child.kill() alone, the
+// connection stays open: the 20 s deadline below ends that failing run (a passing run never waits for it: taskkill has
+// already returned when the runner settles), and the `finally` lets the surviving grandchild exit.
+test("defaultRunner timeout kills the grandchild process (taskkill /T before child.kill)", { skip: !win }, async (t) => {
   const dir = await mkdtemp(join(tmpdir(), "t3sm-slow-"));
-  // Read-only process count (never kills). The ping runs ~36 s, far beyond every budget below, so "gone" can only mean
-  // the timeout killed it; the budgets are generous because the full suite loads the machine (spawns and CIM queries slow down).
-  // Asynchronous, so a slow query never delays the runner's own timer.
-  const count = async () => Number((await execFileAsync("powershell", ["-NoProfile", "-Command", "(Get-CimInstance Win32_Process -Filter \"Name='PING.EXE'\" | Where-Object { $_.CommandLine -like '*-n 37 127.0.0.2*' } | Measure-Object).Count"], { encoding: "utf8" })).stdout.trim());
-  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  const server = createServer();
+  let sock: Socket | undefined;
   try {
-    await writeFile(join(dir, "slow.cmd"), "@ping -n 37 127.0.0.2 >nul\r\n");
-    const t0 = Date.now();
-    let settledAt: number | null = null;
-    const pending = defaultRunner(join(dir, "slow.cmd"), [], { shell: true, timeoutMs: 4000, env: { ...process.env } as Record<string, string> });
-    void pending.then(() => { settledAt = Date.now(); }, () => { settledAt = Date.now(); });
-    let seen = false;
-    while (!seen && settledAt === null) {
-      seen = (await count()) >= 1;
-      if (!seen) await sleep(100);
-    }
-    assert.ok(seen, "grandchild ping is running before the timeout");
+    const connected = new Promise<Socket>((ok) => server.once("connection", ok));
+    await new Promise<void>((ok, fail) => { server.once("error", fail); server.listen(0, "127.0.0.1", ok); });
+    await writeFile(join(dir, "grandchild.mjs"), [
+      `import { connect } from "node:net";`,
+      `const s = connect(Number(process.env.T3SM_TEST_PORT), "127.0.0.1");`,
+      `s.on("close", () => process.exit(0));`,
+      `s.on("error", () => process.exit(1));`,
+      `s.resume();`,
+      ``,
+    ].join("\n"));
+    await writeFile(join(dir, "slow.cmd"), `@"%T3SM_TEST_NODE%" "%T3SM_TEST_SCRIPT%"\r\n`);
+    const env: Record<string, string> = { T3SM_TEST_NODE: process.execPath, T3SM_TEST_SCRIPT: join(dir, "grandchild.mjs"), T3SM_TEST_PORT: String((server.address() as AddressInfo).port) };
+    for (const [k, v] of Object.entries(process.env)) if (v !== undefined && k.toUpperCase() !== "CLAUDE_CONFIG_DIR") env[k] ??= v;
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    let settled = false;
+    const pending = defaultRunner(join(dir, "slow.cmd"), [], { shell: true, timeoutMs: 4000, env });
+    void pending.then(() => { settled = true; });
+    sock = await Promise.race([connected, pending.then((r) => { throw new Error(`the run ended before the grandchild connected (exit code ${r.code})`); })]);
+    const died = new Promise<void>((ok) => sock!.once("close", () => ok()));
+    sock.on("error", () => {}); // a killed peer may reset the connection; "close" still follows
+    sock.resume();
+    assert.equal(settled, false, "the grandchild is running and nothing but the timeout ends the run");
+    t.mock.timers.tick(3999);
+    await new Promise((r) => setImmediate(r));
+    assert.equal(settled, false, "not before the timeout");
+    t.mock.timers.tick(1);
     const r = await pending;
     assert.equal(r.timedOut, true);
-    const took = (settledAt ?? Date.now()) - t0;
-    assert.ok(took < 8000, `took ${took} ms`);
-    let left = await count();
-    for (const end = Date.now() + 5000; left > 0 && Date.now() < end; left = await count()) await sleep(200);
-    assert.equal(left, 0, "grandchild ping is gone after the timeout");
-  } finally { await rm(dir, { recursive: true, force: true }); }
+    assert.equal(r.code, null);
+    t.mock.timers.reset(); // real timers again, for the deadline of a failing run
+    let deadline: NodeJS.Timeout | undefined;
+    const gone = await Promise.race([died.then(() => true), new Promise<boolean>((ok) => { deadline = setTimeout(() => ok(false), 20_000); })]);
+    clearTimeout(deadline);
+    assert.ok(gone, "the grandchild is gone: the timeout killed the tree, not just cmd.exe");
+  } finally {
+    t.mock.timers.reset();
+    sock?.destroy(); // ends a grandchild that survived (a failed run): it exits when its connection closes
+    server.close();
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  }
 });
 
 test("leak probe: noisy stdout + `denied <tok>` stderr; nothing from either stream reaches the error, registry untouched", async () => {

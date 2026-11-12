@@ -157,12 +157,13 @@ test("applyPlan: an instance whose home no longer holds the session's transcript
 });
 
 test("applyPlan: --only keeps one root's items, project and default", async () => {
-  const f = fakeT3();
+  const f = fakeT3({ platform: "win32" });
   const e = env(f);
   const now = Date.now();
   const a = transcript(f, e.dir, ROOT, now - 60 * DAY);
   const b = transcript(f, e.dir, ROOT2, now - 60 * DAY);
-  const r = await applyPlan(mkPlan([a, b]), e.deps({ only: "c:\\work\\demo\\" }));
+  // A Windows spelling of ROOT (other case, backslashes, trailing separator): Windows path rules on every host.
+  const r = await applyPlan(mkPlan([a, b]), e.deps({ only: "c:\\work\\demo\\", platform: "win32" }));
   assert.equal(r.imported, 1);
   assert.equal(f.projects.length, 1);
   assert.equal(f.calls.filter((c) => c.startsWith("default:")).length, 1);
