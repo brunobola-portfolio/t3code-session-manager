@@ -12,6 +12,7 @@ import { doctorCommand } from "./commands/doctor.ts";
 import { mergeCommand } from "./commands/merge.ts";
 import { projectsCommand } from "./commands/projects.ts";
 import { startCommand } from "./commands/start.ts";
+import { updateCommand } from "./commands/update.ts";
 
 export interface Io {
   stdout(s: string): void;
@@ -41,39 +42,43 @@ export const commands: Record<string, CommandHandler> = {
   merge: (a, io) => mergeCommand(a, io),
   projects: (a, io) => projectsCommand(a, io),
   start: (a, io) => startCommand(a, io, { main }),
+  update: (a, io) => updateCommand(a, io),
 };
 
-const USAGE = `Usage: t3sm <command> [options]
+const USAGE = `t3sm brings your Claude Code, Codex, Pi and OpenCode sessions into T3 Code.
 
-Import AI-agent sessions into T3 Code.
+Usage: t3sm [command] [options]
 
-Commands:
-  start [--lang en|pt] [--no-color]  Guided set-up, step by step (also plain \`t3sm\` on a terminal)
-  doctor [--json] [--repair]       Check this machine, T3 Code and the accounts (run this first)
-  scan [--json]                      Inventory sessions per harness and account (no T3 Code needed)
-  plan [--json] [--allow-untested]   Build the import plan (writes plan.md and plan.json; T3 Code untouched)
-  accounts [--init [--force] | --apply [--yes] | --rename <id> "<name>" [--color "#RRGGBB"]]
-                                     Show, set up or label the Claude subscriptions in T3 Code
-  projects [--json] | set "<folder>" <account> | unset "<folder>"
-                                     Which account each project uses; change it
-  apply [--plan <path>] [--yes | --dry-run] [--only <root>] [--quiet] [--allow-untested]
-                                     Import the planned sessions into T3 Code
-  quarantine [--yes | --dry-run]     Move ~/.claude*/projects backup folders to a reversible quarantine
-  dedupe [--plan <path>] [--yes | --dry-run]
-                                     Move the plan's mirror copies to a reversible quarantine
-  merge [--session <id> | --all] [--yes | --dry-run] [--allow-untested]
-                                     Bring sessions continued in a terminal into T3 Code
-  rollback [--run <id>] [--yes | --dry-run] [--instances] [--archive-threads]
-                                     Undo a run (default: the latest)
-  runs [--json]                      List the runs in the journal
-  sync [--quiet] [--allow-untested] [--watch | --dry-run]
-                                     Import what is new since the last run (unattended-safe)
-  schedule install [--watch] | remove | status
-                                     Run sync on a schedule (or a watcher at logon)
+Start here
+  t3sm                   Guided set-up, step by step (\`t3sm start --lang pt\` in Portuguese)
 
-Options:
-  -h, --help       Show this help
-  -v, --version    Show the version
+Import
+  t3sm doctor            Check this machine, T3 Code and the accounts (read-only)
+  t3sm plan              Build the import plan in plan.md (changes no session)
+  t3sm apply             Import the planned sessions (--dry-run, --only "<folder>")
+
+Accounts and projects
+  t3sm accounts          Your Claude subscriptions and their T3 Code instances
+  t3sm projects          The account each project uses (set "<folder>" <account>)
+
+Keep in sync
+  t3sm sync              Import what is new since the last run (--watch keeps going)
+  t3sm schedule          Run sync in the background: install [--watch] | remove | status
+  t3sm merge             Bring sessions continued in a terminal into T3 Code
+
+Clean up and undo
+  t3sm quarantine        Move backup folders to a reversible quarantine
+  t3sm dedupe            Move the plan's mirror copies to a reversible quarantine
+  t3sm runs              List what each run did
+  t3sm rollback          Undo a run (--run <id>)
+
+Maintenance
+  t3sm scan              Count sessions per agent and account (no T3 Code needed)
+  t3sm update            Update t3sm to the newest release
+  t3sm --version         Show the version
+
+Every command explains itself: t3sm <command> --help
+Commands that write ask first; --dry-run shows what they would do.
 `;
 
 const COMMAND_HELP: Record<string, string> = {
@@ -334,6 +339,20 @@ Options:
   --dry-run          Only show the change; write nothing
   --force            With set: accept a folder that does not exist (yet)
   --allow-untested   Continue with a T3 Code version t3sm was not tested against
+`,
+  update: `Usage: t3sm update [--yes | --dry-run]
+
+Update t3sm to the newest release. For a \`t3sm\` installed with npm it runs
+\`npm install -g github:<repository>#semver:*\` (npm fetches the highest release
+tag; t3sm itself contacts nothing), then prints the old and new versions and
+whether the background sync needs \`t3sm schedule install\` again. It asks
+first and waits while another t3sm run is in progress. A git checkout or the
+npx cache only gets instructions; nothing is installed. Your state folder,
+config and journal carry over.
+
+Options:
+  --yes       Skip the confirmation (required when not on a terminal)
+  --dry-run   Only print the npm command
 `,
   runs: `Usage: t3sm runs [--json]
 

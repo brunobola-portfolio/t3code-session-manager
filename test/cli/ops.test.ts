@@ -172,7 +172,7 @@ test("per-command help and unknown options", async () => {
   }
   const u = fakeIo("unused");
   await main(["--help"], u.io);
-  for (const c of ["quarantine", "dedupe", "rollback", "runs"]) assert.match(u.out(), new RegExp(`\\n  ${c}`));
+  for (const c of ["quarantine", "dedupe", "rollback", "runs"]) assert.match(u.out(), new RegExp(`\\n  t3sm ${c} `));
 });
 
 test("rollback --run <a rollback run> is refused with exit 2", async () => {

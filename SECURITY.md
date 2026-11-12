@@ -2,8 +2,8 @@
 
 ## Supported versions
 
-Only the latest release receives fixes. Update by running the pinned command with the newer tag
-(`npx -y github:brunobola-portfolio/t3code-session-manager#v0.1.0 …`, or `npm install -g` with it).
+Only the latest release receives fixes. Update with `t3sm update` (an `npm install -g` of the newest release tag), or
+run the pinned command with the newer tag (`npx -y github:brunobola-portfolio/t3code-session-manager#v0.1.0 …`).
 
 ## Reporting a vulnerability
 
@@ -14,7 +14,9 @@ You will get an answer within seven days.
 ## What t3sm does on your machine
 
 t3sm runs locally, as you, and sends nothing anywhere except to T3 Code on your own machine. There is no telemetry, no
-network call to any other host, no model call, and no runtime dependency.
+network call to any other host, no model call, and no runtime dependency. The one exception is one you start
+yourself: `t3sm update`, after you confirm, runs `npm install -g github:<repository>#semver:*`, and npm downloads the
+release from GitHub. No other command starts npm, and t3sm never checks for updates on its own.
 
 ### T3 Code
 

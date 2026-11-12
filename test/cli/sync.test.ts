@@ -165,8 +165,8 @@ test("help for sync and schedule", async () => {
   assert.match(h.out(), /^Usage: t3sm schedule install \[--watch\] \| remove \| status/);
   const u = setup(fakeT3());
   assert.equal(await main(["--help"], u.io), 0);
-  assert.match(u.out(), /sync \[--quiet\]/);
-  assert.match(u.out(), /schedule install/);
+  assert.match(u.out(), /\n  t3sm sync /);
+  assert.match(u.out(), /\n  t3sm schedule .*install/);
 });
 
 function fakeRunner() {

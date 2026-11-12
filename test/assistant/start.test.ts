@@ -93,8 +93,8 @@ test("on a terminal: start runs the assistant (with --no-color); plain t3sm star
     assert.equal(started, 1);
     const plain = io({});
     assert.equal(await main([], plain.io), 0);
-    assert.match(plain.out(), /^Usage: t3sm/);
-    assert.match(plain.out(), /\n  start \[--lang en\|pt\]/);
+    assert.match(plain.out(), /\nUsage: t3sm /);
+    assert.match(plain.out(), /\n  t3sm +Guided set-up.*t3sm start --lang pt/);
     assert.equal(started, 1);
   } finally {
     commands["start"] = saved;

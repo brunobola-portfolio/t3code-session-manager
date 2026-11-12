@@ -55,7 +55,7 @@ Bash `T3SM_HOME=$PWD/.spike/state node bin/t3sm.mjs plan`, PowerShell
 - `src/apply/`: `apply.ts` (orchestration), `importer.ts` (waves: bump, park, scan, import, restore, verify),
   `waves.ts`, `materialize.ts` and `claudeWriter.ts` (converted transcripts).
 - `src/ops/`: `accounts`, `discoverAccounts`, `doctor`, `merge`, `quarantine` (and dedupe), `rollback`, `sync`,
-  `watch`, `schedule`.
+  `watch`, `schedule`, `update` (install kind, the npm release spec; `t3sm update` is the only command that starts npm).
 - `src/t3/`: the only way to T3 Code: `runtime.ts` (find the server, loopback check, `t3` CLI), `auth.ts` (session
   tokens), `rpc.ts`, `api.ts`, `decode.ts` (strict response decoders), `compat.ts` (tested versions), `errors.ts`.
 - `test/`: mirrors `src/`. Fakes: `test/apply/fake-t3.ts`, `test/ops/helpers.ts`, `test/plan/helpers.ts`. Fixtures
@@ -167,6 +167,7 @@ Read [docs/adding-a-harness.md](docs/adding-a-harness.md); `src/sources/opencode
   `quarantine`, `merge --all` / `--session`, `rollback`, `doctor --repair`, `accounts --init [--force]`,
   `accounts --apply`, `accounts --rename`, `sync` (without `--dry-run`) and `sync --watch`, `schedule install` /
   `remove`, `projects set` / `unset`, every write step of the guided assistant, and the live tests.
+- `t3sm update` without `--dry-run`: it reinstalls the user's global t3sm with npm.
 - Pushing, tagging, publishing or running `node scripts/release.js <version>`.
 - Changing a safety invariant above, or the tests that pin one.
 - Adding a runtime dependency, or any network call beyond T3 Code on loopback.

@@ -25,8 +25,8 @@ never from a shell that sets `CLAUDE_CONFIG_DIR`).
 
 These commands change files or T3 Code: `apply`, `dedupe`, `quarantine`, `merge --all`,
 `merge --session <id>`, `rollback`, `accounts --apply`, `accounts --rename`,
-`accounts --init`, `schedule install`, `schedule remove`, `sync` (without `--dry-run`)
-and `doctor --repair`.
+`accounts --init`, `schedule install`, `schedule remove`, `sync` (without `--dry-run`),
+`doctor --repair` and `update` (reinstalls t3sm itself with npm).
 
 - Run them only after the user has said yes, in this conversation, to that exact command.
   A yes to an earlier command or to a plan "in general" is not a yes to the next one.
@@ -38,7 +38,7 @@ and `doctor --repair`.
 
 Read-only, safe to run without asking: `doctor`, `scan`, `plan`, `apply --dry-run`,
 `accounts` (no option; emails are masked, do not add `--show-emails` unless asked), `runs`, `merge` (no option) or `merge --dry-run`, `sync --dry-run`,
-`schedule status`, every `--help`.
+`schedule status`, `update --dry-run`, every `--help`.
 
 ## Workflow
 

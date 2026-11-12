@@ -330,7 +330,7 @@ test("projects: usage errors exit 2; help is per command and the main usage list
   assert.match(h.out(), /projects set "<folder>" <account>/);
   const u = setup();
   assert.equal(await main(["--help"], u.io), 0);
-  assert.match(u.out(), /\n  projects /);
+  assert.match(u.out(), /\n  t3sm projects /);
 });
 
 test("projects set without config.json exits 2 and says how to create it", async () => {

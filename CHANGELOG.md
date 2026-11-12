@@ -6,6 +6,22 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **`t3sm update`**: updates an npm-installed t3sm to the newest release in one command. It asks first, waits while
+  another t3sm run is in progress, runs `npm install -g github:<repository>#semver:*` (npm fetches the release; t3sm
+  itself contacts nothing and never checks for updates on its own), prints the old and new versions, and says when
+  the background sync needs `t3sm schedule install` again. In a git checkout or from npx it only explains how to
+  update. `--dry-run` prints the npm command. Coming from 0.1.0, which has no `update`: run the install line from the
+  README once; from then on `t3sm update` is enough.
+
+### Changed
+
+- **`t3sm --help`** groups the commands by what you want to do (start, import, accounts and projects, keep in sync,
+  clean up and undo, maintenance) with one short line each; every command's own `--help` keeps the full options.
+- **Docs**: the quick start is now "install once, then run `t3sm`", the same on Windows, macOS and Linux; the step-by-step
+  commands use the short `t3sm` form, and `npx` stays as the no-install alternative.
+
 ## [0.1.0] - 2026-11-12
 
 First public release.
