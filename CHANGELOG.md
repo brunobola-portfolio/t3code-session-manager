@@ -6,6 +6,15 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **`npm install -g github:…` works on npm 11.** npm prepares a git dependency with an inner `npm install` that
+  inherits global mode, so the clone never got TypeScript and the build failed (`'tsc' is not recognized`); and even a
+  successful global install from git was left as a link to npm's temporary clone, which npm then deletes. The build
+  now needs only Node (`scripts/build.js` strips the types with `node:module`), and the install line, `t3sm update`
+  and the release notes add `--install-links`, so npm copies the package. CI now runs the README install line on
+  Windows, macOS and Linux.
+
 ## [0.2.0] - 2026-11-12
 
 ### Added

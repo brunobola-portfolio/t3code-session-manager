@@ -68,7 +68,10 @@ export async function updateCommand(args: string[], io: Io, deps: UpdateDeps = {
   const repoUrl = ownRepositoryUrl();
   const spec = releaseSpec(repoUrl);
   const changelog = `https://github.com/${repoSlug(repoUrl)}/blob/main/CHANGELOG.md`;
-  const install = `npm install -g ${spec}`;
+  // --install-links: on npm 11 a global install from git otherwise ends as a link to npm's temporary clone, which npm
+  // then deletes (the install "succeeds" and t3sm is gone).
+  const npmArgs = ["install", "-g", "--install-links", spec];
+  const install = `npm ${npmArgs.join(" ")}`;
   const current = readVersion();
 
   if (kind === "checkout") {
@@ -107,7 +110,7 @@ export async function updateCommand(args: string[], io: Io, deps: UpdateDeps = {
   }
   let code: number;
   try {
-    code = await (deps.runNpm ?? realNpm(deps.platform ?? process.platform, io.env))(["install", "-g", spec]);
+    code = await (deps.runNpm ?? realNpm(deps.platform ?? process.platform, io.env))(npmArgs);
   } finally {
     await lock.release();
   }

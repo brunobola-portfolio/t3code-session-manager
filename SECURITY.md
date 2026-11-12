@@ -15,7 +15,7 @@ You will get an answer within seven days.
 
 t3sm runs locally, as you, and sends nothing anywhere except to T3 Code on your own machine. There is no telemetry, no
 network call to any other host, no model call, and no runtime dependency. The one exception is one you start
-yourself: `t3sm update`, after you confirm, runs `npm install -g github:<repository>#semver:*`, and npm downloads the
+yourself: `t3sm update`, after you confirm, runs `npm install -g --install-links github:<repository>#semver:*`, and npm downloads the
 release from GitHub. No other command starts npm, and t3sm never checks for updates on its own.
 
 ### T3 Code

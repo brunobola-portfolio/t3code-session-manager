@@ -343,10 +343,11 @@ Options:
   update: `Usage: t3sm update [--yes | --dry-run]
 
 Update t3sm to the newest release. For a \`t3sm\` installed with npm it runs
-\`npm install -g github:<repository>#semver:*\` (npm fetches the highest release
-tag; t3sm itself contacts nothing), then prints the old and new versions and
-whether the background sync needs \`t3sm schedule install\` again. It asks
-first and waits while another t3sm run is in progress. A git checkout or the
+  npm install -g --install-links github:<repository>#semver:*
+(npm fetches the highest release tag; t3sm itself contacts nothing), then
+prints the old and new versions and whether the background sync needs
+\`t3sm schedule install\` again. It asks first and waits while another t3sm
+run is in progress. A git checkout or the
 npx cache only gets instructions; nothing is installed. Your state folder,
 config and journal carry over.
 

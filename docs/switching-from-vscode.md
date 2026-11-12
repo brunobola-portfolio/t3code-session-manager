@@ -11,7 +11,7 @@ Plan for about half an hour, most of it reading. Install the `t3sm` command once
 [install.md](install.md) has the alternatives):
 
 ```bash
-npm install -g github:brunobola-portfolio/t3code-session-manager#v0.2.0
+npm install -g --install-links github:brunobola-portfolio/t3code-session-manager#v0.2.0
 ```
 
 Prefer to be guided? `t3sm start` runs these same steps for you, one question at a time, and asks before every write.

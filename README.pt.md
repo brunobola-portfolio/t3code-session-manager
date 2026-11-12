@@ -31,7 +31,7 @@ trabalho, não a partir de um terminal que defina `CLAUDE_CONFIG_DIR`.
 **1. Instala uma vez.** A mesma linha no Windows, no macOS e no Linux:
 
 ```bash
-npm install -g github:brunobola-portfolio/t3code-session-manager#v0.2.0
+npm install -g --install-links github:brunobola-portfolio/t3code-session-manager#v0.2.0
 ```
 
 **2. Corre:**

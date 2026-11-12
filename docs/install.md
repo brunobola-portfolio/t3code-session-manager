@@ -20,13 +20,16 @@ where.
 One line, the same on Windows, macOS and Linux:
 
 ```bash
-npm install -g github:brunobola-portfolio/t3code-session-manager#v0.2.0
+npm install -g --install-links github:brunobola-portfolio/t3code-session-manager#v0.2.0
 t3sm
 ```
 
-npm clones the release (the `#v…` suffix is npm's syntax for a git tag), builds it and puts `t3sm` on your `PATH`. Plain
-`t3sm` starts the guided set-up; `t3sm --help` lists every command, grouped by what you want to do. The background
-sync (`t3sm schedule install`) needs this installed command, because it must stay where it is.
+npm clones the release (the `#v…` suffix is npm's syntax for a git tag), builds it with Node alone (no TypeScript
+download) and puts `t3sm` on your `PATH`. Keep `--install-links`: without it, npm 11 leaves a global install from git
+as a link to its own temporary clone, which it then deletes, so `t3sm` is not found afterwards. Plain `t3sm` starts
+the guided set-up; `t3sm --help` lists every command, grouped by what you want to do. The background sync
+(`t3sm schedule install`) needs this installed command, because it must stay where it is. CI runs this exact line on
+Windows, macOS and Linux.
 
 ## Update
 
@@ -34,7 +37,7 @@ sync (`t3sm schedule install`) needs this installed command, because it must sta
 t3sm update
 ```
 
-It shows your version, asks, runs `npm install -g github:brunobola-portfolio/t3code-session-manager#semver:*` (npm
+It shows your version, asks, runs `npm install -g --install-links github:brunobola-portfolio/t3code-session-manager#semver:*` (npm
 picks the highest release tag; t3sm itself contacts nothing) and prints the old and new versions. It also tells you
 if the background sync needs `t3sm schedule install` again (normally not: a global install stays at the same path).
 A watcher started at logon keeps the old version until you next sign in. `t3sm update --dry-run` only prints the npm

@@ -33,6 +33,15 @@ jobs:
       - run: npm run build
       - name: Versions, install pins and changelog agree
         run: node scripts/release.js --check
+      - name: The README install line works (npm install -g from git)
+        shell: bash
+        run: |
+          W="$GITHUB_WORKSPACE"; P="$RUNNER_TEMP/global"
+          if [ "$RUNNER_OS" = "Windows" ]; then W="/$(cygpath -m "$W")"; P="$(cygpath -m "$P")"; B="$P/t3sm.cmd"; else B="$P/bin/t3sm"; fi
+          npm install -g --install-links --prefix "$P" "git+file://$W#$GITHUB_SHA"
+          got="$("$B" --version | tr -d '\r')"; want="$(node -p 'require("./package.json").version')"
+          test "$got" = "$want" || { echo "installed t3sm says '$got', expected '$want'"; exit 1; }
+          "$B" --help | grep -q "t3sm update"
       - name: README artwork is up to date
         if: matrix.os == 'ubuntu-latest' && matrix.node == 24
         run: |

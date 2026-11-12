@@ -60,7 +60,9 @@ Bash `T3SM_HOME=$PWD/.spike/state node bin/t3sm.mjs plan`, PowerShell
   tokens), `rpc.ts`, `api.ts`, `decode.ts` (strict response decoders), `compat.ts` (tested versions), `errors.ts`.
 - `test/`: mirrors `src/`. Fakes: `test/apply/fake-t3.ts`, `test/ops/helpers.ts`, `test/plan/helpers.ts`. Fixtures
   are generated in code (`test/fixtures/*/generate.ts`, `opencode/build.ts`). `test/safety/`, `test/e2e/` (gated).
-- `scripts/release.js` (`--check`, version bump), `scripts/build-assets.js` (all README art, deterministic).
+- `scripts/release.js` (`--check`, version bump), `scripts/build-assets.js` (all README art, deterministic),
+  `scripts/build.js` (`npm run build`: dist/ by stripping types with Node alone; no TypeScript needed, so a global
+  install from git works).
 - `docs/`: user docs; `docs/spikes/` records measured T3 Code behaviour.
 - Shipped in the package: `bin/`, `dist/`, `skills/` (the Claude Code skill), `.claude-plugin/` (its plugin
   manifests), `CHANGELOG.md`. Repository-only: `AGENTS.md`, `CLAUDE.md`, `ROADMAP.md`, `docs/`, `test/`.

@@ -74,7 +74,7 @@ test("update from the npx cache explains how to install once and installs nothin
   const f = fakeIo({ env: h.env });
   assert.equal(await updateCommand([], f.io, h.deps), 0);
   assert.equal(h.npmCalls.length, 0);
-  assert.match(f.out(), new RegExp(`npm install -g ${SPEC.replace(/[*]/g, "\\*")}`));
+  assert.match(f.out(), new RegExp(`npm install -g --install-links ${SPEC.replace(/[*]/g, "\\*")}`));
 });
 
 test("update off a terminal without --yes refuses (exit 2) and installs nothing", async (t) => {
@@ -90,7 +90,7 @@ test("update --dry-run prints the npm command and installs nothing", async (t) =
   const f = fakeIo({ env: h.env });
   assert.equal(await updateCommand(["--dry-run"], f.io, h.deps), 0);
   assert.equal(h.npmCalls.length, 0);
-  assert.match(f.out(), /Would run: npm install -g github:brunobola-portfolio\/t3code-session-manager#semver:\*/);
+  assert.match(f.out(), /Would run: npm install -g --install-links github:brunobola-portfolio\/t3code-session-manager#semver:\*/);
 });
 
 test("update on a terminal asks first; Enter means no", async (t) => {
@@ -106,7 +106,8 @@ test("update --yes installs the newest release and reports the versions", async 
   const h = await harness(t);
   const f = fakeIo({ env: h.env });
   assert.equal(await updateCommand(["--yes"], f.io, h.deps), 0);
-  assert.deepEqual(h.npmCalls, [["install", "-g", SPEC]]);
+  // --install-links: npm 11 otherwise leaves a global git install as a link to a deleted temp clone.
+  assert.deepEqual(h.npmCalls, [["install", "-g", "--install-links", SPEC]]);
   assert.match(f.out(), /Updated t3sm 0\.1\.0 -> 0\.2\.0/);
 });
 

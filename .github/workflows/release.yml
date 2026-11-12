@@ -58,7 +58,7 @@ jobs:
           cat >> notes.md <<NOTES
 
           **Try it** (Node 22.18+, T3 Code open): \`npx -y github:$repo#$GITHUB_REF_NAME doctor\`, then \`plan\`, then \`apply\`.
-          Install the command: \`npm install -g github:$repo#$GITHUB_REF_NAME\`.
+          Install the command: \`npm install -g --install-links github:$repo#$GITHUB_REF_NAME\`.
           Claude Code skill: \`/plugin marketplace add $repo\` then \`/plugin install t3sm@t3code-session-manager\`.
           NOTES
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then

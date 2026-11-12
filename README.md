@@ -31,7 +31,7 @@ desktop launcher, not from a terminal that sets `CLAUDE_CONFIG_DIR`.
 **1. Install once.** The same line on Windows, macOS and Linux:
 
 ```bash
-npm install -g github:brunobola-portfolio/t3code-session-manager#v0.2.0
+npm install -g --install-links github:brunobola-portfolio/t3code-session-manager#v0.2.0
 ```
 
 **2. Run it:**
