@@ -15,25 +15,41 @@
 Tested on Windows 11. macOS and Linux run the unit tests in CI; see [harnesses.md](harnesses.md) for what was verified
 where.
 
+## Install the `t3sm` command (recommended)
+
+One line, the same on Windows, macOS and Linux:
+
+```bash
+npm install -g github:brunobola-portfolio/t3code-session-manager#v0.1.0
+t3sm
+```
+
+npm clones the release (the `#v…` suffix is npm's syntax for a git tag), builds it and puts `t3sm` on your `PATH`. Plain
+`t3sm` starts the guided set-up; `t3sm --help` lists every command, grouped by what you want to do. The background
+sync (`t3sm schedule install`) needs this installed command, because it must stay where it is.
+
+## Update
+
+```bash
+t3sm update
+```
+
+It shows your version, asks, runs `npm install -g github:brunobola-portfolio/t3code-session-manager#semver:*` (npm
+picks the highest release tag; t3sm itself contacts nothing) and prints the old and new versions. It also tells you
+if the background sync needs `t3sm schedule install` again (normally not: a global install stays at the same path).
+A watcher started at logon keeps the old version until you next sign in. `t3sm update --dry-run` only prints the npm
+command. The state folder (`~/.t3code-session-manager`: config, journal, plans) carries over between versions.
+Version 0.1.0 has no `update` command: from it, run the install line above once.
+
 ## Run it with npx (no install)
 
 ```bash
 npx -y github:brunobola-portfolio/t3code-session-manager#v0.1.0 doctor
 ```
 
-The `#v0.1.0` pins the release (npm's syntax for a git tag); without it, `npx` builds whatever is on `main`. The
-first run downloads and builds the package (a few seconds); later runs reuse npm's cache. Every command works this
-way: replace `doctor` with `plan`, `apply`, `sync`, and so on.
-
-## Install the `t3sm` command
-
-Recommended if you will use `sync` or `schedule`, because the scheduled task needs a t3sm that stays where it is (the
-npx cache can be cleaned at any time):
-
-```bash
-npm install -g github:brunobola-portfolio/t3code-session-manager#v0.1.0
-t3sm --version
-```
+Every command works this way: replace `doctor` with `plan`, `apply`, and so on. The first run downloads and builds
+the package (a few seconds); later runs reuse npm's cache. Without the `#v…` tag, `npx` builds whatever is on `main`. To
+update, put the newer tag in the command. Fine for a try; use the installed command for background sync.
 
 ## From a clone
 
@@ -41,11 +57,13 @@ t3sm --version
 git clone https://github.com/brunobola-portfolio/t3code-session-manager
 cd t3code-session-manager
 npm install          # dev tools only (TypeScript); builds dist/
-node bin/t3sm.mjs doctor
+npm link             # optional: puts `t3sm` on your PATH, pointing at this folder
+t3sm doctor          # or, without npm link: node bin/t3sm.mjs doctor
 ```
 
 In a clone, `bin/t3sm.mjs` always runs the TypeScript sources directly (Node 22.18+ strips types natively), even when
-`dist/` exists; an installed package runs `dist/`.
+`dist/` exists; an installed package runs `dist/`. With `npm link`, `t3sm` runs this folder's sources, so
+`git pull` is the update (`t3sm update` says so). `npm unlink -g t3code-session-manager` removes the link.
 
 ## Claude Code plugin
 
@@ -61,14 +79,7 @@ writes only after you say yes in the conversation. Inside Claude Code:
 
 The skill uses `t3sm` when it is installed, otherwise the pinned `npx` command.
 
-## Update
-
-- npx: use the newer tag in the command (`#v0.2.0`).
-- Global: run the `npm install -g` command again with the newer tag, then `t3sm schedule install` again if you use
-  the background sync, so the scheduled task points at the new copy.
-- Plugin: `/plugin marketplace update t3code-session-manager`.
-
-The state folder (`~/.t3code-session-manager`) carries over between versions.
+To update the plugin: `/plugin marketplace update t3code-session-manager`.
 
 ## Uninstall
 

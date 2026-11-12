@@ -2,7 +2,7 @@
 
 [English](pi.md) · Estado: 🟡 verificado com fixtures ([harnesses.md](../harnesses.md#pi-native))
 
-Abaixo, `t3sm` é `npx -y github:brunobola-portfolio/t3code-session-manager#v0.1.0`, ou o comando instalado.
+`t3sm` é o comando que instalas uma vez ([install.md](../install.md), em inglês); o `t3sm update` mantém-no atualizado.
 
 ## O que é importado
 

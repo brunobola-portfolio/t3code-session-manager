@@ -4,8 +4,8 @@
 
 For when you use two or more Claude subscriptions on one machine, each in its own config folder: for example
 `~/.claude` (personal) and `~/.claude-work` (work), with an alias or function that sets `CLAUDE_CONFIG_DIR`, or VS
-Code projects pinned to one of them. `t3sm` below is
-`npx -y github:brunobola-portfolio/t3code-session-manager#v0.1.0`, or the installed command.
+Code projects pinned to one of them.
+`t3sm` is the command you install once ([install.md](../install.md)); `t3sm update` keeps it current.
 
 ## What you get
 

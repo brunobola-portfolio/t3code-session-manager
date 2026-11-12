@@ -3,7 +3,7 @@
 [Português](claude-code.pt.md) · Status: ✅ verified live ([harnesses.md](../harnesses.md))
 
 For sessions you ran with `claude` in a terminal or with the Claude Code extension in VS Code, in one account or
-several. `t3sm` below is `npx -y github:brunobola-portfolio/t3code-session-manager#v0.1.0`, or the installed command.
+several. `t3sm` is the command you install once ([install.md](../install.md)); `t3sm update` keeps it current.
 
 ## What gets imported
 

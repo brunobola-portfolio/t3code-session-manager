@@ -7,9 +7,12 @@ Code, e duas contas Claude, por exemplo uma pessoal em `~/.claude` e uma de trab
 um alias como `claude-work`, ou fixada por projeto em `.vscode/settings.json`). No fim, cada sessão antiga é uma
 thread no T3 Code, cada projeto abre com a conta certa e as novas sessões do terminal continuam a chegar.
 
-Conta com cerca de meia hora, quase toda a ler. Nos comandos abaixo, `t3sm` é
-`npx -y github:brunobola-portfolio/t3code-session-manager#v0.1.0`, ou o comando `t3sm` depois de
-`npm install -g github:brunobola-portfolio/t3code-session-manager#v0.1.0` (melhor se fores agendar a sincronização).
+Conta com cerca de meia hora, quase toda a ler. Instala o comando `t3sm` uma vez (a mesma linha em qualquer sistema;
+as alternativas estão no [install.md](install.md), em inglês):
+
+```bash
+npm install -g github:brunobola-portfolio/t3code-session-manager#v0.1.0
+```
 
 Preferes ser guiado? O `t3sm start --lang pt` faz estes mesmos passos por ti, uma pergunta de cada vez, e pergunta
 antes de qualquer escrita. Esta página é o mesmo caminho à mão, com todas as verificações. Para mudar mais tarde a

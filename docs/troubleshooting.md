@@ -116,7 +116,7 @@ by hand, or the journal was deleted). `rollback` cannot move it back; check it b
 ### Background sync
 
 **`schedule`** warn "its command points at … which no longer exists": the scheduled task runs a t3sm that has moved
-or was removed (common after an `npx` cache cleanup). Install t3sm globally
+or was removed (common after an `npx` cache cleanup). Install the `t3sm` command
 (`npm install -g github:brunobola-portfolio/t3code-session-manager#v0.1.0`) and run `t3sm schedule install` again.
 
 **`sync-watcher`** warn: the watcher's process is gone without a clean stop, or it stopped reporting. Start it again

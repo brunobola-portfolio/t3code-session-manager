@@ -4,7 +4,7 @@
 
 O T3 Code não lê as sessões do OpenCode, por isso o t3sm **converte-as** em sessões do Claude Code e é essas que o T3
 Code importa. Uma sessão convertida continua no Claude (no T3 Code ou com `claude --resume <id>`), não no OpenCode.
-Abaixo, `t3sm` é `npx -y github:brunobola-portfolio/t3code-session-manager#v0.1.0`, ou o comando instalado.
+`t3sm` é o comando que instalas uma vez ([install.md](../install.md), em inglês); o `t3sm update` mantém-no atualizado.
 
 ## O que é importado
 

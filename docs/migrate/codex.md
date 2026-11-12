@@ -2,7 +2,7 @@
 
 [Português](codex.pt.md) · Status: 🟡 verified with fixtures ([harnesses.md](../harnesses.md#codex-cli-native))
 
-`t3sm` below is `npx -y github:brunobola-portfolio/t3code-session-manager#v0.1.0`, or the installed command.
+`t3sm` is the command you install once ([install.md](../install.md)); `t3sm update` keeps it current.
 
 ## What gets imported
 

@@ -7,9 +7,12 @@ Claude accounts, say a personal one in `~/.claude` and a work one in `~/.claude-
 `claude-work`, or pinned per project in `.vscode/settings.json`). At the end every old session is a thread in T3
 Code, each project opens with the right account, and new terminal sessions keep flowing in.
 
-Plan for about half an hour, most of it reading. In the commands below, `t3sm` is
-`npx -y github:brunobola-portfolio/t3code-session-manager#v0.1.0`, or the `t3sm` command after
-`npm install -g github:brunobola-portfolio/t3code-session-manager#v0.1.0` (better if you will schedule the sync).
+Plan for about half an hour, most of it reading. Install the `t3sm` command once (the same line on every system;
+[install.md](install.md) has the alternatives):
+
+```bash
+npm install -g github:brunobola-portfolio/t3code-session-manager#v0.1.0
+```
 
 Prefer to be guided? `t3sm start` runs these same steps for you, one question at a time, and asks before every write.
 This page is the same path by hand, with every check. To change which account a project uses later:

@@ -25,35 +25,50 @@ which subscription each project belongs to. t3sm brings all of it in, reviewed f
 
 ## Quick start
 
-Prefer to be guided? Run `t3sm start`: it takes you through the steps below one by one, explains each and asks before
-every write (in English, or Portuguese with `--lang pt`).
+You need Node.js 22.18+, git, and T3 Code open. Open it from the Start menu or your
+desktop launcher, not from a terminal that sets `CLAUDE_CONFIG_DIR`.
 
-Needs Node.js 22.18+, git, and T3 Code running (opened as described below the commands).
+**1. Install once.** The same line on Windows, macOS and Linux:
 
 ```bash
-# 1. check; warnings are fine, a "fail" line is not (it says how to fix it)
-npx -y github:brunobola-portfolio/t3code-session-manager#v0.1.0 doctor
-# 2. plan: writes ~/.t3code-session-manager/runs/<id>/plan.md and prints its path; read it
-npx -y github:brunobola-portfolio/t3code-session-manager#v0.1.0 plan
-# 3. see what apply would do (writes nothing), pilot one project, then everything
-npx -y github:brunobola-portfolio/t3code-session-manager#v0.1.0 apply --dry-run
-npx -y github:brunobola-portfolio/t3code-session-manager#v0.1.0 apply --only "C:/work/demo"
-npx -y github:brunobola-portfolio/t3code-session-manager#v0.1.0 apply
+npm install -g github:brunobola-portfolio/t3code-session-manager#v0.1.0
 ```
 
-Open T3 Code from the Start menu or your desktop launcher, not from a terminal that sets
-`CLAUDE_CONFIG_DIR`: T3 Code would then read that folder as its default account.
-If the plan lists **mirror copies** or doctor reports **backup folders**, run `dedupe`
-or `quarantine` before step 3, each with `--dry-run` first (reversible; see
+**2. Run it:**
+
+```bash
+t3sm
+```
+
+The guided set-up takes it from there: check, plan, a pilot project, the full import and
+background sync. It explains each step and asks before every write. Stop at any question,
+then run `t3sm` again to continue. For Portuguese, run `t3sm start --lang pt`.
+
+**3. Update** later with `t3sm update`. Your settings and run history carry over.
+
+<details>
+<summary><b>Prefer to run each step yourself?</b></summary>
+
+```bash
+t3sm doctor                        # check: warnings are fine; a "fail" line says how to fix it
+t3sm plan                          # writes plan.md and prints its path: read it
+t3sm apply --dry-run               # what apply would do (writes nothing)
+t3sm apply --only "C:/work/demo"   # pilot one project
+t3sm apply                         # everything
+```
+
+If the plan lists **mirror copies** or doctor reports **backup folders**, run `t3sm dedupe`
+or `t3sm quarantine` before `apply`, each with `--dry-run` first (reversible; see
 [Choosing your subscription](#choosing-your-subscription)). `apply` shows the summary
 and waits for `yes`. In `plan.md`, check the **Project accounts** table: it says which
 subscription each project will use. Step by step, with every check:
 [docs/switching-from-vscode.md](docs/switching-from-vscode.md).
 
-The rest of this page writes `t3sm <command>` for short: the `npx` line above, or the
-command after `npm install -g github:brunobola-portfolio/t3code-session-manager#v0.1.0`.
-A tag can in principle be moved; to be strict, pin a commit instead
-(`github:brunobola-portfolio/t3code-session-manager#<commit sha>`). Other sources:
+</details>
+
+No install at all? `npx -y github:brunobola-portfolio/t3code-session-manager#v0.1.0 <command>`
+runs any command (background sync needs the installed one). To be strict about what you
+run, pin a commit instead of the tag (`#<commit sha>`). Other sources:
 [docs/migrate/](docs/migrate/claude-code.md). In Claude Code you can also ask for it in
 plain words with the bundled skill ([docs/install.md](docs/install.md#claude-code-plugin)).
 
@@ -226,6 +241,7 @@ merged.
 | `t3sm accounts` | Accounts found and their T3 Code instances |
 | `t3sm projects` | Every project folder with its account and why; `projects set "<folder>" <account>` changes it (a route, and the T3 Code project's default, reversible); `projects unset` removes the route |
 | `t3sm start` | The guided assistant (also plain `t3sm` on a terminal); only it is translated (`--lang pt`), every other command prints English |
+| `t3sm update` | Installs the newest release over an npm install (asks first; `--dry-run` prints the npm command). A git checkout or npx only gets instructions |
 
 Every command has `--help`. What each skip reason in `plan.md` means is written next to it there, and in
 [docs/troubleshooting.md](docs/troubleshooting.md).
@@ -361,11 +377,10 @@ t3sm schedule remove        # if you installed the background sync
 t3sm rollback --run <id>    # optional: undo runs you no longer want (see t3sm runs)
 ```
 
-(With npx, put `npx -y github:brunobola-portfolio/t3code-session-manager#v0.1.0` in front
-of each.) Then delete the state folder `~/.t3code-session-manager/` (its `cache/opencode/`
-holds the stripped OpenCode copies), and, once you are sure you do not need them, the
-quarantine folders `~/.claude*/session-manager-quarantine/`. Threads already imported stay
-in T3 Code. With a global install, also `npm uninstall -g t3code-session-manager`.
+Then `npm uninstall -g t3code-session-manager`, delete the state folder
+`~/.t3code-session-manager/` (its `cache/opencode/` holds the stripped OpenCode copies),
+and, once you are sure you do not need them, the quarantine folders
+`~/.claude*/session-manager-quarantine/`. Threads already imported stay in T3 Code.
 
 ## Contributing
 

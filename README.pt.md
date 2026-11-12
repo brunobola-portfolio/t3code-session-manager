@@ -25,35 +25,51 @@ com revisão primeiro.
 
 ## Começar já
 
-Preferes ser guiado? Corre `t3sm start --lang pt`: leva-te pelos passos abaixo um a um, explica cada um e pergunta antes
-de qualquer escrita (sem `--lang pt` fala inglês).
+Precisas do Node.js 22.18+, do git e do T3 Code aberto. Abre-o pelo menu Iniciar ou pelo lançador do ambiente de
+trabalho, não a partir de um terminal que defina `CLAUDE_CONFIG_DIR`.
 
-Precisas do Node.js 22.18+, do git e do T3 Code a correr (aberto como se explica a seguir aos comandos).
+**1. Instala uma vez.** A mesma linha no Windows, no macOS e no Linux:
 
 ```bash
-# 1. verifica; avisos não fazem mal, uma linha "fail" sim (e diz como a resolver)
-npx -y github:brunobola-portfolio/t3code-session-manager#v0.1.0 doctor
-# 2. plano: escreve ~/.t3code-session-manager/runs/<id>/plan.md e mostra o caminho; lê-o
-npx -y github:brunobola-portfolio/t3code-session-manager#v0.1.0 plan
-# 3. vê o que o apply faria (não escreve nada), experimenta um projeto, depois tudo
-npx -y github:brunobola-portfolio/t3code-session-manager#v0.1.0 apply --dry-run
-npx -y github:brunobola-portfolio/t3code-session-manager#v0.1.0 apply --only "C:/work/demo"
-npx -y github:brunobola-portfolio/t3code-session-manager#v0.1.0 apply
+npm install -g github:brunobola-portfolio/t3code-session-manager#v0.1.0
 ```
 
-Abre o T3 Code pelo menu Iniciar ou pelo lançador do ambiente de trabalho, não a partir de um terminal que defina
-`CLAUDE_CONFIG_DIR`: o T3 Code passaria a ler essa pasta como conta por omissão.
-Se o plano listar **cópias-espelho** (mirror copies) ou o doctor mostrar **pastas de backup**, corre o `dedupe` ou o
-`quarantine` antes do passo 3, cada um primeiro com `--dry-run` (reversíveis; vê
+**2. Corre:**
+
+```bash
+t3sm start --lang pt
+```
+
+O assistente guiado faz o resto: verificação, plano, um projeto piloto, a importação completa e a sincronização em
+segundo plano. Explica cada passo e pergunta antes de qualquer escrita. Podes parar em qualquer pergunta e voltar a
+correr `t3sm` para continuar. Aceita guardar o português e, daí em diante, basta `t3sm`.
+
+**3. Atualiza** mais tarde com `t3sm update`. As definições e o histórico de execuções mantêm-se.
+
+<details>
+<summary><b>Preferes correr cada passo tu mesmo?</b></summary>
+
+```bash
+t3sm doctor                        # verifica: avisos não fazem mal; uma linha "fail" diz como a resolver
+t3sm plan                          # escreve o plan.md e mostra o caminho: lê-o
+t3sm apply --dry-run               # o que o apply faria (não escreve nada)
+t3sm apply --only "C:/work/demo"   # piloto num projeto
+t3sm apply                         # tudo
+```
+
+Se o plano listar **cópias-espelho** (mirror copies) ou o doctor mostrar **pastas de backup**, corre o `t3sm dedupe`
+ou o `t3sm quarantine` antes do `apply`, cada um primeiro com `--dry-run` (reversíveis; vê
 [Escolher a subscrição](#escolher-a-subscrição)). O `apply` mostra o resumo e espera por `yes`. No `plan.md`, revê a
 tabela **Project accounts**: diz que subscrição cada projeto vai usar. Passo a passo, com todas as verificações:
 [docs/switching-from-vscode.pt.md](docs/switching-from-vscode.pt.md).
 
-No resto desta página escreve-se `t3sm <comando>` para abreviar: a linha `npx` acima, ou o comando depois de
-`npm install -g github:brunobola-portfolio/t3code-session-manager#v0.1.0`. Em teoria uma tag pode ser movida; para
-seres rigoroso, fixa um commit (`github:brunobola-portfolio/t3code-session-manager#<sha do commit>`). Outras origens:
-[docs/migrate/](docs/migrate/claude-code.pt.md). No Claude Code também podes pedir em linguagem natural, com a skill
-incluída ([docs/install.md](docs/install.md#claude-code-plugin), em inglês).
+</details>
+
+Sem instalar nada? `npx -y github:brunobola-portfolio/t3code-session-manager#v0.1.0 <comando>` corre qualquer
+comando (a sincronização em segundo plano precisa do comando instalado). Para seres rigoroso com o que corres, fixa um
+commit em vez da tag (`#<sha do commit>`). Outras origens: [docs/migrate/](docs/migrate/claude-code.pt.md). No Claude
+Code também podes pedir em linguagem natural, com a skill incluída
+([docs/install.md](docs/install.md#claude-code-plugin), em inglês).
 
 ### Lista para a primeira execução
 
@@ -214,6 +230,7 @@ o que o `claude --resume` continua) é listado com uma indicação, nunca integr
 | `t3sm accounts` | Contas encontradas e as respetivas instâncias no T3 Code |
 | `t3sm projects` | Cada pasta de projeto com a sua conta e porquê; `projects set "<pasta>" <conta>` muda-a (uma rota, e a conta por omissão do projeto no T3 Code, reversível); `projects unset` remove a rota |
 | `t3sm start` | O assistente guiado (também `t3sm` sozinho num terminal); só ele está traduzido (`--lang pt`), os outros comandos escrevem em inglês |
+| `t3sm update` | Instala a versão mais recente sobre uma instalação npm (pergunta primeiro; `--dry-run` mostra o comando npm). Num clone git ou com npx só dá instruções |
 
 Todos os comandos têm `--help`. O significado de cada razão para ignorar uma sessão está escrito ao lado dela no `plan.md` e em
 [docs/troubleshooting.md](docs/troubleshooting.md) (em inglês).
@@ -342,10 +359,9 @@ t3sm schedule remove        # se instalaste a sincronização em segundo plano
 t3sm rollback --run <id>    # opcional: desfaz execuções que já não queres (vê t3sm runs)
 ```
 
-(Com npx, põe `npx -y github:brunobola-portfolio/t3code-session-manager#v0.1.0` antes de cada um.) Depois apaga a
-pasta de estado `~/.t3code-session-manager/` (a `cache/opencode/` lá dentro guarda as cópias reduzidas do OpenCode) e,
-quando tiveres a certeza de que não precisas delas, as pastas de quarentena `~/.claude*/session-manager-quarantine/`.
-As threads já importadas ficam no T3 Code. Com instalação global, também `npm uninstall -g t3code-session-manager`.
+Depois corre `npm uninstall -g t3code-session-manager`, apaga a pasta de estado `~/.t3code-session-manager/` (a
+`cache/opencode/` lá dentro guarda as cópias reduzidas do OpenCode) e, quando tiveres a certeza de que não precisas
+delas, as pastas de quarentena `~/.claude*/session-manager-quarantine/`. As threads já importadas ficam no T3 Code.
 
 ## Contribuir
 
