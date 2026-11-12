@@ -170,12 +170,15 @@ test("opencode discover: the snapshot lives in <stateDir>/cache/opencode and is 
 
   const k = counting();
   const ro = setup({ readOnly: true, adapter: { snapshot: k.snapshot } });
-  const temps0 = readdirSync(tmpdir()).filter((f) => f.startsWith("t3sm-opencode-"));
+  // Only this process's temp snapshots (`t3sm-opencode-<pid>-…`): other test files running at the same time create
+  // and remove their own in the same shared tmpdir.
+  const mine = (f: string) => f.startsWith(`t3sm-opencode-${process.pid}-`);
+  const temps0 = readdirSync(tmpdir()).filter(mine);
   assert.equal(await ro.adapter.isAvailable(ro.env), true);
   assert.equal((await collect(ro.adapter, ro.env)).length, 4);
   assert.equal(k.calls.length, 1, "isAvailable and discover share one temp copy");
   assert.ok(!existsSync(ro.env.stateDir), "sync --dry-run: no state written");
-  assert.deepEqual(readdirSync(tmpdir()).filter((f) => f.startsWith("t3sm-opencode-")), temps0, "its temp snapshot is removed");
+  assert.deepEqual(readdirSync(tmpdir()).filter(mine), temps0, "its temp snapshot is removed");
 });
 
 test("opencode read: messages in order; text parts joined; tools flattened (500 chars); reasoning, steps and synthetic text dropped; attachments noted", async () => {
