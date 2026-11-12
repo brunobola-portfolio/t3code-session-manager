@@ -31,7 +31,7 @@ desktop launcher, not from a terminal that sets `CLAUDE_CONFIG_DIR`.
 **1. Install once.** The same line on Windows, macOS and Linux:
 
 ```bash
-npm install -g --install-links github:brunobola-portfolio/t3code-session-manager#v0.2.0
+npm install -g --install-links github:brunobola-portfolio/t3code-session-manager#v0.2.1
 ```
 
 **2. Run it:**
@@ -66,7 +66,7 @@ subscription each project will use. Step by step, with every check:
 
 </details>
 
-No install at all? `npx -y github:brunobola-portfolio/t3code-session-manager#v0.2.0 <command>`
+No install at all? `npx -y github:brunobola-portfolio/t3code-session-manager#v0.2.1 <command>`
 runs any command (background sync needs the installed one). To be strict about what you
 run, pin a commit instead of the tag (`#<commit sha>`). Other sources:
 [docs/migrate/](docs/migrate/claude-code.md). In Claude Code you can also ask for it in

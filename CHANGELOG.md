@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-11-12
+
 ### Fixed
 
 - **`npm install -g github:…` works on npm 11.** npm prepares a git dependency with an inner `npm install` that
