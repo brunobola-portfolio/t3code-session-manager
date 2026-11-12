@@ -1,0 +1,39 @@
+{
+  "_tag": "Exit",
+  "requestId": "2",
+  "exit": {
+    "_tag": "Success",
+    "value": {
+      "candidates": [
+        {
+          "path": "D:\\work\\demo-1",
+          "title": "demo-1",
+          "projectId": "00000000-0000-4000-8000-000000000002",
+          "sources": [
+            "claudeAgent"
+          ],
+          "threadCount": 160,
+          "lastActiveAt": "2026-11-03T18:11:34.082Z",
+          "alreadyImported": true,
+          "git": {
+            "remoteKey": "example.com/demo/demo-repo",
+            "repository": "demo/demo-repo"
+          }
+        },
+        {
+          "path": "d:\\work\\demo-2",
+          "title": "demo-2",
+          "sources": [
+            "claudeAgent"
+          ],
+          "threadCount": 5,
+          "lastActiveAt": "2026-11-09T13:02:28.923Z",
+          "alreadyImported": false,
+          "git": null
+        }
+      ],
+      "scannedAt": "2026-11-10T15:46:34.786Z",
+      "truncated": true
+    }
+  }
+}

@@ -1,0 +1,3 @@
+{"type":"user","message":{"role":"user","content":"provenance"},"uuid":"00000000-0000-4000-8000-000000000101","timestamp":"2026-01-01T00:00:01.000Z","cwd":"C:/work/demo","isMeta":true}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"meta too"}]},"uuid":"00000000-0000-4000-8000-000000000102","timestamp":"2026-01-01T00:00:02.000Z","cwd":"C:/work/demo","isMeta":true}
+{"type":"user","message":{"role":"user","content":"compact"},"uuid":"00000000-0000-4000-8000-000000000103","timestamp":"2026-01-01T00:00:03.000Z","cwd":"C:/work/demo","isCompactSummary":true}

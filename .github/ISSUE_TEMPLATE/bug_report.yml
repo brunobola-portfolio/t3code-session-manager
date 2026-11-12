@@ -1,0 +1,58 @@
+name: Bug report
+description: A session was imported wrongly, under the wrong account, not at all, or a command failed.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks. Please remove anything private (folder names, project names) from what you paste.
+        Security problems go to Security → Report a vulnerability, not here.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you expected, what happened instead, and the command you ran.
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Command output and exit code
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Output of `t3sm doctor --json`
+      description: Emails are masked and your home folder is shown as ~. Check it before pasting.
+      render: json
+    validations:
+      required: true
+  - type: dropdown
+    id: harness
+    attributes:
+      label: Which agent's sessions
+      multiple: true
+      options:
+        - Claude Code (one account)
+        - Claude Code (several accounts)
+        - Codex CLI
+        - Pi
+        - OpenCode
+        - Not about a specific agent
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      placeholder: t3sm 0.1.0, T3 Code 0.1.9-nightly.20261110, Node 24.11, Windows 11
+    validations:
+      required: true
+  - type: textarea
+    id: plan
+    attributes:
+      label: Relevant part of plan.md (optional)
+      description: The Summary, Project accounts or Warnings section, if the plan looked wrong.
+      render: markdown

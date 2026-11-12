@@ -1,0 +1,16 @@
+{
+  "_tag": "Exit",
+  "requestId": "2",
+  "exit": {
+    "_tag": "Failure",
+    "cause": [
+      {
+        "_tag": "Fail",
+        "error": {
+          "_tag": "AgentSessionImportProjectNotFoundError",
+          "projectId": "00000000-0000-4000-8000-000000000007"
+        }
+      }
+    ]
+  }
+}

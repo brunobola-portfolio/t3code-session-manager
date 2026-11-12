@@ -1,0 +1,21 @@
+{
+  "name": "t3code-session-manager",
+  "owner": {
+    "name": "BolaLabs",
+    "url": "https://github.com/brunobola-portfolio"
+  },
+  "metadata": {
+    "description": "Marketplace for the t3sm plugin: import, sync and merge agent sessions into T3 Code under the right Claude account.",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "t3sm",
+      "source": "./",
+      "description": "Skill that runs t3sm to bring agent sessions into T3 Code, asking before every write.",
+      "version": "0.1.0",
+      "category": "productivity",
+      "keywords": ["t3code", "sessions", "import", "accounts"]
+    }
+  ]
+}

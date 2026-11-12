@@ -1,0 +1,603 @@
+{
+  "_tag": "Chunk",
+  "requestId": "1",
+  "values": [
+    {
+      "version": 1,
+      "type": "snapshot",
+      "config": {
+        "environment": {
+          "environmentId": "00000000-0000-4000-8000-000000000001",
+          "label": "DEMO-PC",
+          "platform": {
+            "os": "windows",
+            "arch": "x64"
+          },
+          "serverVersion": "0.1.9-nightly.20261110.4465",
+          "orchestrationProtocolVersion": 2,
+          "databaseMigration": 80,
+          "capabilities": {
+            "repositoryIdentity": true,
+            "connectionProbe": true,
+            "attachmentUploads": true,
+            "questionAttachments": true,
+            "fileAttachments": {
+              "maxUploadBytes": 52428800
+            },
+            "pullRequests": true,
+            "pullRequestChecks": true,
+            "sideChats": true,
+            "vcsBranchStatus": true,
+            "inlineMessageContext": true,
+            "requiredWorktreeBootstrap": true,
+            "threadSettlement": true,
+            "threadAutoSettlement": true,
+            "storageCleanup": true,
+            "storageCleanupRun": true,
+            "databaseStorage": true,
+            "otlpEndpointCheck": true,
+            "projectWorktreeCleanup": true,
+            "settledWorktreeCleanup": true,
+            "worktreesDirectory": true,
+            "threadAutoSettlementScope": true,
+            "threadRestartContinuation": true,
+            "projectSettingsOverrides": true,
+            "projectProviderInstanceOverrides": true,
+            "threadSnooze": true,
+            "threadForceStop": true,
+            "environmentThemes": true,
+            "usageLimitSources": true,
+            "providerWorkspaceSnapshotsOnDemand": true,
+            "modelCatalogRefresh": true,
+            "usagePriceOverrides": true,
+            "usageModelAliases": true,
+            "threadPinning": true,
+            "threadPinReorder": true,
+            "threadActiveReorder": true,
+            "threadAutoSettleOptOut": true,
+            "threadProjectFromScratch": true,
+            "threadTitleRegeneration": true,
+            "threadVisitedTracking": true,
+            "threadPullRequestLinking": true,
+            "serverResolvedCommandContext": true,
+            "threadStop": true,
+            "threadPullRequests": true,
+            "threadPullRequestWatch": true,
+            "pullRequestStackActions": true,
+            "serverSelfUpdate": "desktop-managed",
+            "npmReleaseLookup": true,
+            "serverSelfUpdateProgress": true,
+            "agentActivityPublishing": false,
+            "projectCloneTracking": true,
+            "projectOrganization": true,
+            "ignoredFileListing": true,
+            "environmentIcon": true,
+            "desktopAppUpdate": true,
+            "desktopAppChannelSwitch": true,
+            "commandOutputStreaming": true,
+            "serverBrowser": true,
+            "peerLinks": true,
+            "mcpModeLimitHeader": true,
+            "linkFence": true,
+            "mcpApprovalCodes": true,
+            "mcpHostedApproval": true,
+            "triage": true,
+            "oneTimeSchedules": true,
+            "freshContext": true,
+            "scheduledTaskThreadModes": true,
+            "voiceTranscription": true,
+            "cloudVoiceTranscription": true
+          }
+        },
+        "auth": {
+          "policy": "remote-reachable",
+          "bootstrapMethods": [
+            "desktop-bootstrap",
+            "one-time-token"
+          ],
+          "sessionMethods": [
+            "browser-session-cookie",
+            "bearer-access-token",
+            "dpop-access-token"
+          ],
+          "sessionCookieName": "t3_session_3773",
+          "serverUpdateScope": "environment:maintain"
+        },
+        "cwd": "C:\\Users\\demo",
+        "keybindingsConfigPath": "C:\\Users\\demo\\.t3\\userdata\\keybindings.json",
+        "keybindings": [
+          {
+            "command": "composer.dictation",
+            "shortcut": {
+              "key": "d",
+              "metaKey": false,
+              "ctrlKey": false,
+              "shiftKey": true,
+              "altKey": false,
+              "modKey": true
+            },
+            "whenAst": {
+              "type": "not",
+              "node": {
+                "type": "identifier",
+                "name": "terminalFocus"
+              }
+            }
+          }
+        ],
+        "issues": [],
+        "providers": [
+          {
+            "instanceId": "codex",
+            "driver": "codex",
+            "displayName": "Codex",
+            "continuation": {
+              "groupKey": "codex:home:C:\\Users\\demo\\.codex"
+            },
+            "showInteractionModeToggle": true,
+            "reportsContextWindow": true,
+            "setup": {
+              "canAuthenticate": false,
+              "canInstall": false
+            },
+            "enabled": true,
+            "installed": true,
+            "version": "0.167.0",
+            "status": "ready",
+            "auth": {
+              "status": "authenticated",
+              "type": "chatgpt",
+              "label": "ChatGPT Free Subscription",
+              "email": "user@example.com",
+              "workspaceId": "00000000-0000-4000-8000-000000000004"
+            },
+            "checkedAt": "2026-11-10T15:46:19.337Z",
+            "models": [
+              {
+                "slug": "gpt-6-luna",
+                "name": "GPT-6-Luna",
+                "isCustom": false,
+                "capabilities": {
+                  "optionDescriptors": [
+                    {
+                      "id": "reasoningEffort",
+                      "label": "Reasoning",
+                      "type": "select",
+                      "options": [
+                        {
+                          "id": "low",
+                          "label": "Low"
+                        },
+                        {
+                          "id": "medium",
+                          "label": "Medium",
+                          "isDefault": true
+                        },
+                        {
+                          "id": "high",
+                          "label": "High"
+                        },
+                        {
+                          "id": "xhigh",
+                          "label": "Extra High"
+                        },
+                        {
+                          "id": "max",
+                          "label": "Max"
+                        }
+                      ],
+                      "currentValue": "medium"
+                    }
+                  ]
+                }
+              }
+            ],
+            "slashCommands": [
+              {
+                "name": "compact",
+                "description": "Demo description"
+              }
+            ],
+            "skills": [
+              {
+                "name": "anthropic-skills:built-in-browser",
+                "description": "Demo description",
+                "path": "C:\\Users\\demo\\.codex\\plugins\\cache\\claude-cowork\\anthropic-skills\\1.0.0\\skills\\built-in-browser\\SKILL.md",
+                "scope": "user",
+                "enabled": true
+              }
+            ],
+            "usageLimits": {
+              "checkedAt": "2026-11-10T15:46:19.337Z",
+              "windows": [
+                {
+                  "id": "primary",
+                  "kind": "monthly",
+                  "label": "Monthly",
+                  "usedPercent": 65,
+                  "resetsAt": "2026-11-21T08:50:18.000Z",
+                  "windowDurationMins": 43200
+                }
+              ],
+              "resetCredits": {
+                "availableCount": 0
+              }
+            },
+            "versionAdvisory": {
+              "status": "current",
+              "currentVersion": "0.167.0",
+              "latestVersion": "0.167.0",
+              "updateCommand": "npm install -g --prefix C:\\Users\\demo\\AppData\\Roaming\\npm --allow-scripts=@openai/codex @openai/codex@latest",
+              "canUpdate": true,
+              "canInstallVersion": true,
+              "checkedAt": "2026-11-10T15:46:23.770Z",
+              "message": null
+            },
+            "compatibilityAdvisory": {
+              "status": "supported",
+              "latestVersionStatus": "supported",
+              "message": null,
+              "recommendedVersion": null,
+              "recommendedRange": ">=0.159.0"
+            }
+          },
+          {
+            "instanceId": "claudeAgent",
+            "driver": "claudeAgent",
+            "displayName": "Claude",
+            "continuation": {
+              "groupKey": "claude:home:C:\\Users\\demo\\.claude-alt"
+            },
+            "showInteractionModeToggle": true,
+            "reportsContextWindow": true,
+            "setup": {
+              "canAuthenticate": false,
+              "canInstall": false
+            },
+            "enabled": true,
+            "installed": true,
+            "version": "2.1.322",
+            "status": "ready",
+            "auth": {
+              "status": "authenticated",
+              "type": "Claude Team",
+              "label": "Claude Team Subscription",
+              "email": "user@example.com",
+              "workspaceId": "00000000-0000-4000-8000-000000000005"
+            },
+            "checkedAt": "2026-11-10T15:46:19.373Z",
+            "models": [
+              {
+                "slug": "claude-opus-5-5",
+                "name": "Claude Opus 5.5",
+                "aliases": [
+                  "opus",
+                  "opus-5.5",
+                  "claude-opus-5.5"
+                ],
+                "isCustom": false,
+                "isDefault": true,
+                "capabilities": {
+                  "optionDescriptors": [
+                    {
+                      "id": "effort",
+                      "label": "Reasoning",
+                      "type": "select",
+                      "options": [
+                        {
+                          "id": "low",
+                          "label": "Low"
+                        },
+                        {
+                          "id": "medium",
+                          "label": "Medium",
+                          "isDefault": true
+                        },
+                        {
+                          "id": "high",
+                          "label": "High"
+                        },
+                        {
+                          "id": "xhigh",
+                          "label": "Extra High"
+                        },
+                        {
+                          "id": "max",
+                          "label": "Max"
+                        },
+                        {
+                          "id": "ultrathink",
+                          "label": "Ultrathink"
+                        }
+                      ],
+                      "promptInjectedValues": [
+                        "ultrathink"
+                      ]
+                    }
+                  ]
+                }
+              }
+            ],
+            "slashCommands": [
+              {
+                "name": "compact",
+                "description": "Demo description",
+                "input": {
+                  "hint": "<optional custom summarization instructions>"
+                }
+              }
+            ],
+            "skills": [
+              {
+                "name": "claude-md-management:claude-md-improver",
+                "description": "Demo description",
+                "path": "C:\\Users\\demo\\.claude\\plugins\\cache\\claude-plugins-official\\claude-md-management\\1.0.0\\skills\\claude-md-improver\\SKILL.md",
+                "scope": "user",
+                "enabled": true
+              }
+            ],
+            "workspaceSnapshots": [
+              {
+                "cwd": "D:\\work\\demo-1",
+                "checkedAt": "2026-11-10T15:46:20.660Z",
+                "slashCommands": [
+                  {
+                    "name": "compact",
+                    "description": "Demo description",
+                    "input": {
+                      "hint": "<optional custom summarization instructions>"
+                    }
+                  }
+                ],
+                "skills": [
+                  {
+                    "name": "claude-md-management:claude-md-improver",
+                    "description": "Demo description",
+                    "path": "C:\\Users\\demo\\.claude\\plugins\\cache\\claude-plugins-official\\claude-md-management\\1.0.0\\skills\\claude-md-improver\\SKILL.md",
+                    "scope": "user",
+                    "enabled": true
+                  }
+                ]
+              }
+            ],
+            "usageLimits": {
+              "checkedAt": "2026-11-10T15:46:20.079Z",
+              "windows": [
+                {
+                  "id": "five_hour",
+                  "kind": "session",
+                  "label": "Session",
+                  "usedPercent": 19,
+                  "resetsAt": "2026-11-10T19:30:00.182Z",
+                  "windowDurationMins": 300
+                },
+                {
+                  "id": "seven_day",
+                  "kind": "weekly",
+                  "label": "Weekly",
+                  "usedPercent": 67,
+                  "resetsAt": "2026-11-14T13:59:59.182Z",
+                  "windowDurationMins": 10080
+                },
+                {
+                  "id": "seven_day_fable",
+                  "kind": "weekly",
+                  "label": "Weekly · Fable",
+                  "usedPercent": 3,
+                  "resetsAt": "2026-11-14T14:00:00.182Z",
+                  "windowDurationMins": 10080
+                }
+              ],
+              "resetCredits": {
+                "availableCount": 1,
+                "nextExpiresAt": "2027-03-09T07:59:00.000Z",
+                "nextCreditId": "launch-2610-fable-6mo"
+              }
+            },
+            "versionAdvisory": {
+              "status": "current",
+              "currentVersion": "2.1.322",
+              "latestVersion": "2.1.322",
+              "updateCommand": "npm install -g --prefix C:\\Users\\demo\\AppData\\Roaming\\npm --allow-scripts=@anthropic-ai/claude-code @anthropic-ai/claude-code@latest",
+              "canUpdate": true,
+              "canInstallVersion": true,
+              "checkedAt": "2026-11-10T15:46:21.671Z",
+              "message": null
+            },
+            "compatibilityAdvisory": {
+              "status": "supported",
+              "latestVersionStatus": "supported",
+              "message": null,
+              "recommendedVersion": null,
+              "recommendedRange": ">=2.1.301"
+            }
+          }
+        ],
+        "availableEditors": [
+          "cursor",
+          "vscode",
+          "file-manager"
+        ],
+        "remoteOpenTargets": [],
+        "directEndpoints": [
+          {
+            "kind": "lan",
+            "httpBaseUrl": "http://192.168.0.10:3773/"
+          }
+        ],
+        "observability": {
+          "logsDirectoryPath": "C:\\Users\\demo\\.t3\\userdata\\logs",
+          "localTracingEnabled": true,
+          "otlpTracesEnabled": false,
+          "otlpMetricsEnabled": false,
+          "otlpLogsEnabled": false
+        },
+        "settings": {
+          "favorites": [
+            {
+              "provider": "codex",
+              "model": "gpt-5.4"
+            },
+            {
+              "provider": "claudeAgent",
+              "model": "claude-opus-5-5"
+            }
+          ],
+          "providerModelPreferences": null,
+          "worktreeCleanup": null,
+          "storageCleanup": {
+            "worktreeKeepWhen": "uncommitted-changes",
+            "worktreeAfterDays": null,
+            "worktreeSettledAfterDays": null,
+            "worktreeOnMerge": false,
+            "worktreeOnDelete": false,
+            "worktreeUnchanged": false,
+            "browserArtifactsAfterDays": null,
+            "logsAfterDays": null
+          },
+          "worktreesDirectory": "",
+          "fastWorktreeCheckout": false,
+          "previousWorktreesDirectories": [],
+          "responseStreamingMode": "paragraph",
+          "enableProviderUpdateChecks": true,
+          "continueThreadsAfterServerUpdate": true,
+          "enableAgentBrowserAccess": true,
+          "cloudSpeechCredentials": {
+            "openai": "",
+            "xai": "",
+            "openrouter": ""
+          },
+          "speechModelId": "handy-computer/parakeet-unified-en-0.6b-gguf",
+          "speechAcceleration": "auto",
+          "speechModelUnloadTimeout": "min_15",
+          "speechProjectCustomWords": [],
+          "speechPostProcessingModelSelection": null,
+          "projectAgentBrowserAccessOverrides": {},
+          "defaultAutoPull": false,
+          "defaultProjectScripts": [],
+          "projectScriptOverrides": {},
+          "projectAutoPullOverrides": {},
+          "defaultModelSelection": {
+            "instanceId": "claudeAgent",
+            "model": "claude-opus-5-5"
+          },
+          "fallbackModelSelection": null,
+          "defaultRuntimeMode": "full-access",
+          "projectSettingsOverrides": {},
+          "projectSettingsFolded": true,
+          "enableAgentDeviceAccess": false,
+          "enableDeviceSupport": false,
+          "deviceOnboardingCompleted": false,
+          "deviceHosts": [],
+          "easDeviceHosts": [],
+          "simlockDeviceHosts": [],
+          "simlockDeviceHostsEnabled": false,
+          "sidebarAutoSettleAfterDays": 7,
+          "compactIdleThreads": false,
+          "idleCompaction": "onReturn",
+          "snoozeLimitedThreads": false,
+          "autoResumeLimitedThreads": false,
+          "snoozePresets": [
+            {
+              "kind": "after",
+              "minutes": 60
+            },
+            {
+              "kind": "after",
+              "minutes": 180
+            },
+            {
+              "kind": "at",
+              "day": "today",
+              "time": "18:00"
+            },
+            {
+              "kind": "at",
+              "day": "tomorrow",
+              "time": "09:00"
+            },
+            {
+              "kind": "at",
+              "day": "monday",
+              "time": "09:00"
+            }
+          ],
+          "hiddenThreadTags": [],
+          "hideTaggedThreads": false,
+          "guestSharingEnabled": false,
+          "linkedEnvironmentsEnabled": false,
+          "promptSuggestionsEnabled": false,
+          "sidebarAutoSettleKeepPullRequests": false,
+          "sidebarAutoSettleOnMerge": true,
+          "backgroundActivity": {
+            "schemaVersion": 1,
+            "profile": "balanced",
+            "overrides": {}
+          },
+          "automaticGitFetchInterval": 30000,
+          "providerHealthRefreshInterval": 300000,
+          "backgroundActivityProfile": "balanced",
+          "defaultTheme": "",
+          "defaultThemeSetAt": "",
+          "environmentIcon": null,
+          "newWorktreesStartFromOrigin": true,
+          "worktreeSubmodules": null,
+          "addProjectBaseDirectory": "",
+          "ghqCloneLayout": false,
+          "textGenerationModelSelection": {
+            "instanceId": "codex",
+            "model": "gpt-5.6-terra",
+            "options": [
+              {
+                "id": "reasoningEffort",
+                "value": "medium"
+              }
+            ]
+          },
+          "threadTitleInstructions": "",
+          "branchNamingMode": "static",
+          "branchNamePrefix": "t3",
+          "branchNameInstructions": "",
+          "removeAgentCreditsOnMerge": false,
+          "sourceControlWritingStyle": {
+            "mode": "repo_conventions",
+            "customInstructions": "",
+            "followChangeRequestTemplates": true
+          },
+          "sourceControlWriterModelSelection": null,
+          "reviewGuidesEnabled": false,
+          "reviewGuideModelSelection": null,
+          "reviewGuideInstructions": "",
+          "pullRequestMergeMethod": null,
+          "providerInstances": {},
+          "observability": {
+            "otlpTracesUrl": "",
+            "otlpMetricsUrl": "",
+            "otlpLogsUrl": ""
+          },
+          "sourceControlHosts": {},
+          "usageLimitSources": {},
+          "textGenerators": {},
+          "secretProviders": {},
+          "usagePriceOverrides": {},
+          "usageModelAliases": {}
+        },
+        "shellResumeCompletionMarker": true,
+        "shellThreadFamilies": true,
+        "threadLinkMetadata": true,
+        "shellOlderSettled": true,
+        "shellRevealInFileManager": true,
+        "shellRevealInFileManagerKind": "file-explorer",
+        "threadResumeCompletionMarker": true,
+        "threadSnapshotPagination": true,
+        "threadFind": true,
+        "threadFindProgressive": true,
+        "secretProviderSettings": true,
+        "secretReferences": true,
+        "secretRequestReferences": true,
+        "scratchWorkspaceRoot": "C:\\Users\\demo\\.t3\\scratch",
+        "newProjectsRoot": "C:\\Users\\demo\\.t3\\projects"
+      }
+    }
+  ]
+}

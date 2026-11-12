@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    name: node ${{ matrix.node }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node: [22, 24]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - name: Versions, install pins and changelog agree
+        run: node scripts/release.js --check
+      - name: README artwork is up to date
+        if: matrix.os == 'ubuntu-latest' && matrix.node == 24
+        run: |
+          node scripts/build-assets.js
+          test -z "$(git status --porcelain -- docs/assets)" || { git status --porcelain -- docs/assets; git diff --stat -- docs/assets; exit 1; }
+
+  # Single stable check name for branch protection, whatever the matrix becomes.
+  ci-ok:
+    name: ci-ok
+    needs: test
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - run: test "${{ needs.test.result }}" = "success"

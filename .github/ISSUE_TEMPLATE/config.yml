@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/brunobola-portfolio/t3code-session-manager/security/advisories/new
+    about: Report privately, please do not open a public issue.
+  - name: Troubleshooting guide
+    url: https://github.com/brunobola-portfolio/t3code-session-manager/blob/main/docs/troubleshooting.md
+    about: One entry per doctor check, with the fix.

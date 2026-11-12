@@ -1,0 +1,13 @@
+{
+  "_tag": "Exit",
+  "requestId": "4",
+  "exit": {
+    "_tag": "Failure",
+    "cause": [
+      {
+        "_tag": "Die",
+        "defect": "Unknown request tag: server.getSettings"
+      }
+    ]
+  }
+}

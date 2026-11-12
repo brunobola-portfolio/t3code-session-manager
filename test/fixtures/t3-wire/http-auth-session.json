@@ -1,0 +1,46 @@
+{
+  "authenticated": true,
+  "auth": {
+    "policy": "remote-reachable",
+    "bootstrapMethods": [
+      "desktop-bootstrap",
+      "one-time-token"
+    ],
+    "sessionMethods": [
+      "browser-session-cookie",
+      "bearer-access-token",
+      "dpop-access-token"
+    ],
+    "sessionCookieName": "t3_session_3773",
+    "serverUpdateScope": "environment:maintain"
+  },
+  "scopes": [
+    "orchestration:read",
+    "orchestration:operate",
+    "terminal:operate",
+    "relay:read",
+    "access:read",
+    "access:write",
+    "relay:write"
+  ],
+  "permissions": [
+    "orchestration:read",
+    "orchestration:operate",
+    "settings:write",
+    "providers:manage",
+    "environment:maintain",
+    "preview:operate",
+    "diagnostics:read",
+    "terminal:read",
+    "terminal:operate",
+    "source-control:write",
+    "filesystem:read",
+    "filesystem:write",
+    "relay:read",
+    "access:read",
+    "access:write",
+    "relay:write"
+  ],
+  "sessionMethod": "bearer-access-token",
+  "expiresAt": "2026-11-10T16:46:28.618Z"
+}

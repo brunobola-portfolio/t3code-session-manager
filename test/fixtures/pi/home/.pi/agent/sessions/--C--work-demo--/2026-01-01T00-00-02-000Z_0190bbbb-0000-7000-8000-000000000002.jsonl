@@ -1,0 +1,4 @@
+{"type":"session","version":3,"id":"0190bbbb-0000-7000-8000-000000000002","timestamp":"2026-01-01T00:00:00.000Z","cwd":"C:/work/demo"}
+{"type":"message","id":"m1","parentId":null,"timestamp":"2026-01-01T00:00:02.000Z","message":{"role":"user","content":[{"type":"text","text":"q"}],"timestamp":1793744563502}}
+{ this is not json
+{"type":"message","id":"a1","parentId":"m1","timestamp":"2026-01-01T00:00:03.000Z","message":{"role":"assistant","content":[{"type":"text","text":"r"}],"api":"demo","provider":"demo","model":"demo","stopReason":"stop","timestamp":1793744563503}}

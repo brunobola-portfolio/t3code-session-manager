@@ -1,0 +1,22 @@
+{
+  "_tag": "Request",
+  "id": "1",
+  "tag": "server.updateSettings",
+  "payload": {
+    "patch": {},
+    "providerInstanceMutation": {
+      "operation": "create",
+      "instanceId": "claude-org",
+      "instance": {
+        "driver": "claudeAgent",
+        "displayName": "Claude · Work",
+        "accentColor": "#7C3AED",
+        "enabled": true,
+        "config": {
+          "homePath": "C:\\Users\\demo\\.claude-org"
+        }
+      }
+    }
+  },
+  "headers": []
+}

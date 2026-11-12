@@ -1,0 +1,57 @@
+{
+  "name": "t3code-session-manager",
+  "version": "0.1.0",
+  "description": "Bring every Claude Code, Codex, Pi and OpenCode session into T3 Code: resumable, under the right Claude subscription, kept in sync.",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "author": "BolaLabs (https://github.com/brunobola-portfolio)",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/brunobola-portfolio/t3code-session-manager.git"
+  },
+  "homepage": "https://github.com/brunobola-portfolio/t3code-session-manager#readme",
+  "bugs": {
+    "url": "https://github.com/brunobola-portfolio/t3code-session-manager/issues"
+  },
+  "keywords": [
+    "t3code",
+    "t3-code",
+    "claude-code",
+    "codex",
+    "opencode",
+    "pi",
+    "ai-agents",
+    "coding-agents",
+    "session-import",
+    "session-history",
+    "multiple-accounts",
+    "cli"
+  ],
+  "bin": {
+    "t3sm": "bin/t3sm.mjs"
+  },
+  "engines": {
+    "node": ">=22.18"
+  },
+  "files": [
+    "bin/",
+    "dist/",
+    "skills/",
+    ".claude-plugin/",
+    "CHANGELOG.md"
+  ],
+  "scripts": {
+    "test": "node --test --test-timeout=60000 \"test/**/*.test.ts\"",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc -p tsconfig.build.json",
+    "prepare": "npm run build",
+    "assets": "node scripts/build-assets.js",
+    "release": "node scripts/release.js",
+    "release:check": "node scripts/release.js --check"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "typescript": "^5.9.3"
+  }
+}

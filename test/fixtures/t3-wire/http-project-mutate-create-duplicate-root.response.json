@@ -1,0 +1,6 @@
+{
+  "_tag": "EnvironmentRequestInvalidError",
+  "code": "invalid_request",
+  "reason": "invalid_command",
+  "traceId": "0123456789abcdef0123456789abcdef"
+}

@@ -1,0 +1,6 @@
+{"type":"mode","mode":"normal"}
+{"type":"user","message":{"role":"user","content":"hello"},"uuid":"00000000-0000-4000-8000-000000000101","timestamp":"2026-01-01T00:00:01.000Z","cwd":"C:/work/demo"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"hi there"}]},"uuid":"00000000-0000-4000-8000-000000000102","timestamp":"2026-01-01T00:00:02.000Z","cwd":"C:/work/demo"}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"ok"}]},"uuid":"00000000-0000-4000-8000-000000000103","timestamp":"2026-01-01T00:00:03.000Z","cwd":"C:/work/demo"}
+{"type":"user","message":{"role":"user","content":"thanks"},"uuid":"00000000-0000-4000-8000-000000000104","timestamp":"2026-01-01T00:00:04.000Z","cwd":"C:/work/demo"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"welcome"}]},"uuid":"00000000-0000-4000-8000-000000000105","timestamp":"2026-01-01T00:00:05.000Z","cwd":"C:/work/demo"}

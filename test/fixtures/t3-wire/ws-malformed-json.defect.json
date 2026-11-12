@@ -1,0 +1,7 @@
+{
+  "_tag": "Defect",
+  "defect": {
+    "name": "SyntaxError",
+    "message": "Unexpected token 'o', \"not json\" is not valid JSON"
+  }
+}

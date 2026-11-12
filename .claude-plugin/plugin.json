@@ -1,0 +1,19 @@
+{
+  "name": "t3sm",
+  "version": "0.1.0",
+  "description": "A skill that brings Claude Code, Codex, Pi and OpenCode sessions into T3 Code with t3sm: doctor, plan, review, then apply, sync or merge, each write only after you say yes.",
+  "author": {
+    "name": "BolaLabs",
+    "url": "https://github.com/brunobola-portfolio"
+  },
+  "homepage": "https://github.com/brunobola-portfolio/t3code-session-manager",
+  "repository": "https://github.com/brunobola-portfolio/t3code-session-manager",
+  "license": "MIT",
+  "keywords": [
+    "t3code",
+    "sessions",
+    "import",
+    "accounts",
+    "history"
+  ]
+}

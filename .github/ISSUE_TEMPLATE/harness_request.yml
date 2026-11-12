@@ -1,0 +1,41 @@
+name: Harness request
+description: Ask for an agent whose sessions t3sm should bring into T3 Code.
+labels: [harness]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A new agent is converted into Claude Code sessions (see docs/adding-a-harness.md). The more of the storage
+        details below you can give, the faster someone can write it. Never paste real session content: describe the
+        structure, or make up the values.
+  - type: input
+    id: agent
+    attributes:
+      label: Agent and version
+      placeholder: Gemini CLI 0.66.0
+    validations:
+      required: true
+  - type: textarea
+    id: storage
+    attributes:
+      label: Where it keeps sessions
+      description: Folder or database path on each OS, file format (JSONL, SQLite, JSON...), one file per session or one store for all.
+    validations:
+      required: true
+  - type: textarea
+    id: structure
+    attributes:
+      label: Structure of one session
+      description: Fields or tables for the session id, working folder, timestamps, user and assistant messages, tool calls. Synthetic values only.
+      render: text
+  - type: textarea
+    id: why
+    attributes:
+      label: How many sessions, and why you want them in T3 Code
+  - type: checkboxes
+    id: help
+    attributes:
+      label: Can you help?
+      options:
+        - label: I can test a pull request against my real data, read-only
+        - label: I would like to write the adapter myself

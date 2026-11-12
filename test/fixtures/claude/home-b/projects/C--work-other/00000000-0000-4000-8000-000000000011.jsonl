@@ -1,0 +1,2 @@
+{"type":"user","message":{"role":"user","content":"other"},"uuid":"00000000-0000-4000-8000-000000000101","timestamp":"2026-01-01T00:00:01.000Z","cwd":"C:/work/other"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"reply"}]},"uuid":"00000000-0000-4000-8000-000000000102","timestamp":"2026-01-01T00:00:02.000Z","cwd":"C:/work/other"}

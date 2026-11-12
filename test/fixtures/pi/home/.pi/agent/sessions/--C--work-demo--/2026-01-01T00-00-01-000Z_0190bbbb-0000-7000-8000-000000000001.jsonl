@@ -1,0 +1,10 @@
+{"type":"session","version":3,"id":"0190bbbb-0000-7000-8000-000000000001","timestamp":"2026-01-01T00:00:00.000Z","cwd":"C:/work/demo"}
+{"type":"model_change","id":"e1","parentId":null,"timestamp":"2026-01-01T00:00:01.000Z","provider":"demo","modelId":"demo"}
+{"type":"session_info","id":"e2","parentId":"e1","timestamp":"2026-01-01T00:00:01.000Z","name":"synthetic"}
+{"type":"message","id":"s0","parentId":"e2","timestamp":"2026-01-01T00:00:01.000Z","message":{"role":"system","content":"","sections":{"preamble":"synthetic"},"timestamp":1793744563500}}
+{"type":"message","id":"m1","parentId":"s0","timestamp":"2026-01-01T00:00:02.000Z","message":{"role":"user","content":[{"type":"text","text":"q1"}],"timestamp":1793744563502}}
+{"type":"message","id":"a1","parentId":"m1","timestamp":"2026-01-01T00:00:03.000Z","message":{"role":"assistant","content":[{"type":"text","text":"r1"}],"api":"demo","provider":"demo","model":"demo","stopReason":"stop","timestamp":1793744563503}}
+{"type":"message","id":"b1","parentId":"a1","timestamp":"2026-01-01T00:00:04.000Z","message":{"role":"user","content":[{"type":"text","text":"abandoned"}],"timestamp":1793744563504}}
+{"type":"message","id":"b2","parentId":"b1","timestamp":"2026-01-01T00:00:05.000Z","message":{"role":"assistant","content":[{"type":"text","text":"abandoned"}],"api":"demo","provider":"demo","model":"demo","stopReason":"stop","timestamp":1793744563505}}
+{"type":"message","id":"c1","parentId":"a1","timestamp":"2026-01-01T00:00:06.000Z","message":{"role":"user","content":[{"type":"text","text":"q2"}],"timestamp":1793744563506}}
+{"type":"message","id":"c2","parentId":"c1","timestamp":"2026-01-01T00:00:07.000Z","message":{"role":"assistant","content":[{"type":"text","text":"r2"}],"api":"demo","provider":"demo","model":"demo","stopReason":"stop","timestamp":1793744563507}}

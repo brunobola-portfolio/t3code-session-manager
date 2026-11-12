@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="784" viewBox="0 0 720 784" role="img" aria-label="Choosing the subscription: the session's account folder is the truth; a project opens with routes, then the VS Code pin, then the most recent session, then defaultAccount.">
+  <title>Choosing the subscription: the session's account folder is the truth; a project opens with routes, then the VS Code pin, then the most recent session, then defaultAccount.</title>
+  <rect width="720" height="784" rx="14" fill="#F7F7F4"/>
+  <rect x="0.5" y="0.5" width="719" height="783" rx="14" fill="none" stroke="#E1E4EA"/>
+  <text x="40" y="70" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="26" font-weight="700" fill="#161B26">A session belongs to</text>
+  <text x="40" y="104" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="22" fill="#565E71">the account folder that holds it.</text>
+  <path d="M44,138 h18 l5,6 h33 v38 h-56 z" fill="#FBEEDF" stroke="#B8641A" stroke-width="1.6" stroke-linejoin="round"/>
+  <text x="114" y="158" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="20" font-weight="600" fill="#161B26">~/.claude</text>
+  <text x="114" y="180" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="19" font-weight="600" fill="#B8641A">Personal subscription</text>
+  <path d="M44,214 h18 l5,6 h33 v38 h-56 z" fill="#EFE8FC" stroke="#6A42C9" stroke-width="1.6" stroke-linejoin="round"/>
+  <text x="114" y="234" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="20" font-weight="600" fill="#161B26">~/.claude-work</text>
+  <text x="114" y="256" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="19" font-weight="600" fill="#6A42C9">Work subscription</text>
+  <text x="40" y="304" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="21" fill="#565E71">Copies in both: identical → one thread;</text>
+  <text x="40" y="334" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="21" fill="#565E71">prefix → the longer one; diverged → both.</text>
+  <text x="40" y="386" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="26" font-weight="700" fill="#161B26">A project opens with, first match:</text>
+  <rect x="40" y="408" width="640" height="76" rx="10" fill="#FFFFFF" stroke="#E1E4EA"/>
+  <circle cx="78" cy="446" r="18" fill="#3451D1"/>
+  <text x="78" y="453" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="19" font-weight="700" text-anchor="middle" fill="#FFFFFF">1</text>
+  <text x="112" y="441" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="21" font-weight="600" fill="#161B26">routes in config.json</text>
+  <text x="112" y="468" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="19" fill="#565E71">Your explicit rule, first match wins</text>
+  <rect x="40" y="496" width="640" height="76" rx="10" fill="#FFFFFF" stroke="#E1E4EA"/>
+  <circle cx="78" cy="534" r="18" fill="#3451D1"/>
+  <text x="78" y="541" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="19" font-weight="700" text-anchor="middle" fill="#FFFFFF">2</text>
+  <text x="112" y="529" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="21" font-weight="600" fill="#161B26">.vscode/settings.json</text>
+  <text x="112" y="556" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="19" fill="#565E71">The account VS Code pins for the folder</text>
+  <rect x="40" y="584" width="640" height="76" rx="10" fill="#FFFFFF" stroke="#E1E4EA"/>
+  <circle cx="78" cy="622" r="18" fill="#3451D1"/>
+  <text x="78" y="629" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="19" font-weight="700" text-anchor="middle" fill="#FFFFFF">3</text>
+  <text x="112" y="617" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="21" font-weight="600" fill="#161B26">Most recent session</text>
+  <text x="112" y="644" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="19" fill="#565E71">The account you used there last</text>
+  <rect x="40" y="672" width="640" height="76" rx="10" fill="#FFFFFF" stroke="#E1E4EA"/>
+  <circle cx="78" cy="710" r="18" fill="#3451D1"/>
+  <text x="78" y="717" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="19" font-weight="700" text-anchor="middle" fill="#FFFFFF">4</text>
+  <text x="112" y="705" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="21" font-weight="600" fill="#161B26">defaultAccount</text>
+  <text x="112" y="732" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="19" fill="#565E71">Everything else</text>
+</svg>

@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="846" viewBox="0 0 720 846" role="img" aria-label="t3sm: every agent session, in T3 Code, under the right Claude subscription">
+  <title>t3sm: every agent session, in T3 Code, under the right Claude subscription</title>
+  <rect width="720" height="846" rx="14" fill="#11151C"/>
+  <rect x="0.5" y="0.5" width="719" height="845" rx="14" fill="none" stroke="#283140"/>
+  <text x="40" y="104" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="84" font-weight="800" fill="#E8EBF1" letter-spacing="-2">t3sm</text>
+  <text x="42" y="158" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="28" fill="#9CA5B7">Every session from every agent and</text>
+  <text x="42" y="194" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="28" fill="#9CA5B7">every Claude account, in T3 Code,</text>
+  <text x="42" y="230" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="28" fill="#9CA5B7">under the right subscription.</text>
+  <rect x="40" y="262" width="282" height="44" rx="22" fill="#181E28" stroke="#283140"/>
+  <circle cx="60" cy="284" r="5" fill="#EFA25A"/>
+  <text x="74" y="290.84" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="19" font-weight="600" fill="#E8EBF1">Claude Code · Personal</text>
+  <rect x="334" y="262" width="239" height="44" rx="22" fill="#181E28" stroke="#283140"/>
+  <circle cx="354" cy="284" r="5" fill="#AC8BF5"/>
+  <text x="368" y="290.84" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="19" font-weight="600" fill="#E8EBF1">Claude Code · Work</text>
+  <rect x="40" y="320" width="141" height="44" rx="22" fill="#181E28" stroke="#283140"/>
+  <circle cx="60" cy="342" r="5" fill="#4CC3D1"/>
+  <text x="74" y="348.84" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="19" font-weight="600" fill="#E8EBF1">Codex CLI</text>
+  <rect x="193" y="320" width="66" height="44" rx="22" fill="#181E28" stroke="#283140"/>
+  <circle cx="213" cy="342" r="5" fill="#E7799D"/>
+  <text x="227" y="348.84" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="19" font-weight="600" fill="#E8EBF1">Pi</text>
+  <rect x="271" y="320" width="131" height="44" rx="22" fill="#181E28" stroke="#283140"/>
+  <circle cx="291" cy="342" r="5" fill="#7FA5F5"/>
+  <text x="305" y="348.84" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="19" font-weight="600" fill="#E8EBF1">OpenCode</text>
+  <path d="M360,390 v30 m-8,-9 l8,9 l8,-9" fill="none" stroke="#7D94FF" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="40" y="434" width="640" height="372" rx="12" fill="#181E28" stroke="#283140"/>
+  <path d="M40,470 h640" stroke="#283140"/>
+  <circle cx="58" cy="452" r="5" fill="#283140"/><circle cx="74" cy="452" r="5" fill="#283140"/><circle cx="90" cy="452" r="5" fill="#283140"/>
+  <text x="360" y="457" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="13" font-weight="600" text-anchor="middle" fill="#8D96A9">T3 Code</text>
+  <path d="M58,498 h6 l2,2 h8 v9 h-16 z" fill="none" stroke="#8D96A9" stroke-width="1.4" stroke-linejoin="round"/>
+  <text x="82" y="509" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="21" font-weight="700" fill="#E8EBF1">demo</text>
+  <text x="82" y="552.2" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="20" fill="#E8EBF1">Add a dark mode toggle</text>
+  <rect x="566" y="531" width="100" height="28" rx="14" fill="#3A2918"/>
+  <text x="616" y="551.48" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="18" font-weight="700" text-anchor="middle" fill="#EFA25A">Personal</text>
+  <text x="82" y="594.2" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="20" fill="#E8EBF1">Fix the missing icon warning</text>
+  <rect x="566" y="573" width="100" height="28" rx="14" fill="#3A2918"/>
+  <text x="616" y="593.48" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="18" font-weight="700" text-anchor="middle" fill="#EFA25A">Personal</text>
+  <path d="M58,622 h6 l2,2 h8 v9 h-16 z" fill="none" stroke="#8D96A9" stroke-width="1.4" stroke-linejoin="round"/>
+  <text x="82" y="633" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="21" font-weight="700" fill="#E8EBF1">api</text>
+  <text x="82" y="676.2" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="20" fill="#E8EBF1">Fix the flaky export test</text>
+  <rect x="607" y="655" width="59" height="28" rx="14" fill="#2C2347"/>
+  <text x="636.5" y="675.48" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="18" font-weight="700" text-anchor="middle" fill="#AC8BF5">Work</text>
+  <text x="82" y="718.2" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="20" fill="#E8EBF1">Rotate the staging signing key</text>
+  <rect x="607" y="697" width="59" height="28" rx="14" fill="#2C2347"/>
+  <text x="636.5" y="717.48" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="18" font-weight="700" text-anchor="middle" fill="#AC8BF5">Work</text>
+  <text x="82" y="760.2" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="20" fill="#E8EBF1">Refactor the CLI parser</text>
+  <rect x="607" y="739" width="59" height="28" rx="14" fill="#2C2347"/>
+  <text x="636.5" y="759.48" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="18" font-weight="700" text-anchor="middle" fill="#AC8BF5">Work</text>
+  <text x="82" y="782.2" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="17" fill="#8D96A9">from OpenCode</text>
+</svg>

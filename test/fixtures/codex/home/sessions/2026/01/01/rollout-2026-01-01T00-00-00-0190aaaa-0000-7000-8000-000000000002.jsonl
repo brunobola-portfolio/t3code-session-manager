@@ -1,0 +1,4 @@
+{"timestamp":"2026-01-01T00:00:00.000Z","ordinal":0,"type":"session_meta","payload":{"session_id":"0190aaaa-0000-7000-8000-000000000002","cwd":"C:/work/demo"}}
+{"timestamp":"2026-01-01T00:00:02.000Z","ordinal":2,"type":"response_item","payload":{"type":"message","id":"msg-2","role":"user","content":[{"type":"input_text","text":"q"}],"internal_chat_message_metadata_passthrough":{"turn_id":"turn-1"}}}
+{ this is not json
+{"timestamp":"2026-01-01T00:00:04.000Z","ordinal":4,"type":"response_item","payload":{"type":"message","id":"msg-4","role":"assistant","content":[{"type":"output_text","text":"a"}],"internal_chat_message_metadata_passthrough":{"turn_id":"turn-1"}}}

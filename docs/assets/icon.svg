@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-label="t3sm icon">
+  <title>t3sm icon</title>
+  <rect width="256" height="256" rx="56" fill="#3451D1"/>
+  <path d="M52,72 C120,72 120,128 188,128" fill="none" stroke="#EFA25A" stroke-width="16" stroke-linecap="round"/>
+  <path d="M52,128 H188" fill="none" stroke="#FFFFFF" stroke-width="16" stroke-linecap="round"/>
+  <path d="M52,184 C120,184 120,128 188,128" fill="none" stroke="#AC8BF5" stroke-width="16" stroke-linecap="round"/>
+  <circle cx="196" cy="128" r="24" fill="#FFFFFF"/>
+</svg>

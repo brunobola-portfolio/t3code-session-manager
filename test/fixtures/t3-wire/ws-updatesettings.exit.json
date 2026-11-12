@@ -1,0 +1,167 @@
+{
+  "_tag": "Exit",
+  "requestId": "1",
+  "exit": {
+    "_tag": "Success",
+    "value": {
+      "favorites": [
+        {
+          "provider": "codex",
+          "model": "gpt-5.4"
+        },
+        {
+          "provider": "claudeAgent",
+          "model": "claude-opus-5-5"
+        }
+      ],
+      "providerModelPreferences": null,
+      "worktreeCleanup": null,
+      "storageCleanup": {
+        "worktreeKeepWhen": "uncommitted-changes",
+        "worktreeAfterDays": null,
+        "worktreeSettledAfterDays": null,
+        "worktreeOnMerge": false,
+        "worktreeOnDelete": false,
+        "worktreeUnchanged": false,
+        "browserArtifactsAfterDays": null,
+        "logsAfterDays": null
+      },
+      "worktreesDirectory": "",
+      "fastWorktreeCheckout": false,
+      "previousWorktreesDirectories": [],
+      "responseStreamingMode": "paragraph",
+      "enableProviderUpdateChecks": true,
+      "continueThreadsAfterServerUpdate": true,
+      "enableAgentBrowserAccess": true,
+      "cloudSpeechCredentials": {
+        "openai": "",
+        "xai": "",
+        "openrouter": ""
+      },
+      "speechModelId": "handy-computer/parakeet-unified-en-0.6b-gguf",
+      "speechAcceleration": "auto",
+      "speechModelUnloadTimeout": "min_15",
+      "speechProjectCustomWords": [],
+      "speechPostProcessingModelSelection": null,
+      "projectAgentBrowserAccessOverrides": {},
+      "defaultAutoPull": false,
+      "defaultProjectScripts": [],
+      "projectScriptOverrides": {},
+      "projectAutoPullOverrides": {},
+      "defaultModelSelection": {
+        "instanceId": "claudeAgent",
+        "model": "claude-opus-5-5"
+      },
+      "fallbackModelSelection": null,
+      "defaultRuntimeMode": "full-access",
+      "projectSettingsOverrides": {},
+      "projectSettingsFolded": true,
+      "enableAgentDeviceAccess": false,
+      "enableDeviceSupport": false,
+      "deviceOnboardingCompleted": false,
+      "deviceHosts": [],
+      "easDeviceHosts": [],
+      "simlockDeviceHosts": [],
+      "simlockDeviceHostsEnabled": false,
+      "sidebarAutoSettleAfterDays": 7,
+      "compactIdleThreads": false,
+      "idleCompaction": "onReturn",
+      "snoozeLimitedThreads": false,
+      "autoResumeLimitedThreads": false,
+      "snoozePresets": [
+        {
+          "kind": "after",
+          "minutes": 60
+        },
+        {
+          "kind": "after",
+          "minutes": 180
+        },
+        {
+          "kind": "at",
+          "day": "today",
+          "time": "18:00"
+        },
+        {
+          "kind": "at",
+          "day": "tomorrow",
+          "time": "09:00"
+        },
+        {
+          "kind": "at",
+          "day": "monday",
+          "time": "09:00"
+        }
+      ],
+      "hiddenThreadTags": [],
+      "hideTaggedThreads": false,
+      "guestSharingEnabled": false,
+      "linkedEnvironmentsEnabled": false,
+      "promptSuggestionsEnabled": false,
+      "sidebarAutoSettleKeepPullRequests": false,
+      "sidebarAutoSettleOnMerge": true,
+      "backgroundActivity": {
+        "schemaVersion": 1,
+        "profile": "balanced",
+        "overrides": {}
+      },
+      "automaticGitFetchInterval": 30000,
+      "providerHealthRefreshInterval": 300000,
+      "backgroundActivityProfile": "balanced",
+      "defaultTheme": "",
+      "defaultThemeSetAt": "",
+      "environmentIcon": null,
+      "newWorktreesStartFromOrigin": true,
+      "worktreeSubmodules": null,
+      "addProjectBaseDirectory": "",
+      "ghqCloneLayout": false,
+      "textGenerationModelSelection": {
+        "instanceId": "codex",
+        "model": "gpt-5.6-terra",
+        "options": [
+          {
+            "id": "reasoningEffort",
+            "value": "medium"
+          }
+        ]
+      },
+      "threadTitleInstructions": "",
+      "branchNamingMode": "static",
+      "branchNamePrefix": "t3",
+      "branchNameInstructions": "",
+      "removeAgentCreditsOnMerge": false,
+      "sourceControlWritingStyle": {
+        "mode": "repo_conventions",
+        "customInstructions": "",
+        "followChangeRequestTemplates": true
+      },
+      "sourceControlWriterModelSelection": null,
+      "reviewGuidesEnabled": false,
+      "reviewGuideModelSelection": null,
+      "reviewGuideInstructions": "",
+      "pullRequestMergeMethod": null,
+      "providerInstances": {
+        "claude-org": {
+          "driver": "claudeAgent",
+          "displayName": "Claude · Work",
+          "accentColor": "#7C3AED",
+          "enabled": true,
+          "config": {
+            "homePath": "C:\\Users\\demo\\.claude-org"
+          }
+        }
+      },
+      "observability": {
+        "otlpTracesUrl": "",
+        "otlpMetricsUrl": "",
+        "otlpLogsUrl": ""
+      },
+      "sourceControlHosts": {},
+      "usageLimitSources": {},
+      "textGenerators": {},
+      "secretProviders": {},
+      "usagePriceOverrides": {},
+      "usageModelAliases": {}
+    }
+  }
+}

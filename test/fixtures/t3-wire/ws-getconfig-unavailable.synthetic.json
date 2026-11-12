@@ -1,0 +1,369 @@
+{
+  "_tag": "Exit",
+  "requestId": "1",
+  "exit": {
+    "_tag": "Success",
+    "value": {
+      "settings": {
+        "providerInstances": {
+          "claude-org": {
+            "driver": "claudeAgent",
+            "displayName": "Claude · Work",
+            "accentColor": "#7C3AED",
+            "enabled": true,
+            "config": {
+              "homePath": "C:\\Users\\demo\\.claude-org"
+            }
+          },
+          "claudeAgent": {
+            "driver": "claudeAgent",
+            "config": {
+              "homePath": "C:\\Users\\demo\\.claude"
+            }
+          },
+          "claude-gone": {
+            "driver": "claudeAgent",
+            "displayName": "Claude Gone",
+            "accentColor": "#10B981",
+            "enabled": true,
+            "config": {
+              "homePath": "C:\\Users\\demo\\.claude-gone"
+            }
+          }
+        }
+      },
+      "providers": [
+        {
+          "instanceId": "claudeAgent",
+          "driver": "claudeAgent",
+          "displayName": "Claude",
+          "continuation": {
+            "groupKey": "claude:home:C:\\Users\\demo\\.claude"
+          },
+          "showInteractionModeToggle": true,
+          "reportsContextWindow": true,
+          "setup": {
+            "canAuthenticate": false,
+            "canInstall": false
+          },
+          "enabled": true,
+          "installed": true,
+          "version": "2.1.322",
+          "status": "ready",
+          "auth": {
+            "status": "authenticated",
+            "type": "Claude Max",
+            "label": "Claude Max Subscription",
+            "email": "personal@example.com",
+            "workspaceId": "00000000-0000-4000-8000-0000000000a1"
+          },
+          "checkedAt": "2026-11-10T17:02:37.077Z",
+          "models": [
+            {
+              "slug": "claude-opus-5-5",
+              "name": "Claude Opus 5.5",
+              "aliases": [
+                "opus",
+                "opus-5.5",
+                "claude-opus-5.5"
+              ],
+              "isCustom": false,
+              "isDefault": true,
+              "capabilities": {
+                "optionDescriptors": [
+                  {
+                    "id": "effort",
+                    "label": "Reasoning",
+                    "type": "select",
+                    "options": [
+                      {
+                        "id": "low",
+                        "label": "Low"
+                      },
+                      {
+                        "id": "medium",
+                        "label": "Medium",
+                        "isDefault": true
+                      },
+                      {
+                        "id": "high",
+                        "label": "High"
+                      },
+                      {
+                        "id": "xhigh",
+                        "label": "Extra High"
+                      },
+                      {
+                        "id": "max",
+                        "label": "Max"
+                      },
+                      {
+                        "id": "ultrathink",
+                        "label": "Ultrathink"
+                      }
+                    ],
+                    "promptInjectedValues": [
+                      "ultrathink"
+                    ]
+                  },
+                  {
+                    "id": "ultracode",
+                    "label": "Ultracode",
+                    "type": "boolean"
+                  },
+                  {
+                    "id": "fastMode",
+                    "label": "Fast Mode",
+                    "type": "boolean"
+                  }
+                ]
+              }
+            }
+          ],
+          "slashCommands": [],
+          "skills": [],
+          "usageLimits": {
+            "checkedAt": "2026-11-10T17:02:37.959Z",
+            "windows": [
+              {
+                "id": "five_hour",
+                "kind": "session",
+                "label": "Session",
+                "usedPercent": 30,
+                "resetsAt": "2026-11-10T21:00:00.040Z",
+                "windowDurationMins": 300
+              },
+              {
+                "id": "seven_day",
+                "kind": "weekly",
+                "label": "Weekly",
+                "usedPercent": 41,
+                "resetsAt": "2026-11-15T04:00:00.040Z",
+                "windowDurationMins": 10080
+              },
+              {
+                "id": "seven_day_fable",
+                "kind": "weekly",
+                "label": "Weekly · Fable",
+                "usedPercent": 6,
+                "resetsAt": "2026-11-15T04:00:00.040Z",
+                "windowDurationMins": 10080
+              }
+            ],
+            "resetCredits": {
+              "availableCount": 3,
+              "nextExpiresAt": "2027-03-09T07:59:00.000Z",
+              "nextCreditId": "launch-2610-fable"
+            }
+          },
+          "versionAdvisory": {
+            "status": "current",
+            "currentVersion": "2.1.322",
+            "latestVersion": "2.1.322",
+            "updateCommand": "npm install -g --prefix C:\\Users\\demo\\AppData\\Roaming\\npm --allow-scripts=@anthropic-ai/claude-code @anthropic-ai/claude-code@latest",
+            "canUpdate": true,
+            "canInstallVersion": true,
+            "checkedAt": "2026-11-10T17:02:38.589Z",
+            "message": null
+          },
+          "compatibilityAdvisory": {
+            "status": "supported",
+            "latestVersionStatus": "supported",
+            "message": null,
+            "recommendedVersion": null,
+            "recommendedRange": ">=2.1.301"
+          },
+          "workspaceSnapshots": []
+        },
+        {
+          "instanceId": "claude-org",
+          "driver": "claudeAgent",
+          "displayName": "Claude · Work",
+          "accentColor": "#7C3AED",
+          "continuation": {
+            "groupKey": "claude:home:C:\\Users\\demo\\.claude-org"
+          },
+          "showInteractionModeToggle": true,
+          "reportsContextWindow": true,
+          "setup": {
+            "canAuthenticate": false,
+            "canInstall": false
+          },
+          "enabled": true,
+          "installed": true,
+          "version": "2.1.322",
+          "status": "ready",
+          "auth": {
+            "status": "authenticated",
+            "type": "Claude Team",
+            "label": "Claude Team Subscription",
+            "email": "org@example.com",
+            "workspaceId": "00000000-0000-4000-8000-0000000000a2"
+          },
+          "checkedAt": "2026-11-10T17:02:16.311Z",
+          "models": [
+            {
+              "slug": "claude-opus-5-5",
+              "name": "Claude Opus 5.5",
+              "aliases": [
+                "opus",
+                "opus-5.5",
+                "claude-opus-5.5"
+              ],
+              "isCustom": false,
+              "isDefault": true,
+              "capabilities": {
+                "optionDescriptors": [
+                  {
+                    "id": "effort",
+                    "label": "Reasoning",
+                    "type": "select",
+                    "options": [
+                      {
+                        "id": "low",
+                        "label": "Low"
+                      },
+                      {
+                        "id": "medium",
+                        "label": "Medium",
+                        "isDefault": true
+                      },
+                      {
+                        "id": "high",
+                        "label": "High"
+                      },
+                      {
+                        "id": "xhigh",
+                        "label": "Extra High"
+                      },
+                      {
+                        "id": "max",
+                        "label": "Max"
+                      },
+                      {
+                        "id": "ultrathink",
+                        "label": "Ultrathink"
+                      }
+                    ],
+                    "promptInjectedValues": [
+                      "ultrathink"
+                    ]
+                  },
+                  {
+                    "id": "ultracode",
+                    "label": "Ultracode",
+                    "type": "boolean"
+                  },
+                  {
+                    "id": "fastMode",
+                    "label": "Fast Mode",
+                    "type": "boolean"
+                  }
+                ]
+              }
+            }
+          ],
+          "slashCommands": [],
+          "skills": [],
+          "usageLimits": {
+            "checkedAt": "2026-11-10T17:02:16.898Z",
+            "windows": [
+              {
+                "id": "five_hour",
+                "kind": "session",
+                "label": "Session",
+                "usedPercent": 57,
+                "resetsAt": "2026-11-10T19:30:00.035Z",
+                "windowDurationMins": 300
+              },
+              {
+                "id": "seven_day",
+                "kind": "weekly",
+                "label": "Weekly",
+                "usedPercent": 73,
+                "resetsAt": "2026-11-14T13:59:59.035Z",
+                "windowDurationMins": 10080
+              },
+              {
+                "id": "seven_day_fable",
+                "kind": "weekly",
+                "label": "Weekly · Fable",
+                "usedPercent": 7,
+                "resetsAt": "2026-11-14T14:00:00.035Z",
+                "windowDurationMins": 10080
+              }
+            ],
+            "resetCredits": {
+              "availableCount": 1,
+              "nextExpiresAt": "2027-03-09T07:59:00.000Z",
+              "nextCreditId": "launch-2610-fable-6mo"
+            }
+          },
+          "versionAdvisory": {
+            "status": "current",
+            "currentVersion": "2.1.322",
+            "latestVersion": "2.1.322",
+            "updateCommand": "npm install -g --prefix C:\\Users\\demo\\AppData\\Roaming\\npm --allow-scripts=@anthropic-ai/claude-code @anthropic-ai/claude-code@latest",
+            "canUpdate": true,
+            "canInstallVersion": true,
+            "checkedAt": "2026-11-10T17:02:17.462Z",
+            "message": null
+          },
+          "compatibilityAdvisory": {
+            "status": "supported",
+            "latestVersionStatus": "supported",
+            "message": null,
+            "recommendedVersion": null,
+            "recommendedRange": ">=2.1.301"
+          }
+        },
+        {
+          "instanceId": "claude-gone",
+          "driver": "claudeAgent",
+          "displayName": "Claude Gone",
+          "accentColor": "#10B981",
+          "enabled": false,
+          "installed": false,
+          "version": null,
+          "status": "error",
+          "auth": {
+            "status": "unknown"
+          },
+          "checkedAt": "2026-11-10T17:05:00.000Z",
+          "message": "Provider driver failed to start.",
+          "availability": "unavailable",
+          "unavailableReason": "Provider driver failed to start.",
+          "models": [],
+          "slashCommands": [],
+          "skills": []
+        },
+        {
+          "instanceId": "claude-rt",
+          "driver": "claudeAgent",
+          "enabled": true,
+          "installed": true,
+          "version": "2.1.322",
+          "status": "ready",
+          "auth": {
+            "status": "authenticated",
+            "email": "rt@example.com"
+          },
+          "checkedAt": "2026-11-10T17:05:00.000Z",
+          "runtimePaths": {
+            "homePath": "C:\\Users\\demo\\.claude-rt",
+            "shadowHomePath": null
+          },
+          "models": [
+            {
+              "slug": "claude-opus-5-5",
+              "name": "Claude Opus 5.5",
+              "isDefault": true
+            }
+          ],
+          "slashCommands": [],
+          "skills": []
+        }
+      ]
+    }
+  }
+}

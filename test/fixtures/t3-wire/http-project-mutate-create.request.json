@@ -1,0 +1,8 @@
+{
+  "type": "project.create",
+  "commandId": "00000000-0000-4000-8000-0000000000c1",
+  "projectId": "00000000-0000-4000-8000-0000000000a1",
+  "title": "demo",
+  "workspaceRoot": "C:\\work\\demo",
+  "createWorkspaceRootIfMissing": false
+}

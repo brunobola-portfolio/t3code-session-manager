@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="832" viewBox="0 0 720 832" role="img" aria-label="How t3sm works: check, plan, review, apply, stay in sync">
+  <title>How t3sm works: check, plan, review, apply, stay in sync</title>
+  <rect width="720" height="832" rx="14" fill="#11151C"/>
+  <rect x="0.5" y="0.5" width="719" height="831" rx="14" fill="none" stroke="#283140"/>
+  <text x="40" y="46" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="24" fill="#8D96A9">How t3sm works</text>
+  <rect x="40" y="70" width="640" height="130" rx="12" fill="#181E28" stroke="#283140"/>
+  <circle cx="84" cy="114" r="22" fill="none" stroke="#7D94FF" stroke-width="2.5"/>
+  <text x="84" y="122" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="22" font-weight="700" text-anchor="middle" fill="#7D94FF">1</text>
+  <text x="126" y="116" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="27" font-weight="700" fill="#E8EBF1">Check</text>
+  <text x="660" y="116" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="19" font-weight="600" text-anchor="end" fill="#7D94FF">t3sm doctor</text>
+  <text x="126" y="154" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="21" fill="#9CA5B7">T3 Code, its version, your accounts and</text>
+  <text x="126" y="184" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="21" fill="#9CA5B7">agents. Read-only.</text>
+  <rect x="40" y="218" width="640" height="130" rx="12" fill="#181E28" stroke="#283140"/>
+  <circle cx="84" cy="262" r="22" fill="none" stroke="#7D94FF" stroke-width="2.5"/>
+  <text x="84" y="270" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="22" font-weight="700" text-anchor="middle" fill="#7D94FF">2</text>
+  <text x="126" y="264" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="27" font-weight="700" fill="#E8EBF1">Plan</text>
+  <text x="660" y="264" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="19" font-weight="600" text-anchor="end" fill="#7D94FF">t3sm plan</text>
+  <text x="126" y="302" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="21" fill="#9CA5B7">Every session gets a project, an account and</text>
+  <text x="126" y="332" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="21" fill="#9CA5B7">an action. Only plan.md is written.</text>
+  <rect x="40" y="366" width="640" height="130" rx="12" fill="#181E28" stroke="#7D94FF"/>
+  <circle cx="84" cy="410" r="22" fill="none" stroke="#7D94FF" stroke-width="2.5"/>
+  <text x="84" y="418" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="22" font-weight="700" text-anchor="middle" fill="#7D94FF">3</text>
+  <text x="126" y="412" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="27" font-weight="700" fill="#E8EBF1">Review</text>
+  <text x="660" y="412" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="19" font-weight="600" text-anchor="end" fill="#7D94FF">plan.md</text>
+  <text x="126" y="450" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="21" fill="#9CA5B7">Read the Project accounts table and the</text>
+  <text x="126" y="480" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="21" fill="#9CA5B7">warnings. Adjust config.json, plan again.</text>
+  <rect x="40" y="514" width="640" height="130" rx="12" fill="#181E28" stroke="#283140"/>
+  <circle cx="84" cy="558" r="22" fill="none" stroke="#7D94FF" stroke-width="2.5"/>
+  <text x="84" y="566" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="22" font-weight="700" text-anchor="middle" fill="#7D94FF">4</text>
+  <text x="126" y="560" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="27" font-weight="700" fill="#E8EBF1">Apply</text>
+  <text x="660" y="560" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="19" font-weight="600" text-anchor="end" fill="#7D94FF">t3sm apply</text>
+  <text x="126" y="598" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="21" fill="#9CA5B7">T3 Code's own importer, in waves. Every file</text>
+  <text x="126" y="628" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="21" fill="#9CA5B7">time journaled, then put back.</text>
+  <rect x="40" y="662" width="640" height="130" rx="12" fill="#181E28" stroke="#283140"/>
+  <circle cx="84" cy="706" r="22" fill="none" stroke="#7D94FF" stroke-width="2.5"/>
+  <text x="84" y="714" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="22" font-weight="700" text-anchor="middle" fill="#7D94FF">5</text>
+  <text x="126" y="708" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="27" font-weight="700" fill="#E8EBF1">Stay in sync</text>
+  <text x="660" y="708" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="19" font-weight="600" text-anchor="end" fill="#7D94FF">t3sm sync</text>
+  <text x="126" y="746" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="21" fill="#9CA5B7">New sessions on a schedule or a watcher.</text>
+  <text x="126" y="776" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="21" fill="#9CA5B7">merge brings terminal work back.</text>
+</svg>

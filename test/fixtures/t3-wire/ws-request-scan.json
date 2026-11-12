@@ -1,0 +1,7 @@
+{
+  "_tag": "Request",
+  "id": "2",
+  "tag": "agentSessions.scan",
+  "payload": {},
+  "headers": []
+}

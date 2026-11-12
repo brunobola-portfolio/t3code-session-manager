@@ -1,0 +1,8 @@
+{"timestamp":"2026-01-01T00:00:00.000Z","ordinal":0,"type":"session_meta","payload":{"session_id":"0190aaaa-0000-7000-8000-000000000001","id":"0190aaaa-0000-7000-8000-000000000001","timestamp":"2026-01-01T00:00:00.000Z","cwd":"C:/work/demo","originator":"demo"}}
+{"timestamp":"2026-01-01T00:00:01.000Z","ordinal":1,"type":"turn_context","payload":{"turn_id":"turn-1","cwd":"C:/work/demo","model":"demo-model"}}
+{"timestamp":"2026-01-01T00:00:02.000Z","ordinal":2,"type":"response_item","payload":{"type":"message","id":"msg-2","role":"developer","content":[{"type":"input_text","text":"synthetic rules"}],"internal_chat_message_metadata_passthrough":{"turn_id":"turn-1"}}}
+{"timestamp":"2026-01-01T00:00:03.000Z","ordinal":3,"type":"response_item","payload":{"type":"message","id":"msg-3","role":"user","content":[{"type":"input_text","text":"<environment_context>synthetic</environment_context>"}],"internal_chat_message_metadata_passthrough":{"turn_id":"turn-1"}}}
+{"timestamp":"2026-01-01T00:00:04.000Z","ordinal":4,"type":"response_item","payload":{"type":"message","id":"msg-4","role":"user","content":[{"type":"input_text","text":"hello synthetic"}],"internal_chat_message_metadata_passthrough":{"turn_id":"turn-1"}}}
+{"timestamp":"2026-01-01T00:00:05.000Z","ordinal":5,"type":"event_msg","payload":{"type":"user_message","message":"hello synthetic"}}
+{"timestamp":"2026-01-01T00:00:06.000Z","ordinal":6,"type":"response_item","payload":{"type":"message","id":"msg-6","role":"assistant","content":[{"type":"output_text","text":"hi synthetic"}],"internal_chat_message_metadata_passthrough":{"turn_id":"turn-1"}}}
+{"timestamp":"2026-01-01T00:00:07.000Z","ordinal":7,"type":"token_usage_record","payload":{"turn_id":"turn-1","usage":{}}}

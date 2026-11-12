@@ -1,0 +1,10 @@
+{
+  "_tag": "Request",
+  "id": "2",
+  "tag": "agentSessions.import",
+  "payload": {
+    "projectId": "00000000-0000-4000-8000-000000000006",
+    "expectedWorkspaceRoot": "D:\\work\\demo-3"
+  },
+  "headers": []
+}
