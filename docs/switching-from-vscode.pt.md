@@ -11,7 +11,7 @@ Conta com cerca de meia hora, quase toda a ler. Instala o comando `t3sm` uma vez
 as alternativas estão no [install.md](install.md), em inglês):
 
 ```bash
-npm install -g github:brunobola-portfolio/t3code-session-manager#v0.1.0
+npm install -g github:brunobola-portfolio/t3code-session-manager#v0.2.0
 ```
 
 Preferes ser guiado? O `t3sm start --lang pt` faz estes mesmos passos por ti, uma pergunta de cada vez, e pergunta

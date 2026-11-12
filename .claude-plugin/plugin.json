@@ -1,6 +1,6 @@
 {
   "name": "t3sm",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A skill that brings Claude Code, Codex, Pi and OpenCode sessions into T3 Code with t3sm: doctor, plan, review, then apply, sync or merge, each write only after you say yes.",
   "author": {
     "name": "BolaLabs",

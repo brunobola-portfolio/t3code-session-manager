@@ -31,7 +31,7 @@ trabalho, não a partir de um terminal que defina `CLAUDE_CONFIG_DIR`.
 **1. Instala uma vez.** A mesma linha no Windows, no macOS e no Linux:
 
 ```bash
-npm install -g github:brunobola-portfolio/t3code-session-manager#v0.1.0
+npm install -g github:brunobola-portfolio/t3code-session-manager#v0.2.0
 ```
 
 **2. Corre:**
@@ -65,7 +65,7 @@ tabela **Project accounts**: diz que subscrição cada projeto vai usar. Passo a
 
 </details>
 
-Sem instalar nada? `npx -y github:brunobola-portfolio/t3code-session-manager#v0.1.0 <comando>` corre qualquer
+Sem instalar nada? `npx -y github:brunobola-portfolio/t3code-session-manager#v0.2.0 <comando>` corre qualquer
 comando (a sincronização em segundo plano precisa do comando instalado). Para seres rigoroso com o que corres, fixa um
 commit em vez da tag (`#<sha do commit>`). Outras origens: [docs/migrate/](docs/migrate/claude-code.pt.md). No Claude
 Code também podes pedir em linguagem natural, com a skill incluída

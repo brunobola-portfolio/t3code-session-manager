@@ -3,7 +3,7 @@
 ## Supported versions
 
 Only the latest release receives fixes. Update with `t3sm update` (an `npm install -g` of the newest release tag), or
-run the pinned command with the newer tag (`npx -y github:brunobola-portfolio/t3code-session-manager#v0.1.0 …`).
+run the pinned command with the newer tag (`npx -y github:brunobola-portfolio/t3code-session-manager#v0.2.0 …`).
 
 ## Reporting a vulnerability
 

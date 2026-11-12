@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-12
+
 ### Added
 
 - **`t3sm update`**: updates an npm-installed t3sm to the newest release in one command. It asks first, waits while
