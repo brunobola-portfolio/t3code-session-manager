@@ -150,11 +150,25 @@ export const SESSIONS: Ses[] = [
   },
 ];
 
-/** Creates `path` with the OpenCode 1.19.5 tables and the synthetic sessions above. `ddl` swaps the schema (drift tests). */
+/**
+ * Creates `path` with the OpenCode 1.19.5 tables and the synthetic sessions above. `ddl` swaps the schema (drift tests).
+ * One transaction: autocommit would sync the disk once per row (~40 per db), which on a slow CI disk made
+ * opencode.test.ts outrun its 60 s file budget.
+ */
 export function buildOpenCodeDb(path: string, o: { ddl?: string[]; sessions?: Ses[]; wal?: boolean } = {}): void {
   const db = new DatabaseSync(path);
   try {
-    if (o.wal) db.exec("PRAGMA journal_mode=WAL");
+    if (o.wal) db.exec("PRAGMA journal_mode=WAL"); // not allowed inside a transaction
+    db.exec("BEGIN");
+    fill(db, o);
+    db.exec("COMMIT");
+  } finally {
+    db.close();
+  }
+}
+
+function fill(db: DatabaseSync, o: { ddl?: string[]; sessions?: Ses[] }): void {
+  {
     for (const sql of o.ddl ?? OPENCODE_1_19_DDL) db.exec(sql);
     if (o.ddl) return;
     db.prepare("INSERT INTO project (id, worktree, vcs, time_created, time_updated, sandboxes) VALUES (?, ?, 'git', ?, ?, '[]')").run("prj_demo", "C:/work/demo", T0, T0);
@@ -174,8 +188,6 @@ export function buildOpenCodeDb(path: string, o: { ddl?: string[]; sessions?: Se
         m.parts.forEach((p, k) => part.run(`prt_${m.id.slice(4)}_${String(k).padStart(2, "0")}`, m.id, s.id, m.at, m.at, JSON.stringify(p)));
       }
     }
-  } finally {
-    db.close();
   }
 }
 

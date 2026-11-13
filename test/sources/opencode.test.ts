@@ -65,6 +65,17 @@ function fingerprint(dir: string): Record<string, string> {
   return out;
 }
 
+test("fixture: buildOpenCodeDb commits once (one disk sync per test db, not one per row; slow CI disks timed the file out)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "t3sm-oc-fixture-"));
+  temps.push(dir);
+  // SQLite's file change counter (header bytes 24-27, big-endian) goes up once per committed write transaction.
+  const counter = (p: string) => readFileSync(p).readUInt32BE(24);
+  buildOpenCodeDb(join(dir, "full.db"));
+  assert.equal(counter(join(dir, "full.db")), 1);
+  buildOpenCodeDb(join(dir, "drift.db"), { ddl: OPENCODE_1_19_DDL.slice(0, 2) });
+  assert.equal(counter(join(dir, "drift.db")), 1);
+});
+
 test("openCodeDbPath: ~/.local/share/opencode/opencode.db, or $XDG_DATA_HOME/opencode/opencode.db", () => {
   const base: Env = { home: "/h", platform: "linux", now: () => 0, config: defaultConfig([]), stateDir: "/s", env: {} };
   assert.equal(openCodeDbPath(base).replace(/\\/g, "/"), "/h/.local/share/opencode/opencode.db");
