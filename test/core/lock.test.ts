@@ -4,7 +4,7 @@ import { mkdtemp, readFile, readdir, rm, utimes, writeFile } from "node:fs/promi
 import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawn, spawnSync } from "node:child_process";
-import { acquireLock, lockInfo, takeStealMutex } from "../../src/core/lock.ts";
+import { acquireLock, lockInfo, releaseStealMutex, takeStealMutex } from "../../src/core/lock.ts";
 
 async function tmp(): Promise<string> {
   return mkdtemp(join(tmpdir(), "t3sm-lock-"));
@@ -175,6 +175,38 @@ test("multi-process stealers (stale lock, and stale lock + stale mutex): exactly
       assert.deepEqual(await readdir(d), [], `iteration ${i} leftovers`);
     } finally { await rm(d, { recursive: true, force: true }); }
   }
+});
+
+test("a holder that releases while a stealer has its mutex moved aside leaves nothing behind (the stealer's put-back finds no copy)", async () => {
+  const d = await tmp();
+  try {
+    const m = join(d, "lock.steal");
+    await writeFile(m, "stale-token");
+    const old = (Date.now() - 60_000) / 1000;
+    await utimes(m, old, old);
+    // B sees the stale mutex; before B breaks it, A breaks it and takes a fresh one. B then moves A's fresh mutex
+    // aside, sees it is fresh, and A releases right then, before B puts it back. (The CI interleaving on macOS.)
+    let a: string | null = null;
+    const b = await takeStealMutex(m, {
+      afterStatBeforeBreak: async () => { a = await takeStealMutex(m); },
+      afterBreakBeforePutBack: async () => { assert.ok(a); await releaseStealMutex(m, a); },
+    });
+    assert.ok(a, "A took the mutex");
+    assert.equal(b, null, "B yields to A");
+    assert.deepEqual(await readdir(d), [], "no mutex and no broken-* copy left");
+  } finally { await rm(d, { recursive: true, force: true }); }
+});
+
+test("releaseStealMutex never deletes another holder's mutex", async () => {
+  const d = await tmp();
+  try {
+    const m = join(d, "lock.steal");
+    await writeFile(m, "someone-else");
+    await writeFile(`${m}.broken-1234abcd`, "someone-else-aside");
+    await releaseStealMutex(m, "my-token");
+    assert.equal(await readFile(m, "utf8"), "someone-else");
+    assert.equal(await readFile(`${m}.broken-1234abcd`, "utf8"), "someone-else-aside");
+  } finally { await rm(d, { recursive: true, force: true }); }
 });
 
 test("fresh mutex displaced by a stale-break is put back; live holder keeps it, third stealer gets null", async () => {

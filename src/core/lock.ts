@@ -1,8 +1,8 @@
 import { readFileSync } from "node:fs";
-import { link, mkdir, open, readFile, rename, rm, stat } from "node:fs/promises";
+import { link, mkdir, open, readFile, readdir, rename, rm, stat } from "node:fs/promises";
 import { hostname, uptime } from "node:os";
 import { randomBytes } from "node:crypto";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { pidAlive } from "./pid.ts";
 
 const UNPARSEABLE_STALE_MS = 3600_000;
@@ -153,6 +153,8 @@ async function isStale(file: string, raw: string, kill: NonNullable<LockOptions[
 export interface StealHooks {
   /** Runs between the staleness `stat` and the break `rename` of the steal mutex. */
   afterStatBeforeBreak?: () => Promise<void>;
+  /** Runs after the moved-aside mutex was found fresh (a live holder's), before it is put back. */
+  afterBreakBeforePutBack?: () => Promise<void>;
 }
 
 /**
@@ -202,6 +204,7 @@ export async function takeStealMutex(path: string, hooks: StealHooks = {}): Prom
     fresh = Date.now() - (await stat(broken)).mtimeMs <= STEAL_MUTEX_STALE_MS;
   } catch { /* gone: treat as stale */ }
   if (fresh) {
+    if (hooks.afterBreakBeforePutBack) await hooks.afterBreakBeforePutBack();
     try {
       await link(broken, path);
     } catch (e) {
@@ -270,16 +273,37 @@ export async function acquireLock(dir: string, opts: LockOptions = {}): Promise<
     if (!mine || mine.pid !== body.pid || mine.startedAt !== body.startedAt) return null;
     return makeLock(file, body);
   } finally {
-    // Delete the mutex only if it is still ours.
-    let seen: string | null | undefined;
-    for (let attempt = 0; attempt < 6 && seen === undefined; attempt++) {
-      try {
-        seen = await readIfExists(mutex);
-      } catch {
-        await new Promise((r) => setTimeout(r, 10 * (attempt + 1)));
-      }
+    await releaseStealMutex(mutex, token);
+  }
+}
+
+/**
+ * Release the steal mutex taken by takeStealMutex: delete every copy that still holds our token, never anyone else's.
+ *
+ * A stealer that judged the mutex stale just before we replaced it may have moved OUR fresh mutex aside
+ * (`<path>.broken-<rand>`) and be about to put it back (takeStealMutex links it back for a live holder). Deleting only
+ * `<path>` would then leave our mutex behind once it is put back, blocking steals until it goes stale (30 s). So we
+ * also delete aside copies holding our token: the stealer's put-back then finds nothing (ENOENT) and gives up, and a
+ * copy it already put back is caught on the next pass at `<path>`. A copy can only reach `<path>` from an aside name
+ * and only leave it by being moved aside, so passes repeat until two in a row find no copy of ours. Aside names are
+ * unique per stealer and never replaced, so deleting one of ours is safe; `<path>` keeps the read-then-delete of
+ * before (see the residual risk on acquireLock).
+ */
+export async function releaseStealMutex(path: string, token: string): Promise<void> {
+  const dir = dirname(path);
+  const aside = `${basename(path)}.broken-`;
+  const ours = async (p: string): Promise<boolean> => {
+    try { return (await readIfExists(p)) === token; } catch { return false; } // unreadable: not provably ours
+  };
+  for (let pass = 0, clean = 0; pass < 10 && clean < 2; pass++) {
+    let found = false;
+    if (await ours(path)) { await rmForce(path); found = true; }
+    let names: string[] = [];
+    try { names = await readdir(dir); } catch { /* dir gone: nothing left */ }
+    for (const n of names) {
+      if (n.startsWith(aside) && await ours(join(dir, n))) { await rmForce(join(dir, n)); found = true; }
     }
-    if (seen === token) await rmForce(mutex);
+    clean = found ? 0 : clean + 1;
   }
 }
 

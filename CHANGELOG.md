@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **Lock: no steal mutex left behind.** When two t3sm runs recovered a crashed run's lock at the same moment, the one
+  that lost could put the winner's `lock.steal` back just after the winner had released it. Nothing was ever run twice
+  (exactly one run gets the lock), but the leftover file made a later recovery wait up to 30 s. Releasing now also
+  removes a copy of its mutex that another run has moved aside. A deterministic test reproduces the interleaving.
+
 ## [0.2.1] - 2026-11-12
 
 ### Fixed
