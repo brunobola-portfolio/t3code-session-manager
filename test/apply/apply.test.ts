@@ -41,8 +41,8 @@ class FakeSignals implements SignalSource {
   count() { return [...this.handlers.values()].reduce((a, s) => a + s.size, 0); }
 }
 
-function env(f: FakeT3) {
-  const t = tempHome();
+function env(f: FakeT3, o: { projectHome?: boolean } = {}) {
+  const t = tempHome(o);
   const signals = new FakeSignals();
   const lines: string[] = [];
   const deps = (over: Partial<ApplyDeps> = {}): ApplyDeps => ({
@@ -251,9 +251,9 @@ function converted(f: FakeT3, home: string, root: string, nativeId: string, upda
   };
 }
 
-function convertEnv() {
+function convertEnv(o: { projectHome?: boolean } = {}) {
   const f = fakeT3();
-  const e = env(f);
+  const e = env(f, o);
   const claudeHome = join(e.home, ".claude");
   f.opts.instances = [inst("claudeAgent", claudeHome)];
   const reads = new Map<string, CanonicalTranscript | Error>();
@@ -834,7 +834,7 @@ test("t3sm apply: stale plan -> exit 2 `Plan is stale; run \\`t3sm plan\\` again
   commands["apply"] = (a, io) => applyCommand(a, io, { home: e.home, connect: async () => f.api, signals: e.signals });
   try {
     assert.equal(await main(["apply", "--yes"], c2.io), 2);
-    assert.match(c2.err(), /^\| Plan is stale; run t3sm plan again\. +\|$/m, "the hint on its own line of the panel, without backticks");
+    assert.match(c2.err(), /^[|│] Plan is stale; run t3sm plan again\. +[|│]$/m, "the hint on its own line of the panel, without backticks");
   } finally { commands["apply"] = orig; }
 });
 
@@ -1125,13 +1125,16 @@ function rehomed(f: FakeT3, home: string, root: string, nativeId: string, reads:
   return { ...it, action: { ...(it.action as Extract<PlanItem["action"], { kind: "convert-import" }>), rehomeFrom: home } };
 }
 
-/** How folders are classified in these tests: the temp home is not a temp folder here. */
+/**
+ * How folders are classified in these tests: the temp home is not a temp folder here. Its tests take a home made with
+ * `projectHome` (on Linux a folder under /tmp is a temp one whatever tmpdir says).
+ */
 const folderEnvOf = (home: string): FolderEnv => ({
   platform: process.platform, home, tmpdir: join(home, "no-such-tmp"), env: {}, t3BaseDir: join(home, ".t3"), t3WorktreesDir: join(home, ".t3", "worktrees"),
 });
 
 test("applyPlan (interactive): a missing rehome destination folder is created (journaled) before its project, then the copy imports", async () => {
-  const { f, e, reads, deps } = convertEnv();
+  const { f, e, reads, deps } = convertEnv({ projectHome: true });
   const general = normalizeCwd(join(e.home, "T3 General"));
   const item = rehomed(f, e.home, general, "ses_home", reads);
   const notices: string[] = [];
@@ -1158,7 +1161,7 @@ test("applyPlan (interactive): a missing rehome destination folder is created (j
 });
 
 test("applyPlan: a rehome destination T3 Code refuses (or a temp / system folder) is never created; its items fail with the reason, the rest go on", async () => {
-  const { f, e, reads, deps } = convertEnv();
+  const { f, e, reads, deps } = convertEnv({ projectHome: true });
   const refused = normalizeCwd(join(e.home, "Downloads", "dest"));
   const bad = rehomed(f, e.home, refused, "ses_bad", reads);
   const ok = converted(f, e.home, ROOT2, "ses_ok", Date.now() - 2 * DAY, reads);
@@ -1182,7 +1185,7 @@ test("applyPlan: a rehome destination T3 Code refuses (or a temp / system folder
 });
 
 test("applyPlan: a destination folder that cannot be created (permission, a file in the way) is reported; its items fail, the rest go on", async () => {
-  const { f, e, reads, deps } = convertEnv();
+  const { f, e, reads, deps } = convertEnv({ projectHome: true });
   const denied = normalizeCwd(join(e.home, "denied", "General"));
   const notices: string[] = [];
   const mkdir = async (p: string): Promise<string | undefined> => {
@@ -1203,7 +1206,7 @@ test("applyPlan: a destination folder that cannot be created (permission, a file
 });
 
 test("applyPlan: a relative rehome destination (a relative organize.generalFolder) is never created in the current folder (R25)", async () => {
-  const { f, e, reads, deps } = convertEnv();
+  const { f, e, reads, deps } = convertEnv({ projectHome: true });
   const notices: string[] = [];
   const r = await applyPlan(mkPlan([rehomed(f, e.home, "T3 General R25", "ses_rel", reads)]), deps({ rehomeFolders: { env: folderEnvOf(e.home) }, onNotice: (l) => void notices.push(l) }));
   assert.deepEqual(r.failures.map((x) => x.reason), ["target-folder: it is not an absolute folder"]);
@@ -1213,7 +1216,7 @@ test("applyPlan: a relative rehome destination (a relative organize.generalFolde
 });
 
 test("applyPlan: a rehome destination whose name has control characters is refused, never created, and printed without them (R25)", async () => {
-  const { f, e, reads, deps } = convertEnv();
+  const { f, e, reads, deps } = convertEnv({ projectHome: true });
   const notices: string[] = [];
   const evil = normalizeCwd(join(e.home, "T3 \u001b[31mGeneral"));
   const r = await applyPlan(mkPlan([rehomed(f, e.home, evil, "ses_ctl", reads)]), deps({ rehomeFolders: { env: folderEnvOf(e.home) }, onNotice: (l) => void notices.push(l) }));
@@ -1228,7 +1231,7 @@ test("applyPlan: a rehome destination whose name has control characters is refus
 
 test("applyPlan: a rehome destination whose name has invisible format characters (bidi override, zero-width) is refused, never created", async () => {
   for (const [i, ch] of ["‮", "​"].entries()) {
-    const { f, e, reads, deps } = convertEnv();
+    const { f, e, reads, deps } = convertEnv({ projectHome: true });
     const notices: string[] = [];
     const evil = normalizeCwd(join(e.home, `T3 Gen${ch}eral`));
     const r = await applyPlan(mkPlan([rehomed(f, e.home, evil, `ses_inv${i}`, reads)]), deps({ rehomeFolders: { env: folderEnvOf(e.home) }, onNotice: (l) => void notices.push(l) }));
@@ -1239,7 +1242,7 @@ test("applyPlan: a rehome destination whose name has invisible format characters
 });
 
 test("applyPlan: the destination's project is in T3 Code but its folder is gone (rolled back, deleted): the folder is created again (R25)", async () => {
-  const { f, e, reads, deps } = convertEnv();
+  const { f, e, reads, deps } = convertEnv({ projectHome: true });
   const general = normalizeCwd(join(e.home, "T3 General"));
   f.projects.push({ id: "pg", title: "General", workspaceRoot: general, defaultModelSelection: null, archived: false, deleted: false, pinned: false, createdAt: null });
   const r = await applyPlan(mkPlan([rehomed(f, e.home, general, "ses_again", reads)]), deps({ rehomeFolders: { env: folderEnvOf(e.home) } }));
@@ -1255,7 +1258,7 @@ test("applyPlan: the destination's project is in T3 Code but its folder is gone 
 });
 
 test("applyPlan --dry-run and the confirmation list the folders a real run would create; nothing is created (R25)", async () => {
-  const { f, e, reads, deps } = convertEnv();
+  const { f, e, reads, deps } = convertEnv({ projectHome: true });
   const general = normalizeCwd(join(e.home, "T3 General"));
   const plan = mkPlan([rehomed(f, e.home, general, "ses_dry", reads)]);
   const dry = await applyPlan(plan, deps({ rehomeFolders: { env: folderEnvOf(e.home) }, dryRun: true }));
@@ -1269,7 +1272,7 @@ test("applyPlan --dry-run and the confirmation list the folders a real run would
 });
 
 test("t3sm apply --dry-run and its confirmation say \"will create folder ~/T3 General\" (R25)", async () => {
-  const { f, e, reads } = convertEnv();
+  const { f, e, reads } = convertEnv({ projectHome: true });
   const general = normalizeCwd(join(e.home, "T3 General"));
   savePlan(e.state, mkPlan([rehomed(f, e.home, general, "ses_cli", reads)]));
   const d = cli(e.state);
@@ -1289,7 +1292,7 @@ test("defaultFolderEnv takes the platform it is given (R25)", () => {
 });
 
 test("applyPlan without rehomeFolders (sync, invariant 13) never creates a folder", async () => {
-  const { f, e, reads, deps } = convertEnv();
+  const { f, e, reads, deps } = convertEnv({ projectHome: true });
   const general = normalizeCwd(join(e.home, "T3 General"));
   await applyPlan(mkPlan([rehomed(f, e.home, general, "ses_home", reads)]), deps());
   assert.ok(!existsSync(general));
@@ -1297,7 +1300,7 @@ test("applyPlan without rehomeFolders (sync, invariant 13) never creates a folde
 });
 
 test("rollback removes a destination folder the run created while it is still empty; one with something in it is kept", async () => {
-  const { f, e, reads, deps, claudeHome } = convertEnv();
+  const { f, e, reads, deps, claudeHome } = convertEnv({ projectHome: true });
   const general = normalizeCwd(join(e.home, "T3 General"));
   const deep = normalizeCwd(join(e.home, "new", "deeper", "dest"));
   const r = await applyPlan(mkPlan([rehomed(f, e.home, general, "ses_g", reads), rehomed(f, e.home, deep, "ses_d", reads)]), deps({ rehomeFolders: { env: folderEnvOf(e.home) } }));
@@ -1315,7 +1318,7 @@ test("rollback removes a destination folder the run created while it is still em
 
 test("t3sm apply creates the missing General folder for a faithful copy from the home folder, says so, and imports it", async () => {
   const f = fakeT3();
-  const e = env(f);
+  const e = env(f, { projectHome: true });
   const claudeHome = join(e.home, ".claude");
   f.opts.instances = [inst("claudeAgent", claudeHome)];
   const general = normalizeCwd(join(e.home, "T3 General"));
@@ -1347,7 +1350,7 @@ test("t3sm apply creates the missing General folder for a faithful copy from the
 
 test("applyPlan: an orphan copy is not written when T3 Code lists the session's thread again right before the write (thread lists read as complete are re-checked)", async () => {
   const f = fakeT3();
-  const e = env(f);
+  const e = env(f, { projectHome: true });
   const claudeHome = join(e.home, ".claude");
   f.opts.instances = [inst("claudeAgent", claudeHome)];
   const general = normalizeCwd(join(e.home, "T3 General"));
@@ -1394,7 +1397,7 @@ test("applyPlan: an orphan copy is not written when T3 Code lists the session's 
 });
 test("applyPlan: a failed re-check of T3 Code's threads defers the orphan copies only (nothing journaled or created for them); the run goes on", async () => {
   const f = fakeT3();
-  const e = env(f);
+  const e = env(f, { projectHome: true });
   const claudeHome = join(e.home, ".claude");
   f.opts.instances = [inst("claudeAgent", claudeHome)];
   const general = normalizeCwd(join(e.home, "T3 General"));

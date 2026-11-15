@@ -14,6 +14,7 @@ import { encodeClaudeProjectDir, normalizeCwd } from "../../src/core/paths.ts";
 import { uuidV5 } from "../../src/core/uuid.ts";
 import type { AccountConfig, CanonicalTranscript, DiscoveredSession, HarnessId, JournalEntry, PlanItem } from "../../src/core/types.ts";
 import { SessionActiveError, SourceBusyError, type SourceAdapter } from "../../src/sources/types.ts";
+import { projectScratch } from "../plan/helpers.ts";
 
 const DAY = 86_400_000;
 const ROOT = "C:/work/demo";
@@ -607,7 +608,8 @@ test("integration: a home-folder Claude session is discovered, planned as a fait
   const { createClaudeAdapter } = await import("../../src/sources/claude.ts");
   const { buildPlan } = await import("../../src/plan/planner.ts");
   const { defaultConfig } = await import("../../src/core/config.ts");
-  const base = mkdtempSync(join(tmpdir(), "t3sm-faithful-it-"));
+  // `proj` is the copy's own project: it must not be a temp folder (on Linux every folder under /tmp is one).
+  const base = projectScratch("t3sm-faithful-it-");
   temps.push(base);
   const claudeHome = join(base, ".claude");
   const proj = join(base, "proj");

@@ -1,9 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { acquireLock } from "../../src/core/lock.ts";
+import { sameCwd } from "../../src/core/paths.ts";
 import type { CommandRunner, RunResult } from "../../src/core/run.ts";
 import type { JournalEntry } from "../../src/core/types.ts";
 import type { Clock, Heartbeat } from "../../src/ops/watch.ts";
@@ -831,9 +832,10 @@ test("updateRunner: a call without cwd never runs in the folder t3sm was started
   }
   const tmp = (await import("node:os")).tmpdir();
   assert.deepEqual(seen, [tmp, tmp, "C:/work/clone", tmp, tmp, "C:/work/clone"], "every call has a cwd: the temp folder unless the caller names one");
-  // The real thing: the child's working folder is the temp folder.
+  // The real thing: the child's working folder is the temp folder. process.cwd() is the real path (macOS:
+  // /private/var/folders/... for the /var/folders/... that tmpdir() gives), so both sides are compared resolved.
   const r = await updateRunner(process.platform, process.env)(process.execPath, ["-e", "process.stdout.write(process.cwd())"]);
-  assert.equal(r.stdout.toLowerCase(), tmp.toLowerCase());
+  assert.ok(sameCwd(realpathSync(r.stdout), realpathSync(tmp)), `${r.stdout} is ${tmp}`);
 });
 
 /** Timers that fire only when the test says so. */

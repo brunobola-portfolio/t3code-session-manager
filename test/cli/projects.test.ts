@@ -11,6 +11,7 @@ import { normalizeCwd } from "../../src/core/paths.ts";
 import { rollbackRun } from "../../src/ops/rollback.ts";
 import { normalizeFolder, otherFoldersChanged, setRoute, unsetRoute } from "../../src/ops/projects.ts";
 import { defaultConfig, routeAccount } from "../../src/core/config.ts";
+import { detectCaps } from "../../src/ui/caps.ts";
 import { T3NotRunning } from "../../src/t3/errors.ts";
 import type { DiscoveredSession } from "../../src/core/types.ts";
 import type { SourceAdapter } from "../../src/sources/types.ts";
@@ -56,9 +57,12 @@ function setup(o: { routes?: { match: string; account: string }[]; noConfig?: bo
   const out: string[] = [];
   const err: string[] = [];
   const answers: string[] = [];
+  const env = { T3SM_HOME: state, LANG: "en_US.UTF-8" };
+  // A wide screen: the messages hold temp paths (80 characters and more on macOS and on CI), which would wrap at
+  // the default 80 columns, a long one even mid-path, so a sentence would match only on hosts with short paths.
   const io: Io = {
     stdout: (s) => void out.push(s), stderr: (s) => void err.push(s), isTTY: false,
-    prompt: async () => answers.shift() ?? "", env: { T3SM_HOME: state, LANG: "en_US.UTF-8" },
+    prompt: async () => answers.shift() ?? "", env, caps: detectCaps(env, process.platform, { isTTY: false, columns: 1000 }),
   };
   const deps = (connect: ProjectsDeps["connect"] = async () => t3.api): ProjectsDeps => ({ home, adapters: [adapter(sessions)], connect, now: () => Date.now() });
   return { home, state, demo, other, t3, io, out: () => out.join(""), err: () => err.join(""), answers, deps, config: () => readFileSync(join(state, "config.json"), "utf8") };

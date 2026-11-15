@@ -9,7 +9,7 @@ import type { PlanItem } from "../../src/core/types.ts";
 import type { ProviderInstanceInfo, T3Api, T3Project, T3Thread } from "../../src/t3/api.ts";
 import { sameCwd } from "../../src/core/paths.ts";
 import { T3HttpError } from "../../src/t3/errors.ts";
-import { sess } from "../plan/helpers.ts";
+import { projectScratch, sess } from "../plan/helpers.ts";
 
 export const DAY = 86_400_000;
 
@@ -181,9 +181,12 @@ after(() => {
   for (const t of temps.splice(0)) rmSync(t, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
 });
 
-/** A temp dir with an `<encoded>` folder for synthetic transcripts (removed after the test file). */
-export function tempHome(): { home: string; dir: string; state: string } {
-  const home = mkdtempSync(join(tmpdir(), "t3sm-apply-"));
+/**
+ * A temp dir with an `<encoded>` folder for synthetic transcripts (removed after the test file). `projectHome`: one
+ * t3sm classifies as a project folder on every host (projectScratch), for folders t3sm must accept or create in it.
+ */
+export function tempHome(o: { projectHome?: boolean } = {}): { home: string; dir: string; state: string } {
+  const home = o.projectHome ? projectScratch("t3sm-apply-") : mkdtempSync(join(tmpdir(), "t3sm-apply-"));
   temps.push(home);
   const dir = join(home, ".claude", "projects", "C--work-demo");
   mkdirSync(dir, { recursive: true });
