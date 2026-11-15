@@ -300,9 +300,9 @@ test("rollback lists organize changes in organize's words (titles, never ids or 
   f.threads.get("import:claudeAgent:a1")!.title = "Mine \u001b[31mred\u001b[0m";
   const a = fakeIo(t.state);
   assert.equal(await rollbackCommand(["--dry-run", "--run", "org2"], a.io, { home: t.root, connect }), 0, a.err());
-  assert.match(a.out(), /Organize changes left alone \(changed in T3 Code since t3sm made them\) \(1\)\n {2}- 'Mine \[31mred\[0m' \(demo\): changed in T3 Code since t3sm's change\n/);
+  assert.match(a.out(), /Organize changes left alone \(changed in T3 Code since t3sm made them\) \(1\)\n {2}[-•] 'Mine \[31mred\[0m' \(demo\): changed in T3 Code since t3sm's change\n/);
   const b = fakeIo(t.state);
   assert.equal(await rollbackCommand(["--dry-run", "--run", "org1"], b.io, { home: t.root, connect }), 0, b.err());
-  assert.match(b.out(), /Revert organize changes \(2\)\n {2}- Unpin project 'demo'\n {2}- Unarchive 'Mine \[31mred\[0m' \(demo\)\n/);
+  assert.match(b.out(), /Revert organize changes \(2\)\n {2}[-•] Unpin project 'demo'\n {2}[-•] Unarchive 'Mine \[31mred\[0m' \(demo\)\n/);
   for (const out of [a.out(), b.out()]) assert.doesNotMatch(out, /import:claudeAgent|pin p3|"|\u001b/);
 });

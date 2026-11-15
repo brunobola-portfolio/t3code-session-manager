@@ -251,7 +251,7 @@ test("organize --undo <run> --dry-run lists what would be reverted and writes no
   const c = io(w.state);
   assert.equal(await organizeCommand(["--undo", runId, "--dry-run"], c.io, w.deps()), 0, c.err());
   assert.match(c.out(), new RegExp(`Would revert \\d+ changes of organize run ${runId}`));
-  assert.match(c.out(), /Will revert \(8\)\n {2}- Unpin project 'other'\n[\s\S]*\n {2}- Unarchive 'Summarize this file' \(demo\)\n/);
+  assert.match(c.out(), /Will revert \(8\)\n {2}[-•] Unpin project 'other'\n[\s\S]*\n {2}[-•] Unarchive 'Summarize this file' \(demo\)\n/);
   assert.doesNotMatch(c.out(), /import:/);
   assert.match(c.out(), /Dry run: nothing was changed\./);
   assert.equal(writes(w.f).length, callsBefore);
@@ -391,7 +391,7 @@ test("organize --undo names what it leaves alone by title: a conversation the us
   c.answers.push("no");
   assert.equal(await organizeCommand(["--undo"], c.io, w.deps()), 0, c.err());
   assert.deepEqual(c.asked, [`Undo organize run ${runId}? Type yes to continue: `]);
-  assert.match(c.out().replace(/\x1b\[[0-9;]*m/g, ""), /Left alone, changed in T3 Code since t3sm made them \(1\)\n {2}- 'My own title' \(demo\): changed in T3 Code since t3sm's change/);
+  assert.match(c.out().replace(/\x1b\[[0-9;]*m/g, ""), /Left alone, changed in T3 Code since t3sm made them \(1\)\n {2}[-•] 'My own title' \(demo\): changed in T3 Code since t3sm's change/);
   assert.match(c.out(), /Nothing changed\./);
 });
 
@@ -418,7 +418,7 @@ test("organize: titles, project names, errors and notes with terminal escapes ar
   w.f.opts.writeError = (call) => (call.startsWith("unarchive:") ? { error: new Error(ESC_ERROR) } : undefined);
   const u = io(w.state);
   assert.equal(await organizeCommand(["--undo", runId, "--yes"], u.io, w.deps()), 5);
-  assert.match(u.out().replace(/\n +/g, " "), /Could not revert \(1\) - Unarchive 'Fix \[31mred\[0m \]8;;http:\/\/xlink\]8;;' \(demo .*\): refused/);
+  assert.match(u.out().replace(/\n +/g, " "), /Could not revert \(1\) [-•] Unarchive 'Fix \[31mred\[0m \]8;;http:\/\/xlink\]8;;' \(demo .*\): refused/);
   assert.equal(raw(u.out() + u.err()), false, JSON.stringify(u.out()));
 
   const d = io(w.state);

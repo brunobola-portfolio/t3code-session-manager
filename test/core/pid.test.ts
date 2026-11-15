@@ -105,7 +105,14 @@ test("processInfo: invalid pids never reach a command; a hung reader times out t
   const r = runner("{}");
   for (const bad of [0, -1, 1.5, 2 ** 31, Number.NaN]) assert.equal(await processInfo(bad, "win32", r.run, { env: {} }), null);
   assert.equal(r.calls.length, 0);
-  assert.equal(await processInfo(4242, "win32", () => new Promise(() => {}), { env: {}, timeoutMs: 20 }), null);
+  // A real hung reader (a child process, a file read) holds a handle that keeps the event loop alive, while the time
+  // limit is unref'd (it never keeps the process alive on its own). This fake holds a timer the same way: a promise
+  // that holds nothing lets the loop empty, and Node 22's test runner then cancels the waiting test.
+  let hold: NodeJS.Timeout | undefined;
+  const hung = () => new Promise<never>(() => { hold = setInterval(() => {}, 1_000); });
+  try {
+    assert.equal(await processInfo(4242, "win32", hung, { env: {}, timeoutMs: 20 }), null);
+  } finally { clearInterval(hold); }
 });
 
 test("processInfo: every reader command gets the time limit (15 s by default), so the runner kills a reader that hangs", async () => {

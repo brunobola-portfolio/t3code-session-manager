@@ -1,6 +1,12 @@
 // Synthetic builders shared by the plan tests. No personal data: paths are `C:/work/demo` style.
+import { mkdirSync, mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { defaultConfig } from "../../src/core/config.ts";
+import { normalizeCwd } from "../../src/core/paths.ts";
 import type { AccountConfig, Config, DiscoveredSession, HarnessId, SessionFlag } from "../../src/core/types.ts";
+import { classifyFolder } from "../../src/plan/folders.ts";
 
 export const HOME = "C:/Users/demo";
 export const accounts: AccountConfig[] = [
@@ -42,4 +48,21 @@ export function sess(o: SessOpts = {}): DiscoveredSession {
     flags: o.flags ?? [],
     cwdOffsetBytes: 100,
   };
+}
+
+/**
+ * A new, empty scratch folder that t3sm classifies as a project folder on this host, for tests whose folders must not
+ * be temp ones (a destination t3sm creates, a copy's own project). os.tmpdir() serves on Windows and macOS once the
+ * test's FolderEnv names another tmpdir; on Linux it is /tmp, and every folder under /tmp is a temp folder whatever
+ * FolderEnv says, so the folder is made in the checkout's git-ignored .spike/tmp instead. The caller removes it.
+ */
+export function projectScratch(prefix: string): string {
+  const repo = fileURLToPath(new URL("../../", import.meta.url));
+  for (const root of [tmpdir(), join(repo, ".spike", "tmp")]) {
+    const env = { platform: process.platform, home: join(root, "no-such-home"), tmpdir: join(root, "no-such-tmp"), env: {}, t3BaseDir: join(root, "no-such-home", ".t3"), t3WorktreesDir: join(root, "no-such-home", ".t3", "worktrees") };
+    if (classifyFolder(normalizeCwd(join(root, `${prefix}x`, "T3 General")), env) !== "project") continue;
+    mkdirSync(root, { recursive: true });
+    return mkdtempSync(join(root, prefix));
+  }
+  throw new Error("no scratch folder that t3sm classifies as a project folder (os.tmpdir() and the checkout are temp ones)");
 }
