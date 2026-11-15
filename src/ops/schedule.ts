@@ -7,7 +7,9 @@
 // registered with %SystemRoot%\System32\schtasks.exe /Create /XML <file> /TN <name> /F. The principal is the current
 // user with LogonType InteractiveToken (runs only while that user is logged on, in their session) and RunLevel
 // LeastPrivilege (no elevation). Interval: TimeTrigger with an indefinite Repetition; --watch: LogonTrigger for that
-// user only, started at once with /Run. Settings: IgnoreNew (never two at once), runs on battery, StartWhenAvailable
+// user only, started at once with /Run, plus a keep-alive TimeTrigger repeating every KEEPALIVE_MINUTES: while the
+// watcher runs, IgnoreNew drops it (and a run that finds the watcher's pipe taken exits 0 at once); after a crash, or
+// when a self-restarting watcher's successor (which runs outside the task) failed to start, it brings one back. Settings: IgnoreNew (never two at once), runs on battery, StartWhenAvailable
 // (a missed run starts at logon/wake), ExecutionTimeLimit PT2H for the interval job (generous on purpose: a hard
 // terminate in the middle of a wave is exactly what the journal has to repair) / PT0S (unlimited) for the watcher.
 // No <Hidden>: that flag hides the task from the Task Scheduler library, not its window; the window is hidden by
@@ -16,17 +18,23 @@
 // Result" is always 0); the outcome lives in <state>/logs/sync.log. Without conhost: `cmd.exe /c start "" /min ...`.
 
 import { existsSync } from "node:fs";
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { randomBytes } from "node:crypto";
 import { spawn } from "node:child_process";
 import { homedir, release, userInfo } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { atomicWrite } from "../core/fsutil.ts";
+import type { CommandRunner, RunResult } from "../core/run.ts";
+import { atomicWrite, renameRetrying, type AtomicWriteDeps } from "../core/fsutil.ts";
 import { ConfigError } from "../core/config.ts";
+import { system32, systemRoot as envSystemRoot } from "../core/sysroot.ts";
+import { npmEnv } from "./update.ts";
 
 export const TASK_NAME = "t3code-session-manager sync";
 export const LAUNCHD_LABEL = "dev.t3sm.sync";
 export const CRON_TAG = "# t3sm";
+/** The watcher's keep-alive: a `sync --watch` started this often exits at once while one runs (cron, Task Scheduler). */
+export const KEEPALIVE_MINUTES = 15;
 /** Fixed StartBoundary: the repetition grid only; StartWhenAvailable covers the first run. */
 const START_BOUNDARY = "2026-01-01T00:00:00";
 
@@ -41,8 +49,10 @@ export interface ScheduleSpec {
   query: string[];
   /** Files written before `install` and deleted by `remove` (task XML, LaunchAgent plist). */
   files?: ScheduleFile[];
-  /** cron: the tagged line installSchedule merges into the user's crontab (other lines are kept). */
+  /** cron: the main tagged line (the job, or the watcher's @reboot). */
   cronLine?: string;
+  /** cron: every tagged line installSchedule merges into the user's crontab (other lines are kept): --watch adds the keep-alive. */
+  cronLines?: string[];
   watch: boolean;
 }
 
@@ -55,7 +65,7 @@ export interface SpecOptions {
   uid?: number;
   /** win32: absolute conhost.exe supporting --headless, or null for the `start /min` fallback (default: detected). */
   conhost?: string | null;
-  /** win32: %SystemRoot% (default from the environment, else C:\Windows). */
+  /** win32: %SystemRoot% (default from the environment, else C:\Windows; a value that is not a drive path: C:\Windows). */
   systemRoot?: string;
   /** win32: the t3sm state dir; the task XML is written to <stateDir>/schedule/t3sm-task.xml. */
   stateDir?: string;
@@ -89,7 +99,7 @@ function cronWhen(n: number): string {
 export function detectConhost(env: NodeJS.ProcessEnv = process.env, osRelease: string = release(), exists: (p: string) => boolean = existsSync): string | null {
   const build = Number(osRelease.split(".")[2] ?? 0);
   if (!(build >= 17763)) return null;
-  const p = path.win32.join(env["SystemRoot"] ?? env["windir"] ?? "C:\\Windows", "System32", "conhost.exe");
+  const p = system32(env, "conhost.exe");
   return exists(p) ? p : null;
 }
 
@@ -108,19 +118,21 @@ export function taskXml(i: TaskXmlInput): string {
   const cmd = `"${i.nodePath}" "${i.binPath}" ${i.args.join(" ")}`;
   const command = i.conhost ?? path.win32.join(i.systemRoot, "System32", "cmd.exe");
   const args = i.conhost ? `--headless ${cmd}` : `/c start "" /min ${cmd}`;
-  const trigger = i.watch
-    ? `    <LogonTrigger>
-      <Enabled>true</Enabled>
-      <UserId>${xml(i.userId)}</UserId>
-    </LogonTrigger>`
-    : `    <TimeTrigger>
+  const repeating = (minutes: number): string => `    <TimeTrigger>
       <Repetition>
-        <Interval>PT${i.everyMinutes}M</Interval>
+        <Interval>PT${minutes}M</Interval>
         <StopAtDurationEnd>false</StopAtDurationEnd>
       </Repetition>
       <StartBoundary>${START_BOUNDARY}</StartBoundary>
       <Enabled>true</Enabled>
     </TimeTrigger>`;
+  const trigger = i.watch
+    ? `    <LogonTrigger>
+      <Enabled>true</Enabled>
+      <UserId>${xml(i.userId)}</UserId>
+    </LogonTrigger>
+${repeating(KEEPALIVE_MINUTES)}`
+    : repeating(i.everyMinutes);
   return `<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo>
@@ -167,7 +179,7 @@ export function scheduleSpec(platform: NodeJS.Platform, nodePath: string, binPat
   const watch = opts.watch ?? false;
   const args = watch ? ["sync", "--watch", "--quiet"] : ["sync", "--quiet"];
   if (platform === "win32") {
-    const systemRoot = opts.systemRoot ?? process.env["SystemRoot"] ?? process.env["windir"] ?? "C:\\Windows";
+    const systemRoot = envSystemRoot(opts.systemRoot !== undefined ? { SystemRoot: opts.systemRoot } : process.env);
     const schtasks = path.win32.join(systemRoot, "System32", "schtasks.exe");
     const conhost = opts.conhost === undefined ? detectConhost() : opts.conhost;
     const userId = opts.userId ?? (process.env["USERDOMAIN"] ? `${process.env["USERDOMAIN"]}\\${process.env["USERNAME"] ?? userInfo().username}` : userInfo().username);
@@ -215,14 +227,15 @@ ${when}
       files: [{ path: plist, content }],
     };
   }
-  const line = `${watch ? "@reboot" : cronWhen(everyMinutes)} ${cronQuote(nodePath)} ${cronQuote(binPath)} ${args.join(" ")} ${CRON_TAG}`;
-  return { kind: "cron", watch, install: [["crontab", "-"]], remove: [["crontab", "-"]], query: ["crontab", "-l"], cronLine: line };
+  const body = `${cronQuote(nodePath)} ${cronQuote(binPath)} ${args.join(" ")} ${CRON_TAG}`;
+  const line = `${watch ? "@reboot" : cronWhen(everyMinutes)} ${body}`;
+  const lines = watch ? [line, `${cronWhen(KEEPALIVE_MINUTES)} ${body}`] : [line];
+  return { kind: "cron", watch, install: [["crontab", "-"]], remove: [["crontab", "-"]], query: ["crontab", "-l"], cronLine: line, cronLines: lines };
 }
 
 // ---------- running the spec ----------
 
-export interface RunResult { code: number; stdout: string; stderr: string }
-export type CommandRunner = (cmd: string, args: string[], opts?: { input?: string }) => Promise<RunResult>;
+export type { CommandRunner, RunResult } from "../core/run.ts";
 
 /** schtasks /XML prints UTF-16 when redirected on some builds: decode by BOM / NUL pattern, else UTF-8. */
 function decodeOutput(b: Buffer): string {
@@ -231,23 +244,41 @@ function decodeOutput(b: Buffer): string {
   return b.toString("utf8");
 }
 
-/** spawn without a shell; ENOENT and other spawn errors come back as code 127. */
+/** realRunner's time limit when the call names none: no scheduler or pid-reader call takes anywhere near it. */
+export const REAL_RUNNER_TIMEOUT_MS = 60_000;
+
+/**
+ * spawn without a shell; ENOENT and other spawn errors come back as code 127. The child never inherits
+ * CLAUDE_CONFIG_DIR (invariant 11), and every call has a time limit (`timeoutMs`, default REAL_RUNNER_TIMEOUT_MS):
+ * past it the child is killed by its own handle and the result is exit 124, so a hung schtasks.exe, launchctl or
+ * crontab never holds the state lock (schedule commands, the update) forever.
+ */
 export const realRunner: CommandRunner = (cmd, args, opts) => new Promise((resolve) => {
   const out: Buffer[] = [];
   const err: Buffer[] = [];
   let done = false;
+  let timer: NodeJS.Timeout | undefined;
   const finish = (code: number, fallbackErr = ""): void => {
     if (done) return;
     done = true;
+    clearTimeout(timer);
     resolve({ code, stdout: decodeOutput(Buffer.concat(out)), stderr: decodeOutput(Buffer.concat(err)) || fallbackErr });
   };
   let child;
   try {
-    child = spawn(cmd, args, { shell: false, windowsHide: true, stdio: ["pipe", "pipe", "pipe"] });
+    child = spawn(cmd, args, { shell: false, windowsHide: true, cwd: opts?.cwd, env: npmEnv(process.env), stdio: ["pipe", "pipe", "pipe"] });
   } catch (e) {
     finish(127, (e as Error).message);
     return;
   }
+  const c = child;
+  const ms = opts?.timeoutMs ?? REAL_RUNNER_TIMEOUT_MS;
+  timer = setTimeout(() => {
+    if (c.exitCode === null && c.signalCode === null) { try { c.kill(); } catch { /* gone */ } }
+    for (const st of [c.stdout, c.stderr]) { try { st.destroy(); } catch { /* closed */ } }
+    finish(124, `timed out after ${Math.round(ms / 1000)} s`);
+  }, ms);
+  timer.unref();
   child.stdout.on("data", (d: Buffer) => void out.push(d));
   child.stderr.on("data", (d: Buffer) => void err.push(d));
   child.on("error", (e) => finish(127, e.message));
@@ -298,27 +329,34 @@ export interface ScheduleFs {
   exists(path: string): boolean;
 }
 
+/**
+ * Writes a schedule file: UTF-8 through atomicWrite; the task XML (UTF-16LE, which atomicWrite does not write) to a temp
+ * file in the same directory, then renamed over the old one with atomicWrite's retries (renameRetrying: the antivirus
+ * or the indexer holding the old XML must not fail `schedule install` or an update's re-registration).
+ */
+export async function writeScheduleFile(f: ScheduleFile, deps: AtomicWriteDeps = {}): Promise<void> {
+  if (f.encoding !== "utf16le-bom") return atomicWrite(f.path, f.content, deps);
+  await mkdir(path.dirname(f.path), { recursive: true });
+  const tmp = `${f.path}.${process.pid}.${randomBytes(6).toString("hex")}.tmp`;
+  await writeFile(tmp, scheduleFileBytes(f));
+  try { await renameRetrying(tmp, f.path, deps); } catch (e) { await rm(tmp, { force: true }); throw e; }
+}
+
 export const realScheduleFs: ScheduleFs = {
-  write: async (f) => {
-    if (f.encoding !== "utf16le-bom") return atomicWrite(f.path, f.content);
-    // atomicWrite is UTF-8 text: temp file + rename, same directory.
-    await mkdir(path.dirname(f.path), { recursive: true });
-    const tmp = `${f.path}.${process.pid}.tmp`;
-    await writeFile(tmp, scheduleFileBytes(f));
-    try { await rename(tmp, f.path); } catch (e) { await rm(tmp, { force: true }); throw e; }
-  },
+  write: (f) => writeScheduleFile(f),
   remove: (p) => rm(p, { force: true }),
   exists: existsSync,
 };
 
 /**
  * Idempotent: schtasks /F replaces; launchd is booted out (failure ignored) and bootstrapped, with one more
- * bootout + bootstrap if the first bootstrap fails (a stale registration); cron replaces the tagged line.
+ * bootout + bootstrap if the first bootstrap fails (a stale registration); cron replaces the tagged lines (all of them,
+ * so the keep-alive line is there once however often install runs).
  */
 export async function installSchedule(spec: ScheduleSpec, run: CommandRunner, fs: ScheduleFs = realScheduleFs): Promise<void> {
   if (spec.kind === "cron") {
     const lines = withoutTagged(await readCrontab(run));
-    await must(run, spec.install[0]!, [...lines, spec.cronLine!].join("\n") + "\n");
+    await must(run, spec.install[0]!, [...lines, ...(spec.cronLines ?? [spec.cronLine!])].join("\n") + "\n");
     return;
   }
   for (const f of spec.files ?? []) await fs.write(f);

@@ -1,0 +1,59 @@
+* * * * * * * @ o o o  Passo 8 de 11 - Importação completa
+Agora o resto. Antes de responderes s:
+- Não deixes o computador adormecer até terminar.
+- Fecha as sessões que queres importar: um projeto em uso espera por outra
+  execução.
+- Pausa a sincronização na nuvem da pasta pessoal (OneDrive, Dropbox, iCloud).
+A atualizar o plano...
+
++- Isto é o que vou fazer ---------------------------------+
+| Importar      23 conversas                               |
+| Para           3 projetos                                |
+| Em uso agora   1 projeto espera por outra execução       |
+| Desfazer      t3sm rollback --run <id> --archive-threads |
++----------------------------------------------------------+
+Importar tudo agora? Isto escreve no T3 Code; t3sm rollback
+--archive-threads desfá-lo. [s/N/?/v/q] s
+24 de 24 tratadas em 4 s - 18 importadas
+
++- ! 18 importadas, 6 não foram importadas ----------------+
+| Importadas      18                                       |
+| Não importadas   6                                       |
+| Execução        R1                                       |
+| Desfazer        t3sm rollback --run R1 --archive-threads |
++----------------------------------------------------------+
+
+x 6 conversas não puderam ser importadas
+demo - Fix the login form
+  o T3 Code não a importou - corre t3sm apply outra vez
+api - Plan the API
+  pasta ilegível - retoma-a num terminal
+app - conversa sem título
+  conta desligada no T3 - liga-a no T3 Code
+billing-service - Refactor the billing module and add tests for it
+  ficou noutro projeto - vê-a no T3 Code
+demo - Notes
+  sessão ilegível - tenta mais tarde
+demo - conversa sem título
+  destino inutilizável - escolhe no t3sm start
+> Mais ajuda: t3sm help not-imported, cwd-unreadable, instance-unavailable,
+  project-mismatch, convert
+
+Algumas conversas não foram importadas: a lista acima diz porquê. O t3sm apply
+volta a tentar.
+
+* * * * * * * * * @ o  Passo 10 de 11 - Manter sincronizado
+Vão aparecendo sessões novas enquanto trabalhas. O vigilante em segundo plano
+importa-as por ti, com cuidado: espera pelas sessões em uso e nunca move
+ficheiros nem cria instâncias.
+Instalar agora o vigilante em segundo plano? Isto acrescenta uma tarefa ao
+agendador do sistema. Desfazer: t3sm schedule remove. [s/N/?/v/q] q
+
++- O que esta sessão fez ----------------------------------------------+
+| ! Importação terminada com 6 falhas (execução R1)                    |
+|   Desfazer: t3sm rollback --run R1 --archive-threads                 |
+|                                                                      |
+| t3sm runs lista todas as execuções; as threads são arquivadas, nunca |
+| apagadas.                                                            |
++----------------------------------------------------------------------+
+Parado. Nada ficou a meio; corre t3sm outra vez para continuar.

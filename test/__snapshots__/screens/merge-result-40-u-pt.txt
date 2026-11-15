@@ -1,0 +1,30 @@
+✓ 1 sessão juntada. Execução
+  20261115-120000-a1b2; desfaz com t3sm
+  rollback --run 20261115-120000-a1b2.
+
+demo · 1a2b3c4d
+  • Thread nova thread-9f8e (+12
+    mensagens); a thread antiga foi
+    arquivada.
+  • Num terminal: claude --resume
+    9f8e7d6c-0000-4000-8000-000000000003
+  • O T3 Code dá o título à thread nova
+    a partir do registo; a thread antiga
+    chamava-se "Fix the login form"
+    (muda o nome da nova no T3 Code, se
+    quiseres).
+
+A revisão é um ficheiro de sessão novo
+ao lado do original; o ficheiro original
+nunca muda. Continua na thread nova no
+T3 Code, ou num terminal com
+claude --resume <id da revisão>. O id da
+sessão original continua a poder ser
+retomado no terminal, mas passa a ser um
+ramo desatualizado, e o seletor do
+claude --resume mostra os dois. Nunca
+tenhas a mesma sessão aberta no T3 Code
+e num terminal ao mesmo tempo.
+! 5e6f7a8b: não juntada: outra sessão do
+  projeto está em uso; corre outra vez
+  quando estiver parada

@@ -5,7 +5,7 @@ import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { after } from "node:test";
 import { main, type Io } from "../../src/cli/main.ts";
-import { projectsCommand, type ProjectsDeps } from "../../src/cli/commands/projects.ts";
+import { othersRefusal, projectsCommand, type ProjectsDeps } from "../../src/cli/commands/projects.ts";
 import { Journal } from "../../src/core/journal.ts";
 import { normalizeCwd } from "../../src/core/paths.ts";
 import { rollbackRun } from "../../src/ops/rollback.ts";
@@ -46,6 +46,8 @@ function setup(o: { routes?: { match: string; account: string }[]; noConfig?: bo
       ],
       defaultAccount: "claudeAgent",
       routes: o.routes ?? [],
+      // The test home lives under os.tmpdir(): its folders are temp ones, imported once that question is answered.
+      organize: { decided: ["temp"], folders: { temp: "import" } },
     }, null, 2) + "\n");
   }
   const old = Date.now() - 40 * 86_400_000;
@@ -56,14 +58,14 @@ function setup(o: { routes?: { match: string; account: string }[]; noConfig?: bo
   const answers: string[] = [];
   const io: Io = {
     stdout: (s) => void out.push(s), stderr: (s) => void err.push(s), isTTY: false,
-    prompt: async () => answers.shift() ?? "", env: { T3SM_HOME: state },
+    prompt: async () => answers.shift() ?? "", env: { T3SM_HOME: state, LANG: "en_US.UTF-8" },
   };
   const deps = (connect: ProjectsDeps["connect"] = async () => t3.api): ProjectsDeps => ({ home, adapters: [adapter(sessions)], connect, now: () => Date.now() });
   return { home, state, demo, other, t3, io, out: () => out.join(""), err: () => err.join(""), answers, deps, config: () => readFileSync(join(state, "config.json"), "utf8") };
 }
 
 function project(t3: FakeT3, root: string, instanceId: string | null, archived = false): void {
-  t3.projects.push({ id: `p${t3.projects.length + 1}`, title: root.split("/").pop()!, workspaceRoot: root, defaultModelSelection: instanceId === null ? null : { instanceId, model: "m" } as never, archived, deleted: false });
+  t3.projects.push({ id: `p${t3.projects.length + 1}`, title: root.split("/").pop()!, workspaceRoot: root, defaultModelSelection: instanceId === null ? null : { instanceId, model: "m" } as never, archived, deleted: false, pinned: false, createdAt: null });
 }
 
 test("setRoute: inserts the exact-folder route right before the first glob matching it, replaces an existing one in place, never reorders", () => {
@@ -156,14 +158,14 @@ test("projects table: header, one line per project; an archived project says so"
   project(s.t3, s.demo, null, true);
   assert.equal(await projectsCommand([], s.io, s.deps()), 0, s.err());
   assert.match(s.out(), /Folder\s+Account\s+Reason\s+Pending\s+In T3 Code\s+In use/);
-  assert.match(s.out(), /demo\s+Claude · Personal\s+recent-activity\s+2\s+archived\s+no/);
+  assert.match(s.out(), /demo\s+Claude · Personal\s+latest session\s+2\s+archived\s+no/);
 });
 
 test("projects with T3 Code not running shows the local columns, says so and exits 0", async () => {
   const s = setup();
   assert.equal(await projectsCommand([], s.io, s.deps(down)), 0, s.err());
   assert.match(s.out(), /T3 Code is not running/);
-  assert.match(s.out(), /demo\s+Claude · Personal\s+recent-activity\s+2/);
+  assert.match(s.out(), /demo\s+Claude · Personal\s+latest session\s+2/);
   assert.doesNotMatch(s.out(), /In T3 Code/);
 });
 
@@ -174,7 +176,7 @@ test("projects set writes an exact-folder route before the globs (T3 Code down: 
   assert.deepEqual(c.routes, [{ match: s.demo, account: "claude-work" }, { match: "~/work/**", account: "claudeAgent" }], "glob kept as written, exact first");
   assert.equal(c.accounts[0].home, "~/.claude", "the file's own spelling is kept");
   assert.match(s.out(), /T3 Code is not running/);
-  assert.match(s.out(), /already in T3 Code keep their account/);
+  assert.match(s.out().replace(/\n +/g, " "), /already in T3 Code keep their account/);
 });
 
 test("projects set: ~ is the home folder; a folder t3sm does not know as a project gets a note; the result says what the route decides", async () => {
@@ -182,13 +184,13 @@ test("projects set: ~ is the home folder; a folder t3sm does not know as a proje
   project(s.t3, s.demo, "claudeAgent");
   assert.equal(await projectsCommand(["set", "~/work/demo", "claude-work", "--yes"], s.io, s.deps(down)), 0, s.err());
   assert.deepEqual(JSON.parse(s.config()).routes, [{ match: s.demo, account: "claude-work" }]);
-  assert.match(s.out(), /New threads here start on Claude · Work, and OpenCode \/ compressed Codex sessions not imported yet go to it; Claude Code sessions keep the account they were recorded in\./);
+  assert.match(s.out().replace(/\n +/g, " "), /New threads here start on Claude · Work, and OpenCode \/ compressed Codex sessions not imported yet go to it; Claude Code sessions keep the account they were recorded in\./);
   const known = setup();
   project(known.t3, known.demo, "claudeAgent");
   assert.equal(await projectsCommand(["set", known.demo, "claude-work", "--yes"], known.io, known.deps()), 0, known.err());
   assert.doesNotMatch(known.out(), /not a project folder t3sm knows/);
   assert.equal(await projectsCommand(["set", known.other, "claude-work", "--yes"], known.io, known.deps()), 0, known.err());
-  assert.match(known.out(), /Note: .*other is not a project folder t3sm knows \(not in T3 Code or in the latest plan\)\. A route applies to that exact folder only, not to its sub-folders\./);
+  assert.match(known.out().replace(/\n +/g, " "), /Note: .*other is not a project folder t3sm knows \(not in T3 Code or in the latest plan\)\. A route applies to that exact folder only, not to its sub-folders\./);
   const unset = setup();
   assert.equal(await projectsCommand(["unset", "~/work/demo"], unset.io, unset.deps(down)), 0);
   assert.match(unset.out(), /No route for .*work\/demo/);
@@ -337,4 +339,116 @@ test("projects set without config.json exits 2 and says how to create it", async
   const s = setup({ noConfig: true });
   assert.equal(await projectsCommand(["set", s.demo, "claude-work", "--yes"], s.io, s.deps(down)), 2);
   assert.match(s.err(), /t3sm plan/);
+});
+
+// ---------- projects rename --suggest (spec §4.5.5) ----------
+
+/**
+ * src: created by t3sm (an old entry without a title) and still named "src" -> "demo/src". other: created by t3sm,
+ * already clean. app: created by t3sm, renamed by the user since. lib/src: the user's own project, also named "src".
+ */
+async function renameWorld() {
+  const s = setup();
+  const src = normalizeCwd(join(s.home, "work", "demo", "src"));
+  const app = normalizeCwd(join(s.home, "work", "app"));
+  const mine = normalizeCwd(join(s.home, "work", "lib", "src"));
+  const add = (id: string, root: string, title: string) => s.t3.projects.push({ id, title, workspaceRoot: root, defaultModelSelection: null, archived: false, deleted: false, pinned: false, createdAt: null });
+  add("pa", src, "src");
+  add("pb", s.other, "other");
+  add("pc", app, "My App");
+  add("pd", mine, "src");
+  const j = new Journal(join(s.state, "journal.jsonl"));
+  const run = "20261101-100000-aaaa";
+  await j.append({ t: "run-start", runId: run, at: "2026-11-01T10:00:00.000Z", command: "apply" });
+  await j.append({ t: "project-created", runId: run, projectId: "pa", root: src });
+  await j.append({ t: "project-created", runId: run, projectId: "pb", root: s.other, title: "other" });
+  await j.append({ t: "project-created", runId: run, projectId: "pc", root: app, title: "app" });
+  await j.append({ t: "run-end", runId: run, at: "2026-11-01T10:00:00.000Z", status: "ok" });
+  return { ...s, j, src };
+}
+
+const t3Writes = (t3: FakeT3): string[] => t3.calls.filter((c) => c !== "close");
+
+test("projects rename --suggest --dry-run shows before -> after for t3sm's projects still carrying t3sm's title; writes nothing", async () => {
+  const s = await renameWorld();
+  const journal = readFileSync(s.j.file, "utf8");
+  assert.equal(await projectsCommand(["rename", "--suggest", "--dry-run"], s.io, s.deps()), 0, s.err());
+  assert.ok(s.out().includes("'src' -> 'demo/src'"), s.out());
+  assert.doesNotMatch(s.out(), /My App|"other"/);
+  assert.match(s.out(), /Dry run: nothing was changed\./);
+  assert.deepEqual(t3Writes(s.t3), []);
+  assert.equal(readFileSync(s.j.file, "utf8"), journal);
+});
+
+test("projects rename --suggest refuses without a terminal and without --yes; needs --suggest", async () => {
+  const s = await renameWorld();
+  assert.equal(await projectsCommand(["rename", "--suggest"], s.io, s.deps()), 2);
+  assert.match(s.err(), /Refusing to change T3 Code without confirmation: pass --yes/);
+  assert.equal(await projectsCommand(["rename"], s.io, s.deps()), 2);
+  assert.match(s.err(), /projects rename --suggest/);
+  assert.deepEqual(t3Writes(s.t3), []);
+});
+
+test("projects rename --suggest --yes renames, journals project-title; a second run has nothing; organize --undo puts the title back", async () => {
+  const s = await renameWorld();
+  assert.equal(await projectsCommand(["rename", "--suggest", "--yes"], s.io, s.deps()), 0, s.err());
+  assert.deepEqual(t3Writes(s.t3), ["project-title:pa:demo/src"]);
+  const es = await s.j.readAll();
+  const ch = es.filter((e) => e.t === "organize-change");
+  assert.deepEqual(ch.map((e) => e.t === "organize-change" && [e.kind, e.target, e.previous, e.next]), [["project-title", "pa", "src", "demo/src"]]);
+  const runId = ch[0]!.runId;
+  assert.ok(es.some((e) => e.t === "run-start" && e.runId === runId && e.command === "projects rename"));
+  assert.match(s.out().replace(/\n +/g, " "), new RegExp(`Renamed 1 project\. Run ${runId}; undo with t3sm organize --undo ${runId}\.`));
+
+  const again = await projectsCommand(["rename", "--suggest", "--dry-run"], s.io, s.deps());
+  assert.equal(again, 0);
+  assert.match(s.out(), /No project to rename/);
+
+  const { organizeCommand } = await import("../../src/cli/commands/organize.ts");
+  assert.equal(await organizeCommand(["--undo", runId, "--yes"], s.io, { home: s.home, connect: async () => s.t3.api }), 0, s.err());
+  assert.match(s.out(), /Rename project 'demo\/src' back to 'src'/);
+  assert.equal(s.t3.projects.find((p) => p.id === "pa")!.title, "src");
+});
+
+test("projects rename --suggest on a terminal asks; no changes nothing", async () => {
+  const s = await renameWorld();
+  const io = { ...s.io, isTTY: true };
+  s.answers.push("no");
+  assert.equal(await projectsCommand(["rename", "--suggest"], io, s.deps()), 0);
+  assert.ok(s.out().includes("'src' -> 'demo/src'"), s.out());
+  assert.match(s.out(), /Nothing changed\./);
+  assert.deepEqual(t3Writes(s.t3), []);
+});
+
+test("projects rename --suggest: a title and an error with terminal escapes are printed without ESC/BEL", async () => {
+  const s = await renameWorld();
+  const bad = "src \u001b[31mred\u001b]8;;http://x\u0007";
+  s.t3.projects.find((p) => p.id === "pa")!.title = bad;
+  await s.j.append({ t: "organize-change", runId: "20261102-100000-bbbb", kind: "project-title", target: "pa", previous: "src", next: bad });
+  s.t3.opts.writeError = () => ({ error: new Error("refused \u001b[31mloudly\u001b]8;;http://x\u0007") });
+  assert.equal(await projectsCommand(["rename", "--suggest", "--yes"], s.io, s.deps()), 5, s.err());
+  assert.match(s.out(), /'src \[31mred\]8;;http:\/\/x' -> 'demo\/src'/);
+  assert.match(s.out().replace(/\n +/g, " "), /Could not rename 'src \[31mred\]8;;http:\/\/x' to 'demo\/src': refused \[31mloudly/);
+  assert.equal(/[\u001b\u0007]/.test(s.out() + s.err()), false, JSON.stringify(s.out()));
+});
+
+test("projects set: the refusal about other folders prints their paths without terminal escapes", () => {
+  const msg = othersRefusal(["C:/work/\u001b[31mred\u001b]0;pwn\u0007", "D:/w/\u202Eevil"]);
+  assert.ok(!/[\u001b\u0007\u202e]/.test(msg), JSON.stringify(msg));
+  assert.match(msg, /^Refusing: this route would also change the account of C:\/work\/.*red/);
+});
+
+test("projects rename --suggest uses the platform it is given (deps.platform), not the host's", async () => {
+  const s = await renameWorld();
+  const root = "C:\\Work\\Demo\\src";
+  s.t3.projects.push({ id: "pw", title: "src", workspaceRoot: root, defaultModelSelection: null, archived: false, deleted: false, pinned: false, createdAt: null });
+  await s.j.append({ t: "project-created", runId: "20261101-100000-aaaa", projectId: "pw", root, title: "src" });
+  const before = s.out().length;
+  assert.equal(await projectsCommand(["rename", "--suggest", "--dry-run"], s.io, { ...s.deps(), platform: "win32" }), 0, s.err());
+  // "demo/src" is the other project's new name already: the parent folder tells them apart.
+  assert.ok(s.out().slice(before).includes("'src' -> 'Demo/src · Work'"), s.out());
+  const mid = s.out().length;
+  assert.equal(await projectsCommand(["rename", "--suggest", "--dry-run"], s.io, { ...s.deps(), platform: "linux" }), 0, s.err());
+  // POSIX reads a backslash as part of a name: the whole root is one folder name.
+  assert.ok(s.out().slice(mid).includes("'src' -> 'C:\\Work\\Demo\\src'"), s.out().slice(mid));
 });

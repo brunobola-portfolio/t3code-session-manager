@@ -1,12 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  ConfigError, defaultConfig, detectAccounts, expandConfig, loadConfig, resolveRemap, routeAccount, saveConfig, validateConfig,
+  ConfigError, applyOrganizePatch, defaultConfig, detectAccounts, expandConfig, historyRule, isDecided, loadConfig, organizeSettings, resolveRemap, routeAccount, saveConfig, updateAuto, validateConfig,
 } from "../../src/core/config.ts";
-import type { AccountConfig, Config, InstanceSpec } from "../../src/core/types.ts";
+import type { AccountConfig, Config, InstanceSpec, OrganizeConfig } from "../../src/core/types.ts";
 
 const accounts: AccountConfig[] = [
   { id: "claudeAgent", home: "~/.claude", displayName: "Claude", accentColor: null },
@@ -69,6 +69,157 @@ function errorsOf(u: unknown, platform?: NodeJS.Platform): string[] {
   assert.equal(r.ok, false);
   return r.ok ? [] : r.errors;
 }
+
+test("organizeSettings fills spec defaults", () => {
+  const want = {
+    folders: { home: "rehome", "t3-refused": "rehome", temp: "skip", system: "skip" },
+    sessions: { automated: "skip", orphaned: "copy" },
+    overrides: [],
+    names: { maxLength: 40 },
+    history: { days: 90, minPerProject: 10 },
+    titles: true,
+    archiveAutomated: true,
+    pinRecent: { enabled: true, count: 5 },
+    decided: [],
+  };
+  assert.deepEqual(organizeSettings(cfg(), "pt"), { ...want, generalFolder: "~/T3 Geral" });
+  assert.deepEqual(organizeSettings(cfg(), "en"), { ...want, generalFolder: "~/T3 General" });
+  assert.equal(cfg().organize, undefined, "organize stays optional: defaultConfig does not write it");
+});
+
+test("organizeSettings: partial values override per field; lang only picks the default generalFolder", () => {
+  const c = cfg({
+    organize: { folders: { temp: "import" } as OrganizeConfig["folders"], names: { maxLength: 60 }, pinRecent: { count: 3 } as OrganizeConfig["pinRecent"], generalFolder: "~/Mine" },
+  });
+  const s = organizeSettings(c, "pt");
+  assert.equal(s.folders.temp, "import");
+  assert.equal(s.folders.home, "rehome");
+  assert.equal(s.names.maxLength, 60);
+  assert.deepEqual(s.pinRecent, { enabled: true, count: 3 });
+  assert.equal(s.generalFolder, "~/Mine");
+});
+
+test("validateConfig: organize and notify are optional and accept valid values", () => {
+  const organize = {
+    folders: { home: "import", "t3-refused": "skip", temp: "rehome", system: "skip" },
+    sessions: { automated: "import", orphaned: "skip" },
+    generalFolder: "~/T3 Geral",
+    overrides: [{ match: "C:/work/demo/**", action: "skip" }, { match: "~/code/app", action: "rehome:~/code/hub" }, { match: "x", action: "import" }],
+    names: { maxLength: 16 },
+    history: "days:90",
+    titles: false, archiveAutomated: false,
+    pinRecent: { enabled: false, count: 20 },
+    decided: ["home", "notify"],
+  };
+  for (const notify of ["attention", "all", "off"]) assert.equal(validateConfig({ ...cfg(), organize, notify }).ok, true, notify);
+  for (const history of ["all", "off", "days:1"]) assert.equal(validateConfig({ ...cfg(), organize: { history } }).ok, true, history);
+  assert.equal(validateConfig({ ...cfg(), organize: {} }).ok, true);
+  assert.equal(validateConfig(cfg()).ok, true);
+});
+
+test("validateConfig: update.auto is optional, a boolean, on by default", () => {
+  for (const update of [{ auto: true }, { auto: false }, {}]) assert.equal(validateConfig({ ...cfg(), update }).ok, true, JSON.stringify(update));
+  assert.ok(errorsOf({ ...cfg(), update: { auto: "no" } }).includes("update.auto: must be a boolean"));
+  assert.ok(errorsOf({ ...cfg(), update: true }).includes("update: must be an object"));
+  assert.equal(updateAuto(cfg()), true);
+  assert.equal(updateAuto(null), true);
+  assert.equal(updateAuto(cfg({ update: { auto: false } })), false);
+  const r = validateConfig({ ...cfg(), update: { auto: false } });
+  assert.ok(r.ok && r.config.update?.auto === false, "kept as written");
+});
+
+test("validateConfig rejects bad organize values", () => {
+  const bad: [unknown, string][] = [
+    [{ names: { maxLength: 8 } }, "organize.names.maxLength"],
+    [{ names: { maxLength: 121 } }, "organize.names.maxLength"],
+    [{ history: "days:3651" }, "organize.history"],
+    [{ history: "days:0" }, "organize.history"],
+    [{ history: "weekly" }, "organize.history"],
+    [{ pinRecent: { count: 0 } }, "organize.pinRecent.count"],
+    [{ pinRecent: { count: 21 } }, "organize.pinRecent.count"],
+    [{ pinRecent: { enabled: "yes" } }, "organize.pinRecent.enabled"],
+    [{ folders: { temp: "delete" } }, "organize.folders.temp"],
+    [{ folders: { project: "skip" } }, "organize.folders.project"],
+    [{ sessions: { automated: "maybe" } }, "organize.sessions.automated"],
+    [{ sessions: { orphaned: "import" } }, "organize.sessions.orphaned"],
+    [{ generalFolder: "" }, "organize.generalFolder"],
+    [{ overrides: [{ match: "a", action: "rehome:" }] }, "organize.overrides[0].action"],
+    [{ overrides: [{ match: "a", action: "move" }] }, "organize.overrides[0].action"],
+    [{ overrides: [{ match: "", action: "skip" }] }, "organize.overrides[0].match"],
+    [{ titles: "yes" }, "organize.titles"],
+    [{ archiveAutomated: 1 }, "organize.archiveAutomated"],
+    [{ decided: [1] }, "organize.decided[0]"],
+    [[], "organize"],
+  ];
+  for (const [organize, key] of bad) {
+    assert.ok(errorsOf({ ...cfg(), organize }).some((e) => e.startsWith(key + ":")), JSON.stringify(organize));
+  }
+  assert.ok(errorsOf({ ...cfg(), notify: "sometimes" }).some((e) => e.startsWith("notify:")));
+});
+
+test("validateConfig: a rehome:<folder> override must name an absolute folder T3 Code accepts as a project", () => {
+  const home = "C:/Users/demo";
+  const errs = (action: string): string[] => {
+    const r = validateConfig({ ...cfg(), organize: { overrides: [{ match: "~", action }] } }, "win32", home);
+    return r.ok ? [] : r.errors.filter((e) => e.startsWith("organize.overrides[0].action:"));
+  };
+  for (const ok of ["rehome:~/code/hub", "rehome:D:/work/app", "rehome:~/T3 General"]) assert.deepEqual(errs(ok), [], ok);
+  for (const refused of ["rehome:~", "rehome:~/Downloads/x", "rehome:C:/Users/demo/Documents/Codex/y", "rehome:~/.t3/worktrees/z"]) {
+    assert.deepEqual(errs(refused), [`organize.overrides[0].action: ${refused} is a folder T3 Code does not accept as a project (the home folder, Downloads, Documents/Codex, T3 Code's own folders or the temp folder itself)`], refused);
+  }
+  assert.deepEqual(errs("rehome:code/hub"), ["organize.overrides[0].action: rehome:code/hub must name an absolute folder (or one starting with ~)"]);
+  const posix = validateConfig({ ...cfg(), organize: { overrides: [{ match: "~", action: "rehome:/tmp" }] } }, "linux", "/home/demo");
+  assert.ok(!posix.ok && posix.errors.some((e) => e.includes("rehome:/tmp is a folder T3 Code does not accept")));
+});
+
+test("validateConfig: organize.generalFolder must be an absolute folder T3 Code accepts as a project (R25)", () => {
+  const home = "C:/Users/demo";
+  const errs = (generalFolder: string): string[] => {
+    const r = validateConfig({ ...cfg(), organize: { generalFolder } }, "win32", home);
+    return r.ok ? [] : r.errors.filter((e) => e.startsWith("organize.generalFolder:"));
+  };
+  for (const ok of ["~/T3 General", "~/T3 Geral", "D:/T3 General"]) assert.deepEqual(errs(ok), [], ok);
+  assert.deepEqual(errs("T3 General"), ["organize.generalFolder: T3 General must name an absolute folder (or one starting with ~)"]);
+  for (const refused of ["~", "~/Downloads/General", "~/.t3/General"]) {
+    assert.deepEqual(errs(refused), [`organize.generalFolder: ${refused} is a folder T3 Code does not accept as a project (the home folder, Downloads, Documents/Codex, T3 Code's own folders or the temp folder itself)`], refused);
+  }
+});
+
+test("loadConfig: a bad organize value is a ConfigError naming the key", async () => {
+  const dir = await tmp();
+  try {
+    await writeFile(join(dir, "config.json"), JSON.stringify({ ...cfg(), organize: { names: { maxLength: 8 } } }));
+    await assert.rejects(loadConfig(dir, "/h", "linux"), (e: Error) => e instanceof ConfigError && e.message.includes("organize.names.maxLength"));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("config round-trips organize with ~ kept as written", async () => {
+  const dir = await tmp();
+  try {
+    const organize = { generalFolder: "~/T3 Geral", overrides: [{ match: "~/code/app", action: "rehome:~/code/hub" }], decided: ["home"] };
+    await writeFile(join(dir, "config.json"), JSON.stringify({ ...cfg(), organize, notify: "off" }));
+    const c = await loadConfig(dir, "/home/u", "linux");
+    assert.equal(c?.organize?.generalFolder, "~/T3 Geral");
+    assert.equal(c?.notify, "off");
+    await saveConfig(dir, c!, "/home/u", "linux");
+    const back = JSON.parse(await readFile(join(dir, "config.json"), "utf8"));
+    assert.deepEqual(back.organize, organize);
+    assert.equal(back.notify, "off");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("isDecided reads decided", () => {
+  assert.equal(isDecided(cfg(), "home"), false);
+  assert.equal(isDecided(cfg({ organize: {} }), "home"), false);
+  const c = cfg({ organize: { decided: ["home", "notify"] } });
+  assert.equal(isDecided(c, "home"), true);
+  assert.equal(isDecided(c, "notify"), true);
+  assert.equal(isDecided(c, "temp"), false);
+});
 
 test("validateConfig: unknown account in routes", () => {
   const errs = errorsOf(cfg({ routes: [{ match: "D:/x/**", account: "x" }] }));
@@ -413,5 +564,52 @@ test("loadConfig expands ~ in account homes, remap and leading-~ globs; saveConf
     assert.deepEqual(raw.exclude, ["~/scratch/**", "C:/tmp/**"]);
   } finally {
     await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("applyOrganizePatch: only the answered fields change, nested objects merge, decided only grows, the input is untouched", () => {
+  const c = cfg({ organize: { folders: { home: "skip" } as OrganizeConfig["folders"], titles: false, decided: ["home"], overrides: [{ match: "~/a", action: "skip" }] } });
+  const before = JSON.stringify(c);
+  const n = applyOrganizePatch(c, { folders: { temp: "import" }, decided: ["home", "temp"], pinRecent: { enabled: false }, history: "days:30" });
+  assert.deepEqual(n.organize, {
+    folders: { home: "skip", temp: "import" }, titles: false, decided: ["home", "temp"], overrides: [{ match: "~/a", action: "skip" }],
+    pinRecent: { enabled: false }, history: "days:30",
+  });
+  assert.equal(JSON.stringify(c), before, "input not mutated");
+  assert.equal(n.accounts, c.accounts, "the rest of the config is untouched");
+  const fresh = applyOrganizePatch(cfg(), { sessions: { automated: "import" }, overrides: [{ match: "~/b", action: "rehome:~/c" }] });
+  assert.deepEqual(fresh.organize, { sessions: { automated: "import" }, overrides: [{ match: "~/b", action: "rehome:~/c" }] });
+  assert.equal(validateConfig(JSON.parse(JSON.stringify(n)), "linux", "/home/u").ok, true, "the result is a valid config");
+});
+
+test("defaults are 90 days and 10 per project", () => {
+  assert.deepEqual(historyRule(cfg()), { days: 90, minPerProject: 10 });
+  assert.deepEqual(historyRule(cfg({ organize: { history: { days: "all", minPerProject: 0 } } })), { days: "all", minPerProject: 0 });
+  assert.deepEqual(historyRule(cfg({ organize: { history: { days: 30, minPerProject: 3 } } })), { days: 30, minPerProject: 3 });
+});
+
+test("reads 0.2.1 config values", () => {
+  const h = (history: OrganizeConfig["history"]) => historyRule(cfg({ organize: { history } }));
+  assert.deepEqual(h("all"), { days: "all", minPerProject: 10 });
+  assert.deepEqual(h("days:30"), { days: 30, minPerProject: 10 });
+  assert.equal(h("off"), null);
+  for (const history of ["all", "off", "days:30", "days:3650", { days: 1, minPerProject: 0 }, { days: "all", minPerProject: 1000 }, { days: 3650, minPerProject: 10 }]) {
+    assert.equal(validateConfig({ ...cfg(), organize: { history } }).ok, true, JSON.stringify(history));
+  }
+});
+
+test("rejects days 0, 3651, min -1, 1001", () => {
+  const bad: [unknown, string][] = [
+    [{ days: 0, minPerProject: 10 }, "organize.history.days"],
+    [{ days: 3651, minPerProject: 10 }, "organize.history.days"],
+    [{ days: "weekly", minPerProject: 10 }, "organize.history.days"],
+    [{ days: 90, minPerProject: -1 }, "organize.history.minPerProject"],
+    [{ days: 90, minPerProject: 1001 }, "organize.history.minPerProject"],
+    [{ days: 90, minPerProject: 1.5 }, "organize.history.minPerProject"],
+  ];
+  for (const [history, key] of bad) {
+    const r = validateConfig({ ...cfg(), organize: { history } });
+    assert.equal(r.ok, false, key);
+    if (!r.ok) assert.ok(r.errors.some((e) => e.startsWith(key)), `${key}: ${r.errors.join("; ")}`);
   }
 });

@@ -1,4 +1,11 @@
 import type { Action, HarnessId, Plan, PlanItem, PlanNote, SkipReason } from "../core/types.ts";
+import { shownAccountName, shownText } from "./names.ts";
+import { cliT, makeCliUi, type CliKey, type CliUi } from "../i18n/cli.ts";
+import { fitLine, snugWidth } from "../ui/layout.ts";
+import { DECISION_WORDS, folderName } from "../i18n/words.ts";
+import type { Lang } from "../assistant/i18n.ts";
+import { callout, kv, panel, table as uiTable } from "../ui/components.ts";
+import { displayWidth, padStart, wrapText } from "../ui/text.ts";
 
 const HARNESSES: readonly HarnessId[] = ["claude", "codex", "pi", "opencode"];
 
@@ -19,11 +26,28 @@ export const SKIP_EXPLANATION: Record<SkipReason, string> = {
   "over-4gib": "larger than 4 GiB, too big to import",
   "no-cwd": "no working directory recorded, so the project is unknown",
   "cwd-unreadable": "the working directory could not be read from the transcript",
-  "excluded": "matches an `exclude` pattern in config.json",
+  "excluded": "matches an `exclude` pattern, or an `organize.overrides` rule set to \"skip\", in config.json",
   "harness-unavailable": "no T3 Code provider instance exists for this harness",
   "compare-failed": "could not compare it with its duplicate (file busy); it will be retried on the next plan",
   "converted": "a transcript t3sm converted from another agent's session; imported through that session",
   "revision": "a merge revision t3sm wrote that was never merged; `t3sm merge` reuses or removes it",
+  "automated": "started by a script through the Agent SDK (automated); `organize.sessions.automated` is \"skip\" in config.json",
+  "temp-folder": "its folder is a temporary one; `organize.folders.temp` is \"skip\" in config.json",
+  "system-folder": "its folder is a system one (Windows, Program Files, AppData, /usr, ...); `organize.folders.system` is \"skip\" in config.json",
+  "t3-refused": "its folder is one T3 Code refuses to import (the home folder, Downloads, Documents/Codex, T3 Code's own); it is not moved to another project (`organize.folders` is \"skip\", or t3sm cannot copy Pi sessions)",
+  "undecided": "in a category whose question was never answered (see Decisions pending); run `t3sm start` to choose",
+  "orphaned-in-t3": "started in T3 Code, and its thread there was deleted, so T3 Code will not import it again; `organize.sessions.orphaned` is \"skip\" in config.json (set it to \"copy\", or answer the question in `t3sm start`, to bring it back as a copy)",
+  "t3-native-unknown": "started in T3 Code, but the transcript does not say which T3 thread it belongs to, so t3sm never copies it; if T3 Code no longer shows it, resume it in a terminal with `claude --resume`",
+};
+
+/** What each `organize.decided` question is about (plan.md's Decisions pending table). */
+export const DECISION_LABEL: Record<string, string> = {
+  "home": "Conversations in the home folder",
+  "t3-refused": "Conversations in other folders T3 Code refuses (Downloads, Documents/Codex, T3 Code's own)",
+  "temp": "Conversations in temporary folders",
+  "system": "Conversations in system folders",
+  "automated": "Automated sessions, started by scripts through the Agent SDK",
+  "orphaned": "Conversations started in T3 Code whose thread was deleted",
 };
 
 /** Human wording for every plan note; a new PlanNote breaks compilation until it is described here. */
@@ -33,9 +57,11 @@ export const NOTE_EXPLANATION: Record<PlanNote, string> = {
   "label-only-in-mirror": "its title or tag lives only in a discarded mirror copy",
   "truncated-over-32mib": "larger than 32 MiB; T3 Code reads only the first 32 MiB",
   "continued-outside-t3": "continued outside T3 Code after it was imported",
+  "continued-after-rehome": "continued outside T3 Code after t3sm copied it into T3 Code (from a folder T3 Code refuses, or after its thread was deleted there); the copy in T3 Code does not include that work",
   "remapped-cwd": "its working directory was remapped by a `remap` rule in config.json",
   "in-t3-under-other-account": "already in T3 Code under another account; not imported a second time",
   "in-t3-as-other-form": "already in T3 Code in its other form (a Codex thread, or a converted Claude thread); not imported a second time",
+  "started-in-t3": "started in T3 Code and its thread is still there (active or archived); nothing to import",
 };
 
 /** Per-harness detail for a skip reason, shown under that reason when the plan skips sessions of that harness for it. */
@@ -103,12 +129,34 @@ const sessions = (n: number): string => pl(n, "session", "sessions");
  * The plan's line about Codex compressed sessions it converts (convert-import items flagged `compressed`), or null when
  * there are none: T3 Code cannot read them, so they continue as Claude threads, not Codex ones.
  */
-export function compressedCodexLine(plan: Plan): string | null {
+export function compressedCodexLine(plan: Plan, lang: Lang = "en"): string | null {
   const n = plan.items.filter((i) => i.action.kind === "convert-import" && i.session.harness === "codex" && i.session.flags?.includes("compressed")).length;
-  if (n === 0) return null;
-  return n === 1
-    ? "1 Codex session was compressed by Codex; it is converted and continues as a Claude thread."
-    : `${n} Codex sessions were compressed by Codex; they are converted and continue as Claude threads.`;
+  return n === 0 ? null : cliT(lang, "plan.compressed", { n });
+}
+
+/**
+ * One line per project that receives rehomed conversations (convert-import items with `rehomeFrom`): the project's
+ * title when this plan creates it, else its folder.
+ */
+export function rehomeLines(plan: Plan, folder: (root: string) => string = (r) => r, lang: Lang = "en", title: (t: string) => string = (t) => t): string[] {
+  const byRoot = new Map<string, number>();
+  for (const i of plan.items) if (i.action.kind === "convert-import" && i.action.rehomeFrom !== undefined) byRoot.set(i.action.projectRoot, (byRoot.get(i.action.projectRoot) ?? 0) + 1);
+  const titleOf = new Map(plan.projectsToCreate.map((p) => [p.root, p.title]));
+  return [...byRoot].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).map(([root, n]) =>
+    cliT(lang, "plan.rehome", { n, to: titleOf.has(root) ? title(titleOf.get(root)!) : folder(root) }));
+}
+
+/**
+ * Why a held project waits (spec §4.6): `waiting: <project> — '<conversation>' written <N> min ago; retried after 10
+ * min idle`. The conversation is its title, else its file name; under a minute (or ahead of `now`) is "just now".
+ */
+export function heldLine(h: { file: string; title: string | null; modifiedAt: string }, project: string, now: number, o: { lang?: Lang; dash?: string } = {}): string {
+  const lang = o.lang ?? "en";
+  // A title is untrusted text: no control, bidi or format characters (terminal escapes) and one line.
+  const name = shownText(h.title ?? (h.file.split(/[\\/]/).pop() || h.file), 120);
+  const min = Math.floor((now - Date.parse(h.modifiedAt)) / 60_000);
+  const ago = Number.isFinite(min) && min >= 1 ? cliT(lang, "sync.minAgo", { n: min }) : cliT(lang, "sync.justNow");
+  return cliT(lang, "sync.waiting", { project: shownText(project, 120), dash: o.dash ?? "—", name, ago });
 }
 
 const KIND_LABEL: Record<Action["kind"], string> = { import: "Import as is", "convert-import": "Convert, then import", skip: "Skip" };
@@ -134,6 +182,8 @@ export function planWarnings(plan: Plan, sum: PlanSummary = summarize(plan)): st
       ? `1 ${name} session changed since it was imported; t3sm cannot merge ${name} sessions yet — continue it in ${name} or in its T3 Code thread.`
       : `${n} ${name} sessions changed since they were imported; t3sm cannot merge ${name} sessions yet — continue them in ${name} or in their T3 Code thread.`);
   }
+  // Copies from refused folders (spec §4.3, R11): never offered to `t3sm merge`.
+  if (sum.notes["continued-after-rehome"] > 0) warn.push(`${sessions(sum.notes["continued-after-rehome"])} changed after the import: continuations made outside T3 Code after the import are not included (a conversation t3sm copied into T3 Code).`);
   if (sum.notes["truncated-over-32mib"] > 0) warn.push(`${sessions(sum.notes["truncated-over-32mib"])} larger than 32 MiB; T3 Code reads only the first 32 MiB of each.`);
   if (sum.notes["remapped-cwd"] > 0) warn.push(`${sessions(sum.notes["remapped-cwd"])} with a working directory remapped by a ${code("remap")} rule in config.json; check the Project accounts table.`);
   const elsewhere = plan.items.filter((i) => i.notes?.includes("in-t3-under-other-account"));
@@ -158,7 +208,8 @@ export function planWarnings(plan: Plan, sum: PlanSummary = summarize(plan)): st
 
 export function renderPlanMarkdown(plan: Plan, opts: RenderOptions = {}): string {
   const limit = opts.listLimit ?? 20;
-  const names: Record<string, string> = { ...Object.fromEntries(plan.instancesToCreate.map((i) => [i.id, i.displayName])), ...opts.names };
+  // Account names are masked at this sink too (an account named after its email), whatever the caller passed.
+  const names: Record<string, string> = Object.fromEntries(Object.entries({ ...Object.fromEntries(plan.instancesToCreate.map((i) => [i.id, i.displayName])), ...opts.names }).map(([k, v]) => [k, shownAccountName(v)]));
   const nm = (id: string | null): string => (id === null ? "(none)" : names[id] !== undefined ? `${names[id]} (${id})` : id);
   const sum = summarize(plan);
   const L: string[] = [];
@@ -178,10 +229,18 @@ export function renderPlanMarkdown(plan: Plan, opts: RenderOptions = {}): string
   L.push(...table(["Harness", "Sessions"], HARNESSES.filter((h) => sum.byHarness[h] > 0).map((h) => [h, String(sum.byHarness[h])])), "");
   const zst = compressedCodexLine(plan);
   if (zst !== null) L.push(zst, "");
+  const moved = rehomeLines({ ...plan, projectsToCreate: plan.projectsToCreate.map((p) => ({ ...p, title: esc(p.title) })) }, code);
+  if (moved.length > 0) L.push(...moved.map((m) => `- ${m}`), "");
+
+  const pending = plan.decisionsPending ?? [];
+  if (pending.length > 0) {
+    L.push("## Decisions pending", "", `These sessions are skipped until you choose what t3sm does with them. Run ${code("t3sm start")} to decide; your answers are saved in config.json (${code("organize")}).`, "");
+    L.push(...table(["Question", "Sessions", "Folders"], pending.map((d) => [`${DECISION_LABEL[d.key] ?? d.key} (${d.key})`, String(d.sessions), String(d.folders)])), "");
+  }
 
   L.push("## Accounts", "");
   if (plan.instancesToCreate.length === 0) L.push("No instances to create.", "");
-  else L.push(...table(["Instance id", "Name", "Home"], plan.instancesToCreate.map((i) => [code(i.id), i.displayName, code(i.homePath)]), false), "");
+  else L.push(...table(["Instance id", "Name", "Home"], plan.instancesToCreate.map((i) => [code(i.id), shownAccountName(i.displayName), code(i.homePath)]), false), "");
   if (plan.pinDefault) {
     L.push(`T3 Code's default Claude instance ${code(plan.pinDefault.instanceId)} has no explicit home: \`t3sm apply\` pins it to ${code(plan.pinDefault.homePath)}, so a T3 Code started with CLAUDE_CONFIG_DIR set cannot move it.`, "");
   }
@@ -252,37 +311,96 @@ export function renderPlanMarkdown(plan: Plan, opts: RenderOptions = {}): string
   return L.join("\n");
 }
 
-/** Compact terminal summary (about 20 lines, aligned, optional minimal ANSI). */
-export function renderTerminalSummary(plan: Plan, opts: { color: boolean; planPath: string; names?: Record<string, string> }): string {
+/** Each skip reason's short name on screen (plan.md keeps the codes and the long explanations). */
+const SKIP_WORDS: Record<SkipReason, CliKey> = {
+  "already-in-t3": "plan.skip.alreadyInT3", "cwd-missing": "plan.skip.cwdMissing", "duplicate": "plan.skip.duplicate",
+  "mirror-copy": "plan.skip.mirrorCopy", "backup-copy": "plan.skip.backupCopy", "active": "plan.skip.active",
+  "non-uuid-id": "plan.skip.nonUuidId", "no-session-id": "plan.skip.noSessionId", "subagent": "plan.skip.subagent",
+  "compressed": "plan.skip.compressed", "too-large": "plan.skip.tooLarge", "only-hidden": "plan.skip.onlyHidden",
+  "over-4gib": "plan.skip.over4gib", "no-cwd": "plan.skip.noCwd", "cwd-unreadable": "plan.skip.cwdUnreadable",
+  "excluded": "plan.skip.excluded", "harness-unavailable": "plan.skip.harnessUnavailable", "compare-failed": "plan.skip.compareFailed",
+  "converted": "plan.skip.converted", "revision": "plan.skip.revision", "automated": "plan.skip.automated",
+  "temp-folder": "plan.skip.tempFolder", "system-folder": "plan.skip.systemFolder", "t3-refused": "plan.skip.t3Refused",
+  "undecided": "plan.skip.undecided", "orphaned-in-t3": "plan.skip.orphanedInT3", "t3-native-unknown": "plan.skip.t3NativeUnknown",
+};
+
+export interface TerminalSummaryOptions {
+  planPath: string;
+  /** Projects held this run because a conversation of theirs is in use (`apply`'s confirmation): a row in the panel. */
+  held?: { roots: string[]; sessions: number };
+  names?: Record<string, string>;
+  /** The language, style and width to draw with (the commands pass theirs). Without it: English, 80 columns, `color`. */
+  ui?: CliUi;
+  color?: boolean;
+}
+
+/**
+ * The plan on screen: a panel with the counts aligned, the notes that matter (compressed Codex sessions, copies from
+ * refused folders, decisions pending, the default instance pin), the imports by account and the top skips as tables,
+ * then where the full report is and what to run next.
+ */
+export function renderTerminalSummary(plan: Plan, opts: TerminalSummaryOptions): string {
+  const ui = opts.ui ?? makeCliUi({ color: opts.color ? 1 : 0, unicode: true, isTTY: false, columns: 80 }, "en");
+  const { s, t, f } = ui;
+  const width = Math.max(1, ui.width);
   const sum = summarize(plan);
-  const b = (s: string) => (opts.color ? `\x1b[1m${s}\x1b[0m` : s);
-  const d = (s: string) => (opts.color ? `\x1b[2m${s}\x1b[0m` : s);
-  const names = { ...Object.fromEntries(plan.instancesToCreate.map((i) => [i.id, i.displayName])), ...opts.names };
-  const rows: [string, string][] = [
-    ["Import", String(sum.byAction.import ?? 0)],
-    ["Convert + import", String(sum.byAction["convert-import"] ?? 0)],
-    ["Skip", String(sum.byAction.skip ?? 0)],
-    ["New instances", String(plan.instancesToCreate.length)],
-    ["New projects", String(plan.projectsToCreate.length)],
-    ["Mirror copies", String(plan.mirrorCopies.length)],
-    ["Warnings", String(planWarnings(plan, sum).length)],
+  const names: Record<string, string> = Object.fromEntries(Object.entries({ ...Object.fromEntries(plan.instancesToCreate.map((i) => [i.id, i.displayName])), ...opts.names }).map(([k, v]) => [k, shownAccountName(v)]));
+  const counts: [string, number][] = [
+    [t("plan.label.import"), sum.byAction.import ?? 0],
+    [t("plan.label.convert"), sum.byAction["convert-import"] ?? 0],
+    [t("plan.label.skip"), sum.byAction.skip ?? 0],
+    [t("plan.label.instances"), plan.instancesToCreate.length],
+    [t("plan.label.projects"), plan.projectsToCreate.length],
+    [t("plan.label.mirrors"), plan.mirrorCopies.length],
+    [t("plan.label.warnings"), planWarnings(plan, sum).length],
   ];
-  const w = Math.max(...rows.map((r) => r[0].length));
-  const vw = Math.max(...rows.map((r) => r[1].length));
-  const out: string[] = [b(`Plan ${plan.runId}`) + d(`  (T3 Code ${plan.t3Version})`)];
-  for (const [k, v] of rows) out.push(`  ${k.padEnd(w)}  ${v.padStart(vw)}`);
-  const zst = compressedCodexLine(plan);
-  if (zst !== null) out.push(`  ${zst}`);
-  if (plan.pinDefault) out.push(`  Pin ${plan.pinDefault.instanceId} to ${plan.pinDefault.homePath} (T3 Code settings)`);
-  const inst = Object.entries(sum.byInstance).sort((a, c) => c[1] - a[1]).slice(0, 5);
-  if (inst.length) {
-    out.push(d("  Imports by account"));
-    const iw = Math.max(...inst.map(([id]) => (names[id] ?? id).length));
-    for (const [id, n] of inst) out.push(`    ${(names[id] ?? id).padEnd(iw)}  ${String(n).padStart(vw)}`);
+  const nw = Math.max(...counts.map(([, n]) => f.n(n).length));
+  const rows: [string, string][] = counts.map(([k, n]) => [k, s("num", padStart(f.n(n), nw))]);
+  if (opts.held && opts.held.roots.length > 0) {
+    const h = opts.held;
+    rows.push([t("apply.dry.held"), `${t("apply.dry.heldValue", { n: h.roots.length, sessions: h.sessions })} (${h.roots.map((r) => shownText(folderName(r), 60)).join(", ")}; ${t("apply.notThisRun")})`]);
   }
-  const top = SKIP_REASONS.filter((r) => sum.byReason[r] > 0).sort((a, c) => sum.byReason[c] - sum.byReason[a]).slice(0, 3);
-  if (top.length) out.push(d(`  Top skips: ${top.map((r) => `${r} ${sum.byReason[r]}`).join(", ")}`));
-  out.push("", `Full report: ${opts.planPath}`);
-  out.push(plan.mirrorCopies.length > 0 ? `Next: ${b("t3sm dedupe")}, then ${b("t3sm apply")}.` : `Next: ${b("t3sm apply")}.`);
+  const body = kv(s, rows, Math.max(1, width - 4));
+  const title = `${t("plan.title", { runId: shownText(plan.runId, 40) })} ${s.sym.sep} ${t("plan.t3", { version: shownText(plan.t3Version, 40) })}`;
+  const out = panel(s, { title, body }, snugWidth(title, body, width));
+
+  const notes: string[] = [];
+  const zst = compressedCodexLine(plan, ui.lang);
+  if (zst !== null) notes.push(zst);
+  notes.push(...rehomeLines(plan, (r) => shownText(r, 80), ui.lang, (x) => shownText(x, 80)));
+  if (plan.pinDefault) notes.push(t("plan.pin", { instance: shownText(plan.pinDefault.instanceId, 40), home: shownText(plan.pinDefault.homePath, 120) }));
+  if (notes.length > 0) out.push("");
+  for (const n of notes) out.push(...fitLine(`${s("accent", s.sym.sep)} ${n}`, width, 2));
+  const pending = plan.decisionsPending ?? [];
+  if (pending.length > 0) {
+    const n = pending.reduce((a, d) => a + d.sessions, 0);
+    const parts = pending.map((d) => `${DECISION_WORDS[d.key] ? t(DECISION_WORDS[d.key]!) : shownText(d.key, 40)} ${f.n(d.sessions)}`).join(", ");
+    const [first = "", ...rest] = wrapText(t("plan.decisions", { n, parts }), Math.max(1, width - 2));
+    out.push("", ...callout(s, { kind: "needs-you", title: first, body: rest, command: "t3sm start" }, width));
+  }
+
+  const inst = Object.entries(sum.byInstance).sort((a, c) => c[1] - a[1]).slice(0, 5);
+  const num = (r: unknown): string => f.n((r as [string, number])[1]);
+  if (inst.length > 0) {
+    out.push("", ...uiTable(s, [
+      { header: t("plan.col.account"), get: (r) => shownText(names[(r as [string, number])[0]] ?? (r as [string, number])[0], 60), priority: 5 },
+      { header: t("plan.col.count"), get: num, align: "right", priority: 9 },
+    ], inst, width));
+  }
+  const top = SKIP_REASONS.filter((r) => sum.byReason[r] > 0).sort((a, c) => sum.byReason[c] - sum.byReason[a]).slice(0, 3).map((r): [string, number] => [r, sum.byReason[r]]);
+  if (top.length > 0) {
+    out.push("", ...uiTable(s, [
+      { header: t("plan.col.reason"), get: (r) => t(SKIP_WORDS[(r as [SkipReason, number])[0]]), priority: 5 },
+      { header: t("plan.col.count"), get: num, align: "right", priority: 9 },
+    ], top, width));
+  }
+  // A path is never cut: when it does not fit beside its label it stands on its own line, whole; only a window too narrow
+  // for it alone breaks it (without indentation, so the pieces still read as one path).
+  const report = t("plan.fullReport", { path: s("path", opts.planPath) });
+  const pathLines = displayWidth(opts.planPath) <= width ? [s("path", opts.planPath)] : wrapText(opts.planPath, width);
+  out.push("", ...(displayWidth(report) <= width ? [report] : [t("plan.fullReport", { path: "" }).trimEnd(), ...pathLines]));
+  out.push(...fitLine(plan.mirrorCopies.length > 0
+    ? t("plan.nextDedupe", { dedupe: s("key", "t3sm dedupe"), apply: s("key", "t3sm apply") })
+    : t("plan.next", { command: s("key", "t3sm apply") }), width, 2));
   return out.join("\n") + "\n";
 }

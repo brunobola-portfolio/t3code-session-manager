@@ -1,0 +1,54 @@
+* * * * * * @ o o o o  Step 7 of 11 - Pilot
+First, try one project. A small one you know well, so you can check it in T3
+Code.
+
+Suggestions (small, not in use now):
+#  Project      Conversations  Account
+----------------------------------------------
+1  ~/code/demo              2  Claude Personal
+2  ~/code/big              20  Claude Org
+Project to try: 1-2 (Enter = 1), a folder path, or n to skip the pilot: 
+What importing ~/code/demo would do (nothing is written yet):
+ran apply
+
++- Here is what I will do ----------------------------+
+| Project  ~/code/demo                                |
+| Import   2 conversations                            |
+| Account  Claude Personal                            |
+| Undo     t3sm rollback --run <id> --archive-threads |
++-----------------------------------------------------+
+Import ~/code/demo now? This writes to T3 Code; afterwards you can undo
+it. [y/N/?/b/q] y
+ran apply
+
+Now check it in T3 Code:
+1. Find ~/code/demo in the sidebar.
+2. Its old sessions are there as threads.
+3. New threads start on Claude Personal.
+4. Open one: its history shows.
+Sending a message continues that session for real, on that account.
+Does it look right? [Y/n/?/q] y
+
+* * * * * * * @ o o o  Step 8 of 11 - Full import
+Now the rest. Before you say yes:
+- Keep the computer awake until it ends.
+- Close the sessions you want imported: a project in use waits for a later run.
+- Pause cloud sync of your home folder (OneDrive, Dropbox, iCloud).
+Updating the plan...
+
++- Here is what I will do -------------------------------+
+| Import      23 conversations                           |
+| Into         3 projects                                |
+| In use now   1 project waits for a later run           |
+| Undo        t3sm rollback --run <id> --archive-threads |
++--------------------------------------------------------+
+Import everything now? This writes to T3 Code; t3sm rollback
+--archive-threads takes it back. [y/N/?/b/q] q
+
++- What this session did -----------------------------------------+
+| v Imported the pilot project ~/code/demo (run R1)               |
+|   Undo: t3sm rollback --run R1 --archive-threads                |
+|                                                                 |
+| t3sm runs lists every run; threads are archived, never deleted. |
++-----------------------------------------------------------------+
+Stopped. Nothing is left half done; run t3sm again to continue.

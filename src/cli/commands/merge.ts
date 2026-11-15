@@ -12,10 +12,16 @@ import { connectT3, type T3Api } from "../../t3/api.ts";
 import { STOP_SIGNALS, type SignalSource } from "../../apply/apply.ts";
 import type { SourceAdapter } from "../../sources/types.ts";
 import {
-  FAILED_REASONS, executeMerges, findMergeCandidates, setMergePending, type OrphanedWork, type MergeCandidate, type MergeDeps, type MergeSkip, type MergeSkipReason,
+  FAILED_REASONS, executeMerges, findMergeCandidates, setMergePending, type OrphanedWork, type MergeCandidate, type MergeDeps, type MergeSkip, type MergeSkipReason, type MergedSession,
 } from "../../ops/merge.ts";
 import { freshPlan } from "./plan.ts";
-import { confirm, parseFlags } from "./quarantine.ts";
+import { parseFlags } from "./quarantine.ts";
+import { cliUi, confirm, type CliKey, type CliUi } from "../ui.ts";
+import { flagsOf } from "../flags.ts";
+import { table } from "../../ui/components.ts";
+import { bulletLines, fitLine, noteLines, textLines } from "../screen.ts";
+import { folderName } from "../words.ts";
+import { shownText } from "../../plan/names.ts";
 import { reportLockBusy } from "../locked.ts";
 import type { Io } from "../main.ts";
 
@@ -33,73 +39,102 @@ const processSignals: SignalSource = {
   off: (sig, fn) => void process.off(sig as NodeJS.Signals, fn),
 };
 
-const REASON_TEXT: Record<MergeSkipReason, string> = {
-  "active": "written in the last 10 minutes; close it (or wait) and run again",
-  "not-continued": "no terminal work since t3sm imported it (no message from another entrypoint on the branch `claude --resume` continues)",
-  "no-t3-marker": "T3 Code wrote to it, but no record carries T3 Code's marker (entrypoint \"t3-code\"); not merged to be safe",
-  "broken-chain": "its message chain is broken (a missing parent or a cycle); a revision would be truncated",
-  "corrupt-lines": "unreadable lines inside its message chain; a revision would be truncated",
-  "compacted": "this session was compacted; merging compacted sessions is not supported yet",
-  "unsettled": "its last line is incomplete (being written?); run again later",
-  "thread-archived": "its T3 Code thread is archived",
-  "revision-in-use": "the revision t3sm wrote earlier was continued since; continue there (or run `t3sm rollback`)",
-  "already-merged": "already merged (its revision thread is in T3 Code)",
-  "target-exists": "a file t3sm did not write already sits at the revision path; left alone",
-  "copy-failed": "the transcript could not be read or the revision could not be written",
-  "import-failed": "T3 Code did not import the revision; the revision was removed and the old thread left as it was",
-  "import-unverified": "T3 Code's thread list could not be read after the import; run `t3sm merge` again",
-  "project-in-use": "another session of its project is in use; run again when it is idle",
-  "archive-failed": "the new thread exists but the old one could not be archived; run `t3sm merge` again",
-  "over-cap": "over this run's limit; run again",
-  "clock-jump": "the system clock jumped (sleep or a time change) during the import; run again",
-  "file-busy": "a session file of its project was locked by another program; run again",
-  "aborted": "interrupted before it was merged",
+/** Why a session is not merged, in words (a catalogue key per reason). */
+const REASON_KEY: Record<MergeSkipReason, CliKey> = {
+  "active": "merge.why.active", "not-continued": "merge.why.notContinued", "rehomed-copy": "merge.why.rehomedCopy",
+  "no-t3-marker": "merge.why.noT3Marker", "broken-chain": "merge.why.brokenChain", "corrupt-lines": "merge.why.corruptLines",
+  "compacted": "merge.why.compacted", "unsettled": "merge.why.unsettled", "thread-archived": "merge.why.threadArchived",
+  "revision-in-use": "merge.why.revisionInUse", "already-merged": "merge.why.alreadyMerged", "target-exists": "merge.why.targetExists",
+  "copy-failed": "merge.why.copyFailed", "import-failed": "merge.why.importFailed", "import-unverified": "merge.why.importUnverified",
+  "project-in-use": "merge.why.projectInUse", "archive-failed": "merge.why.archiveFailed", "over-cap": "merge.why.overCap",
+  "clock-jump": "merge.why.clockJump", "file-busy": "merge.why.fileBusy", "aborted": "merge.why.aborted",
 };
 
-const baseName = (root: string): string => root.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || root;
 const short = (id: string): string => id.slice(0, 8);
-const plural = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`;
-const when = (iso: string | null): string => (iso && Number.isFinite(Date.parse(iso)) ? new Date(iso).toISOString().slice(0, 16).replace("T", " ") : "-");
 
-const NOTE = `The revision is a new session file next to the original; the original session file is never changed. After a merge, continue on the new thread in T3 Code, or in a
-terminal with \`claude --resume <revision id>\`. The original session id stays resumable in the terminal but
-is now a stale branch, and \`claude --resume\`'s picker lists both. Never have the same session open in T3 Code
-and a terminal at the same time.
-`;
+interface CandidateRow { project: string; session: string; when: string; added: string; title: string }
 
-function table(cs: MergeCandidate[]): string {
-  const rows: string[][] = [["Project", "Session", "Last terminal activity (UTC)", "Messages added", "T3 title"]];
-  for (const c of cs) {
-    rows.push([baseName(c.projectRoot), short(c.nativeId), when(c.lastActivity), `+${c.addedMessages}${c.divergedLeaves ? ` (${c.divergedLeaves} other branch${c.divergedLeaves === 1 ? "" : "es"} not merged)` : ""}`, c.oldTitle]);
-  }
-  const w = rows[0]!.map((_, i) => Math.max(...rows.map((r) => r[i]!.length)));
-  return rows.map((r) => `  ${r.map((x, i) => x.padEnd(w[i]!)).join("  ").trimEnd()}`).join("\n") + "\n";
+/** The candidates as a table: project, session, last terminal activity, messages added, the T3 title. */
+export function candidateTable(ui: CliUi, cs: MergeCandidate[], width: number = ui.width): string[] {
+  const { s, t, f } = ui;
+  const rows: CandidateRow[] = cs.map((c) => ({
+    project: shownText(folderName(c.projectRoot), 60), session: short(c.nativeId),
+    when: c.lastActivity && Number.isFinite(Date.parse(c.lastActivity)) ? f.date(c.lastActivity) : "-",
+    added: `+${f.n(c.addedMessages)}`, title: shownText(c.oldTitle, 80),
+  }));
+  return table(s, [
+    { header: t("merge.col.project"), get: (r) => (r as CandidateRow).project, priority: 8 },
+    { header: t("merge.col.session"), get: (r) => (r as CandidateRow).session, priority: 9, min: 8 },
+    { header: t("merge.col.when"), get: (r) => (r as CandidateRow).when, priority: 5 },
+    { header: t("merge.col.added"), get: (r) => (r as CandidateRow).added, align: "right", priority: 7 },
+    { header: t("merge.col.title"), get: (r) => (r as CandidateRow).title, priority: 4 },
+  ], rows, width);
 }
 
 /** Terminal work on a side branch: never merged automatically; the user recovers it in a terminal. */
-function orphanText(o: OrphanedWork[]): string {
-  if (o.length === 0) return "";
-  const lines = o.map((x) => `  ${baseName(x.projectRoot)} ${short(x.nativeId)}: claude --resume ${x.nativeId}\n`).join("");
-  return `\n${plural(o.length, "session has", "sessions have")} terminal work on a side branch that T3 Code cannot show (never merged:
-it is not the branch \`claude --resume\` continues). Recover it in a terminal:\n${lines}`;
+function orphanLines(ui: CliUi, o: OrphanedWork[], width: number): string[] {
+  if (o.length === 0) return [];
+  const { s, t } = ui;
+  return ["", ...noteLines(s, "warn", t("merge.orphaned", { n: o.length }), width),
+    ...o.flatMap((x) => bulletLines(s, `${shownText(folderName(x.projectRoot), 60)} ${short(x.nativeId)}: \`claude --resume ${x.nativeId}\``, width))];
 }
 
-function skipSummary(sk: MergeSkip[]): string {
+/** Why the other sessions are not merged, counted per reason (the ones that were simply not continued are left out). */
+function skipLines(ui: CliUi, sk: MergeSkip[], width: number): string[] {
   const by = new Map<MergeSkipReason, number>();
-  for (const s of sk) if (s.reason !== "not-continued") by.set(s.reason, (by.get(s.reason) ?? 0) + 1);
-  return [...by].map(([r, n]) => `  ${plural(n, "session", "sessions")} not merged: ${REASON_TEXT[r]}\n`).join("");
+  for (const x of sk) if (x.reason !== "not-continued") by.set(x.reason, (by.get(x.reason) ?? 0) + 1);
+  return [...by].flatMap(([r, n]) => bulletLines(ui.s, ui.t("merge.notMergedCount", { n, why: ui.t(REASON_KEY[r]) }), width));
+}
+
+/**
+ * The listing of `t3sm merge`: how many sessions were continued outside T3 Code, the table, why others are not merged,
+ * terminal work on side branches, and (listing only) what a merge would do.
+ */
+export function renderMergeList(ui: CliUi, chosen: MergeCandidate[], found: { skipped: MergeSkip[]; orphaned: OrphanedWork[] }, o: { listOnly: boolean; all: boolean }, width: number = ui.width): string[] {
+  const { s, t } = ui;
+  if (chosen.length === 0) {
+    return [...noteLines(s, "ok", t("merge.none"), width), ...skipLines(ui, found.skipped, width), ...orphanLines(ui, found.orphaned, width)];
+  }
+  const out = [...noteLines(s, "info", t("merge.found", { n: chosen.length }), width), "", ...candidateTable(ui, chosen, width)];
+  const branches = chosen.filter((c) => c.divergedLeaves > 0);
+  for (const c of branches) out.push(...bulletLines(s, t("merge.otherBranches", { session: short(c.nativeId), n: c.divergedLeaves }), width));
+  if (o.all) { const k = skipLines(ui, found.skipped, width); if (k.length > 0) out.push("", ...k); out.push(...orphanLines(ui, found.orphaned, width)); }
+  if (o.listOnly) out.push("", ...textLines(s, t("merge.howTo"), width));
+  return out;
+}
+
+/** What a merge did: each new thread, how to continue it, and what could not be merged. */
+export function renderMergeResult(ui: CliUi, r: { merged: MergedSession[]; skipped: MergeSkip[] }, runId: string | null, width: number = ui.width): string[] {
+  const { s, t, f } = ui;
+  const out: string[] = [];
+  if (r.merged.length > 0) {
+    out.push(...noteLines(s, "ok", runId ? t("merge.doneRun", { n: r.merged.length, runId }) : t("merge.done", { n: r.merged.length }), width));
+    for (const m of r.merged) {
+      out.push("", ...fitLine(`${s("title", shownText(folderName(m.projectRoot), 60))} ${s("muted", s.sym.sep)} ${short(m.nativeId)}`, width, 2));
+      out.push(...bulletLines(s, t("merge.newThread", { thread: shownText(m.newThreadId, 80), n: f.n(m.addedMessages) }), width));
+      out.push(...bulletLines(s, t("merge.terminal", { id: m.revisionUuid }), width));
+      out.push(...bulletLines(s, t("merge.oldTitle", { title: shownText(m.oldTitle, 80) }), width));
+      if (m.divergedLeaves > 0) out.push(...bulletLines(s, t("merge.branchesLeft", { n: m.divergedLeaves }), width));
+    }
+    out.push("", ...textLines(s, t("merge.note"), width));
+  }
+  for (const x of r.skipped) out.push(...noteLines(s, "warn", t("merge.notMerged", { session: short(x.nativeId), why: t(REASON_KEY[x.reason]) }), width));
+  return out;
 }
 
 export async function mergeCommand(args: string[], io: Io, deps: MergeCommandDeps = {}): Promise<number> {
-  const p = parseFlags(args, io, "merge", ["--all", "--dry-run", "--yes", "--allow-untested"], ["--session"]);
+  const spec = flagsOf("merge");
+  const p = parseFlags(args, io, "merge", spec.bool, spec.valued);
   if (!p) return 2;
   const session = p.values.get("--session") ?? null;
   const all = p.flags.has("--all");
-  if (session !== null && all) { io.stderr("Use either --session <id> or --all. Run `t3sm merge --help`.\n"); return 2; }
+  const ui = cliUi(io, { now: deps.now });
+  const say = (l: string[]): void => io.stdout(l.join("\n") + "\n");
+  if (session !== null && all) { io.stderr(`${ui.t("merge.eitherOr")}\n`); return 2; }
   const listOnly = p.flags.has("--dry-run") || (session === null && !all);
   const yes = p.flags.has("--yes");
   if (!listOnly && !yes && !io.isTTY) {
-    io.stderr("Refusing to change T3 Code without confirmation: pass --yes (non-interactive), or --dry-run to only list.\n");
+    io.stderr(`${ui.t("merge.needsYes")}\n`);
     return 2;
   }
 
@@ -119,7 +154,7 @@ export async function mergeCommand(args: string[], io: Io, deps: MergeCommandDep
   try {
     if (!listOnly) {
       const rec = await recoverPendingMtimes(journal);
-      if (rec.restored.length > 0) io.stderr(`Restored the file times of ${rec.restored.length} transcript(s) left by an interrupted run.\n`);
+      if (rec.restored.length > 0) io.stderr(`${ui.t("apply.recovered", { n: rec.restored.length })}\n`);
     }
     const api = await connect(home, { allowUntested: p.flags.has("--allow-untested"), manageProviders: false, onNotice: notice });
     try {
@@ -145,38 +180,24 @@ export async function mergeCommand(args: string[], io: Io, deps: MergeCommandDep
         const exact = ids.filter((id) => id.toLowerCase() === want);
         const matches = exact.length > 0 ? exact : want.length >= 8 ? ids.filter((id) => id.toLowerCase().startsWith(want)) : [];
         if (matches.length !== 1) {
-          io.stderr(matches.length === 0
-            ? `No Claude session ${session} found. Run \`t3sm merge\` to list the candidates.\n`
-            : `${session} matches ${matches.length} sessions; give more of the id.\n`);
+          io.stderr(`${matches.length === 0 ? ui.t("merge.noSession", { id: shownText(session, 80) }) : ui.t("merge.ambiguous", { id: shownText(session, 80), n: matches.length })}\n`);
           return 2;
         }
         const id = matches[0]!;
         chosen = found.candidates.filter((c) => c.nativeId === id);
         if (chosen.length === 0) {
           const why = found.skipped.find((s) => s.nativeId === id)?.reason;
-          io.stdout(`Session ${short(id)}: nothing to merge (${why ? REASON_TEXT[why] : "it is not in T3 Code as an active imported thread"}).\n`);
-          io.stdout(orphanText(found.orphaned.filter((o) => o.nativeId === id)));
+          say([...noteLines(ui.s, "ok", ui.t("merge.nothingFor", { session: short(id), why: why ? ui.t(REASON_KEY[why]) : ui.t("merge.why.notInT3") }), ui.width),
+            ...orphanLines(ui, found.orphaned.filter((o) => o.nativeId === id), ui.width)]);
           return 0;
         }
       }
 
-      if (chosen.length === 0) {
-        io.stdout("No sessions to merge: nothing was continued outside T3 Code since it was imported.\n");
-        io.stdout(skipSummary(found.skipped));
-        io.stdout(orphanText(found.orphaned));
-        return 0;
-      }
-      io.stdout(`${plural(chosen.length, "session was", "sessions were")} continued outside T3 Code:\n`);
-      io.stdout(table(chosen));
-      if (session === null) io.stdout(skipSummary(found.skipped) + orphanText(found.orphaned));
-      if (listOnly) {
-        io.stdout(`\nRun \`t3sm merge --all\` to merge them, or \`t3sm merge --session <id>\` for one. Each becomes a new T3 Code
-thread with the terminal work; the old thread is archived (undo with \`t3sm rollback\`). Nothing was changed.\n`);
-        return 0;
-      }
-      if (!yes && !(await confirm(io, `Merge ${plural(chosen.length, "session", "sessions")} into new threads and archive the old ones?`))) {
-        io.stdout("Nothing changed.\n");
-        return 0;
+      say(renderMergeList(ui, chosen, found, { listOnly, all: session === null }));
+      if (chosen.length === 0 || listOnly) return 0;
+      if (!yes) {
+        io.stdout("\n");
+        if (!(await confirm(io, ui.t("merge.confirm", { n: chosen.length })))) { io.stdout(`${ui.t("common.nothingChanged")}\n`); return 0; }
       }
 
       let status: "ok" | "partial" | "aborted" = "aborted";
@@ -190,18 +211,8 @@ thread with the terminal work; the old thread is archived (undo with \`t3sm roll
       }
       if (r.merged.length > 0) await setMergePending(dir, Math.max(0, found.candidates.length - r.merged.length), new Date(now()));
 
-      if (r.merged.length > 0) {
-        io.stdout(`\nMerged ${plural(r.merged.length, "session", "sessions")}.${runId ? ` Run ${runId}; undo with \`t3sm rollback --run ${runId}\`.` : ""}\n`);
-        for (const m of r.merged) {
-          io.stdout(`  ${baseName(m.projectRoot)} ${short(m.nativeId)}: new thread ${m.newThreadId} (+${m.addedMessages} messages); old thread archived.\n`);
-          io.stdout(`    Terminal: claude --resume ${m.revisionUuid}\n`);
-          io.stdout(`    T3 Code titles the new thread from its transcript; the old thread was titled "${m.oldTitle}" (rename the new one in T3 Code if you like).\n`);
-          if (m.divergedLeaves > 0) io.stdout(`    ${plural(m.divergedLeaves, "other branch", "other branches")} of the original transcript (not the one \`claude --resume\` continues) was not merged.\n`);
-        }
-        io.stdout(`\n${NOTE}`);
-      }
-      for (const s of r.skipped) io.stdout(`  ${short(s.nativeId)}: not merged: ${REASON_TEXT[s.reason]}\n`);
-      if (abort) { io.stderr("Interrupted: file times restored; run `t3sm merge` again to continue.\n"); return 130; }
+      if (r.merged.length > 0 || r.skipped.length > 0) say(["", ...renderMergeResult(ui, r, runId)]);
+      if (abort) { io.stderr(`${ui.t("merge.interrupted")}\n`); return 130; }
       return r.skipped.some((s) => FAILED_REASONS.has(s.reason)) ? 5 : 0;
     } finally {
       await api.close();

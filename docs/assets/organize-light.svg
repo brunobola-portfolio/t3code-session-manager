@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="576" viewBox="0 0 1280 576" role="img" aria-label="t3sm organize, before and after. Today: projects billing-api, mobile-app and docs-site show no threads, and 3,267 imported conversations sit in Settled. After: the projects are pinned with their real conversation titles under each, and the automated runs are archived (Archived · 2,614, out of sight) while Settled keeps only the 41 conversations T3 Code settled itself. Optional. Defaults shown; you choose each part.">
+  <title>t3sm organize, before and after. Today: projects billing-api, mobile-app and docs-site show no threads, and 3,267 imported conversations sit in Settled. After: the projects are pinned with their real conversation titles under each, and the automated runs are archived (Archived · 2,614, out of sight) while Settled keeps only the 41 conversations T3 Code settled itself. Optional. Defaults shown; you choose each part.</title>
+  <rect width="1280" height="576" rx="14" fill="#F7F7F4"/>
+  <rect x="0.5" y="0.5" width="1279" height="575" rx="14" fill="none" stroke="#E1E4EA"/>
+  <text x="48" y="46" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="20" font-weight="700" fill="#161B26">Today<tspan dx="14" font-size="15" font-weight="400" fill="#565E71">imported history lands in Settled</tspan></text>
+  <text x="672" y="46" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="20" font-weight="700" fill="#161B26">After t3sm organize<tspan dx="14" font-size="15" font-weight="400" fill="#565E71">pinned, history inside each project</tspan></text>
+  <rect x="48" y="70" width="560" height="454" rx="12" fill="#FFFFFF" stroke="#E1E4EA"/>
+  <path d="M48,106 h560" stroke="#E1E4EA"/>
+  <circle cx="66" cy="88" r="5" fill="#E1E4EA"/><circle cx="82" cy="88" r="5" fill="#E1E4EA"/><circle cx="98" cy="88" r="5" fill="#E1E4EA"/>
+  <text x="328" y="93" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="13" font-weight="600" text-anchor="middle" fill="#646C80">T3 Code</text>
+  <path d="M66,127 h6 l2,2 h8 v9 h-16 z" fill="none" stroke="#646C80" stroke-width="1.4" stroke-linejoin="round"/>
+  <text x="90" y="138" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="15" font-weight="700" fill="#161B26">billing-api</text>
+  <text x="592" y="137" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="12" text-anchor="end" fill="#A6ADBB">no threads shown</text>
+  <path d="M66,163 h6 l2,2 h8 v9 h-16 z" fill="none" stroke="#646C80" stroke-width="1.4" stroke-linejoin="round"/>
+  <text x="90" y="174" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="15" font-weight="700" fill="#161B26">mobile-app</text>
+  <text x="592" y="173" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="12" text-anchor="end" fill="#A6ADBB">no threads shown</text>
+  <path d="M66,199 h6 l2,2 h8 v9 h-16 z" fill="none" stroke="#646C80" stroke-width="1.4" stroke-linejoin="round"/>
+  <text x="90" y="210" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="15" font-weight="700" fill="#161B26">docs-site</text>
+  <text x="592" y="209" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="12" text-anchor="end" fill="#A6ADBB">no threads shown</text>
+  <path d="M60,232 h536" stroke="#E1E4EA"/>
+  <path d="M66,245 l5,5 l5,-5" fill="none" stroke="#646C80" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="86" y="254" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="15" font-weight="700" fill="#565E71">Settled · 3,267</text>
+  <text x="592" y="253" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="12" text-anchor="end" fill="#A6ADBB">everything imported</text>
+  <text x="86" y="281.04" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="14" fill="#A6ADBB">Reply with OK</text>
+  <text x="86" y="305.04" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="14" fill="#A6ADBB">Write a commit message for this diff</text>
+  <text x="86" y="329.04" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="14" fill="#A6ADBB">Summarize this file in one line</text>
+  <text x="86" y="353.04" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="14" fill="#A6ADBB">Generate a title for this chat</text>
+  <text x="86" y="377.04" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="14" fill="#A6ADBB">Is this branch name valid?</text>
+  <rect x="672" y="70" width="560" height="454" rx="12" fill="#FFFFFF" stroke="#E1E4EA"/>
+  <path d="M672,106 h560" stroke="#E1E4EA"/>
+  <circle cx="690" cy="88" r="5" fill="#E1E4EA"/><circle cx="706" cy="88" r="5" fill="#E1E4EA"/><circle cx="722" cy="88" r="5" fill="#E1E4EA"/>
+  <text x="952" y="93" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="13" font-weight="600" text-anchor="middle" fill="#646C80">T3 Code</text>
+  <path d="M690,127 h6 l2,2 h8 v9 h-16 z" fill="none" stroke="#646C80" stroke-width="1.4" stroke-linejoin="round"/>
+  <text x="714" y="138" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="15" font-weight="700" fill="#161B26">billing-api</text>
+  <path d="M1212,136 v-5 M1209,131 h6 l-1,-6 h-4 z" fill="none" stroke="#3451D1" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="702" cy="160" r="3.5" fill="#6A42C9"/>
+  <text x="714" y="165.04" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="14" fill="#161B26">Fix the duplicate invoice bug</text>
+  <rect x="1173" y="149" width="45" height="22" rx="11" fill="#EFE8FC"/>
+  <text x="1195.5" y="164.32" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="12" font-weight="700" text-anchor="middle" fill="#6A42C9">Work</text>
+  <circle cx="702" cy="184" r="3.5" fill="#6A42C9"/>
+  <text x="714" y="189.04" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="14" fill="#161B26">Add retry to the payment webhook</text>
+  <rect x="1173" y="173" width="45" height="22" rx="11" fill="#EFE8FC"/>
+  <text x="1195.5" y="188.32" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="12" font-weight="700" text-anchor="middle" fill="#6A42C9">Work</text>
+  <circle cx="702" cy="208" r="3.5" fill="#6A42C9"/>
+  <text x="714" y="213.04" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="14" fill="#161B26">Migrate invoices to UTC</text>
+  <rect x="1173" y="197" width="45" height="22" rx="11" fill="#EFE8FC"/>
+  <text x="1195.5" y="212.32" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="12" font-weight="700" text-anchor="middle" fill="#6A42C9">Work</text>
+  <path d="M690,235 h6 l2,2 h8 v9 h-16 z" fill="none" stroke="#646C80" stroke-width="1.4" stroke-linejoin="round"/>
+  <text x="714" y="246" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="15" font-weight="700" fill="#161B26">mobile-app</text>
+  <path d="M1212,244 v-5 M1209,239 h6 l-1,-6 h-4 z" fill="none" stroke="#3451D1" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="702" cy="268" r="3.5" fill="#B8641A"/>
+  <text x="714" y="273.04" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="14" fill="#161B26">Offline mode for the cart</text>
+  <rect x="1145" y="257" width="73" height="22" rx="11" fill="#FBEEDF"/>
+  <text x="1181.5" y="272.32" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="12" font-weight="700" text-anchor="middle" fill="#B8641A">Personal</text>
+  <circle cx="702" cy="292" r="3.5" fill="#B8641A"/>
+  <text x="714" y="297.04" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="14" fill="#161B26">Crash on login with an expired token</text>
+  <rect x="1145" y="281" width="73" height="22" rx="11" fill="#FBEEDF"/>
+  <text x="1181.5" y="296.32" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="12" font-weight="700" text-anchor="middle" fill="#B8641A">Personal</text>
+  <circle cx="702" cy="316" r="3.5" fill="#B8641A"/>
+  <text x="714" y="321.04" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="14" fill="#161B26">Dark theme for the settings screen</text>
+  <rect x="1145" y="305" width="73" height="22" rx="11" fill="#FBEEDF"/>
+  <text x="1181.5" y="320.32" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="12" font-weight="700" text-anchor="middle" fill="#B8641A">Personal</text>
+  <path d="M690,343 h6 l2,2 h8 v9 h-16 z" fill="none" stroke="#646C80" stroke-width="1.4" stroke-linejoin="round"/>
+  <text x="714" y="354" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="15" font-weight="700" fill="#161B26">docs-site</text>
+  <path d="M1212,352 v-5 M1209,347 h6 l-1,-6 h-4 z" fill="none" stroke="#3451D1" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="702" cy="376" r="3.5" fill="#B8641A"/>
+  <text x="714" y="381.04" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="14" fill="#161B26">Rewrite the install guide</text>
+  <rect x="1145" y="365" width="73" height="22" rx="11" fill="#FBEEDF"/>
+  <text x="1181.5" y="380.32" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="12" font-weight="700" text-anchor="middle" fill="#B8641A">Personal</text>
+  <circle cx="702" cy="400" r="3.5" fill="#B8641A"/>
+  <text x="714" y="405.04" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="14" fill="#161B26">Fix broken links in the API docs</text>
+  <rect x="1145" y="389" width="73" height="22" rx="11" fill="#FBEEDF"/>
+  <text x="1181.5" y="404.32" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="12" font-weight="700" text-anchor="middle" fill="#B8641A">Personal</text>
+  <circle cx="702" cy="424" r="3.5" fill="#B8641A"/>
+  <text x="714" y="429.04" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="14" fill="#161B26">Add a search box</text>
+  <rect x="1145" y="413" width="73" height="22" rx="11" fill="#FBEEDF"/>
+  <text x="1181.5" y="428.32" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="12" font-weight="700" text-anchor="middle" fill="#B8641A">Personal</text>
+  <path d="M684,448 h536" stroke="#E1E4EA"/>
+  <path d="M690,461 l5,5 l5,-5" fill="none" stroke="#646C80" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="710" y="470" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="15" font-weight="700" fill="#565E71">Settled · 41</text>
+  <text x="1216" y="469" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="12" text-anchor="end" fill="#A6ADBB">settled by T3 Code itself</text>
+  <path d="M690,491 l5,5 l5,-5" fill="none" stroke="#A6ADBB" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="710" y="500" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="15" font-weight="700" fill="#A6ADBB">Archived · 2,614</text>
+  <text x="1216" y="499" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="12" text-anchor="end" fill="#A6ADBB">automated runs, kept out of sight</text>
+  <path d="M622,297 h28 m-7,-7 l7,7 l-7,7" fill="none" stroke="#3451D1" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="640" y="556" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="15" text-anchor="middle" fill="#646C80">Optional. Defaults shown; you choose each part.</text>
+</svg>

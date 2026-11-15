@@ -1,0 +1,12 @@
+Installed          0.3.0 (installed with npm)
+Latest             0.3.1 (patch)
+Source             GitHub demo-owner/demo-app
+Automatic updates  on
+Last check         Nov 15, 09:00 (3 h ago)
+Last update        0.2.1 -> 0.3.0, installed
+
+! The update to 0.3.1 (started Nov 15, 11:30) was interrupted before it finished
+  To go back to 0.3.0:
+  npm install -g --install-links github:demo-owner/demo-app#v0.3.0
+
+› To install it: t3sm update

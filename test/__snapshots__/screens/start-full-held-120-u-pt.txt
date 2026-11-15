@@ -1,0 +1,45 @@
+● ● ● ● ● ● ● ◉ ○ ○ ○  Passo 8 de 11 · Importação completa
+Agora o resto. Antes de responderes s:
+- Não deixes o computador adormecer até terminar.
+- Fecha as sessões que queres importar: um projeto em uso espera por outra
+  execução.
+- Pausa a sincronização na nuvem da pasta pessoal (OneDrive, Dropbox, iCloud).
+A atualizar o plano…
+
+╭─ Isto é o que vou fazer ─────────────────────────────────╮
+│ Importar      23 conversas                               │
+│ Para           3 projetos                                │
+│ Em uso agora   1 projeto espera por outra execução       │
+│ Desfazer      t3sm rollback --run <id> --archive-threads │
+╰──────────────────────────────────────────────────────────╯
+Importar tudo agora? Isto escreve no T3 Code; t3sm rollback
+--archive-threads desfá-lo. [s/N/?/v/q] s
+22 de 22 importadas em 4 s
+
+╭─ ✓ 22 conversas importadas ──────────────────────────╮
+│ Importadas  22                                       │
+│ Retidas      1                                       │
+│ Execução    R1                                       │
+│ Desfazer    t3sm rollback --run R1 --archive-threads │
+╰──────────────────────────────────────────────────────╯
+
+! busy à espera: 'Fix the build' está em uso (escrita há 3 min); é importada após 10 minutos parada
+
+✓ Feito; 1 projeto espera até as conversas dele estarem paradas (o t3sm
+  importa-o nessa altura; t3sm help held)
+
+● ● ● ● ● ● ● ● ● ◉ ○  Passo 10 de 11 · Manter sincronizado
+Vão aparecendo sessões novas enquanto trabalhas. O vigilante em segundo plano
+importa-as por ti, com cuidado: espera pelas sessões em uso e nunca move
+ficheiros nem cria instâncias.
+Instalar agora o vigilante em segundo plano? Isto acrescenta uma tarefa ao
+agendador do sistema. Desfazer: t3sm schedule remove. [s/N/?/v/q] q
+
+╭─ O que esta sessão fez ──────────────────────────────────────────────╮
+│ ✓ Tudo importado (execução R1)                                       │
+│   Desfazer: t3sm rollback --run R1 --archive-threads                 │
+│                                                                      │
+│ t3sm runs lista todas as execuções; as threads são arquivadas, nunca │
+│ apagadas.                                                            │
+╰──────────────────────────────────────────────────────────────────────╯
+Parado. Nada ficou a meio; corre t3sm outra vez para continuar.

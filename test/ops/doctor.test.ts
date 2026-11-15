@@ -11,6 +11,7 @@ import type { Io } from "../../src/cli/main.ts";
 import type { Config, JournalEntry } from "../../src/core/types.ts";
 import type { ProviderInstanceInfo, T3Api } from "../../src/t3/api.ts";
 import { OPENCODE_1_19_DDL, buildOpenCodeDb } from "../fixtures/opencode/build.ts";
+import { TESTED_VERSIONS } from "../../src/t3/compat.ts";
 
 const HOME = "C:/Users/demo";
 const CFG: Config = defaultConfig([
@@ -63,6 +64,8 @@ function fakeDeps(over: Partial<DoctorDeps> & { instances?: ProviderInstanceInfo
     binVersion: async () => "2.1.0 (Claude Code)",
     scheduleStatus: async () => ({ kind: "schtasks", installed: true, nextRun: "11/11/2026 12:15:00", detail: "Ready" }),
     readHeartbeat: async () => null,
+    packageVersion: "0.3.0",
+    pluginState: async () => ({ state: "installed", version: "0.3.0" }),
     ...over,
   };
   return { deps, calls, api };
@@ -72,7 +75,7 @@ const by = (checks: Check[], id: string) => checks.find((c) => c.id === id);
 
 const IDS = ["node-version", "state-dir", "config", "lock", "pending-mtimes", "future-mtimes", "claude-env", "t3-runtime", "t3-reachable", "t3-version", "t3-cli", "t3-token",
   "instances", "instance-home-drift", "instance-unpinned", "instance-accounts", "accounts-undiscovered", "backups-present", "quarantine-orphans",
-  "harness:claude", "harness:codex", "harness:pi", "schedule", "sync-watcher", "merge-pending"];
+  "harness:claude", "harness:codex", "harness:pi", "t3sm-plugin", "schedule", "sync-watcher", "merge-pending"];
 
 test("all-fake healthy deps: every check ok, one T3 session, closed at the end", async () => {
   const { deps, calls } = fakeDeps();
@@ -207,11 +210,17 @@ test("future-mtimes: its own budget (default 45 s); a slow walker degrades to a 
   const { CHECK_TIMEOUTS_MS } = await import("../../src/ops/doctor.ts");
   assert.equal(CHECK_TIMEOUTS_MS["future-mtimes"], 45_000);
   let stopped = false;
+  // The first 4 files arrive through microtasks only and the walk then waits on a gate, so how many files were checked
+  // when the 60 ms budget fires does not depend on timer resolution or machine load (it used to count on three
+  // setTimeout(0) hops fitting in 60 ms).
+  let release!: () => void;
+  const gate = new Promise<void>((r) => { release = r; });
   async function* slow() {
     try {
       for (let i = 0; ; i++) {
         yield { path: `C:/Users/demo/.claude/projects/p/${i}.jsonl`, mtimeMs: NOW - DAY_MS };
-        await new Promise((r) => setTimeout(r, i < 3 ? 0 : 1000));
+        if (i < 3) await Promise.resolve();
+        else await gate;
       }
     } finally { stopped = true; }
   }
@@ -219,7 +228,9 @@ test("future-mtimes: its own budget (default 45 s); a slow walker degrades to a 
   const c = by((await runDoctor(deps)).checks, "future-mtimes")!;
   assert.equal(c.status, "warn");
   assert.equal(c.message, "could not finish checking file times in 0.06 s (4 files checked, none in the future so far)");
-  await new Promise((r) => setTimeout(r, 1100));
+  assert.equal(stopped, false, "still waiting on the gate");
+  release(); // the walk resumes, hands the consumer one more file, which sees the stop flag and ends it
+  await new Promise((r) => setImmediate(r));
   assert.equal(stopped, true, "the walk is stopped, not left running");
 });
 
@@ -232,7 +243,14 @@ test("future-mtimes: a walker slower than the default per-check budget still fin
   }
   const ok = by((await runDoctor(fakeDeps({ timeoutMs: 30, checkTimeoutsMs: { "future-mtimes": 5000 }, futureMtimes: () => walk(5, 20, -1) }).deps)).checks, "future-mtimes")!;
   assert.deepEqual([ok.status, ok.message], ["ok", "no transcript has a file time in the future (5 files checked)"]);
-  async function* thenHang() { yield* walk(2, 0, 1); await new Promise(() => {}); }
+  // Two files through microtasks only (no timer racing the 50 ms budget), then a walk that never ends.
+  async function* thenHang() {
+    for (let i = 0; i < 2; i++) {
+      await Promise.resolve();
+      yield { path: `C:/Users/demo/.claude/projects/p/${i}.jsonl`, mtimeMs: i === 1 ? NOW + DAY_MS : NOW - DAY_MS };
+    }
+    await new Promise(() => {});
+  }
   const part = by((await runDoctor(fakeDeps({ checkTimeoutsMs: { "future-mtimes": 50 }, futureMtimes: () => thenHang() }).deps)).checks, "future-mtimes")!;
   assert.equal(part.status, "warn");
   assert.match(part.message, /^could not finish checking file times in 0\.05 s \(2 files checked; 1 transcript in the future so far: ~\/\.claude\/projects\/p\/1\.jsonl\)/);
@@ -338,10 +356,39 @@ test("M4: t3-cli fail; config invalid -> fail, missing -> ok; backups-present wa
 test("M4: instance-accounts warns on an unavailable instance and when T3 has no Claude instance", async () => {
   const c1 = by((await runDoctor(fakeDeps({ instances: [inst("claudeAgent", `${HOME}/.claude`, { email: "a@x.com" }), inst("claude-org", `${HOME}/.claude-org`, { availability: "unavailable" })] }).deps)).checks, "instance-accounts")!;
   assert.equal(c1.status, "warn");
-  assert.match(c1.message, /claude-org is unavailable/);
+  assert.match(c1.message, /^Org is unavailable/, "the account by its display name");
+  assert.doesNotMatch(c1.message, /claude-org|claudeAgent/, "never the raw account id when the account has a name");
   const c2 = by((await runDoctor(fakeDeps({ instances: [{ ...inst("codex", null), driver: "codex" }] }).deps)).checks, "instance-accounts")!;
   assert.equal(c2.status, "warn");
   assert.equal(c2.message, "T3 Code has no Claude instance");
+});
+
+test("doctor masks an account whose display name is an email (Claude accounts and t3sm plugin checks)", async () => {
+  const cfg = defaultConfig([{ id: "claudeAgent", home: "~/.claude", displayName: "demouser@example.com", accentColor: null }]);
+  const r = await runDoctor(fakeDeps({ loadConfig: async () => cfg, instances: [inst("claudeAgent", `${HOME}/.claude`, { availability: "unavailable" })], pluginState: async () => ({ state: "missing" }) }).deps);
+  for (const id of ["instance-accounts", "t3sm-plugin"]) {
+    const c = by(r.checks, id)!;
+    assert.match(c.message, /d\*\*\*@example\.com/, id);
+    assert.doesNotMatch(JSON.stringify(c), /demouser/, `${id}: never the unmasked email, --json included`);
+  }
+});
+
+test("doctor's last scrub drops invisible characters before it masks, so a hidden one cannot shield an email", async () => {
+  const { ConfigError } = await import("../../src/core/config.ts");
+  const r = await runDoctor(fakeDeps({ loadConfig: async () => { throw new ConfigError("config.json: owner demo\u200Buser@example.com is not valid"); } }).deps);
+  const c = by(r.checks, "config")!;
+  assert.match(c.message, /d\*\*\*@example\.com/);
+  assert.doesNotMatch(JSON.stringify(c), /user@|\u200b/i);
+});
+
+test("doctor tells apart two Claude accounts with the same display name by their id", async () => {
+  const cfg = defaultConfig([
+    { id: "claudeAgent", home: "~/.claude", displayName: "Claude", accentColor: null },
+    { id: "claude-org", home: "~/.claude-org", displayName: "Claude", accentColor: null },
+  ]);
+  const c = by((await runDoctor(fakeDeps({ loadConfig: async () => cfg, instances: [inst("claudeAgent", `${HOME}/.claude`, { email: "a@x.com" }), inst("claude-org", `${HOME}/.claude-org`, { availability: "unavailable" })] }).deps)).checks, "instance-accounts")!;
+  assert.match(c.message, /^Claude \(claude-org\) is unavailable/);
+  assert.match(c.message, /Claude \(claudeAgent\) a\*\*\*@x\.com/);
 });
 
 test("M4: schedule warns when the installed command points at paths that no longer exist", async () => {
@@ -351,26 +398,25 @@ test("M4: schedule warns when the installed command points at paths that no long
   assert.equal(c.fix, "Run t3sm schedule install again from the current t3sm");
 });
 
-test("M2: table word-wraps message and fix lines to 80 columns with a hanging indent (snapshot)", async () => {
+test("M2 (Task 21): a table of checks (symbol, check, result), each problem in full with what to do, the verdict as a panel (snapshot)", async () => {
   const { renderDoctor } = await import("../../src/cli/commands/doctor.ts");
+  const { makeCliUi } = await import("../../src/cli/ui.ts");
+  const { assertSnapshot } = await import("../ui/snapshot.ts");
   const checks: Check[] = [
     { id: "node-version", status: "ok", message: "Node 24.11.1" },
     { id: "t3-reachable", status: "fail", message: "T3 Code is not answering at http://127.0.0.1:3773 and every check that needs it was skipped for that reason", fix: "Open T3 Code from the Start menu, wait until its window shows your projects, then run t3sm doctor again" },
     { id: "t3-token", status: "skip", message: "needs a running T3 Code" },
   ];
-  const expected = [
-    "ok    node-version  Node 24.11.1",
-    "FAIL  t3-reachable  T3 Code is not answering at http://127.0.0.1:3773 and every",
-    "                    check that needs it was skipped for that reason",
-    "                    -> Open T3 Code from the Start menu, wait until its window",
-    "                       shows your projects, then run t3sm doctor again",
-    "skip  t3-token      needs a running T3 Code",
-    "",
-    "1 problem to fix. Fix the items marked FAIL, then run t3sm doctor again.",
-    "",
-  ].join("\n");
-  assert.equal(renderDoctor(checks, { fancy: false, color: false, columns: 80 }), expected);
-  for (const l of expected.split("\n")) assert.ok(l.length <= 80, l);
+  for (const unicode of [false, true]) {
+    const out = renderDoctor(checks, makeCliUi({ color: 0, unicode, isTTY: false, columns: 80 }, "en"));
+    for (const l of out.split("\n")) assert.ok(l.length <= 80, l);
+    assertSnapshot(`doctor/m2-80-${unicode ? "u" : "a"}`, out);
+  }
+  const ascii = renderDoctor(checks, makeCliUi({ color: 0, unicode: false, isTTY: false, columns: 80 }, "en"));
+  assert.match(ascii, /^x  T3 Code running  see below$/m, "the check's name, never its id; the message once, below");
+  assert.equal(ascii.split("T3 Code is not answering").length, 2, "never twice");
+  assert.match(ascii, /^  What to do: Open T3 Code from the Start menu, wait until its window shows your$/m, "the fix in full");
+  assert.match(ascii, /^\+- x 1 problem to fix -+\+$/m, "the verdict is a panel");
 });
 
 test("lock: taken before the last restart (uptime now below the lock's) -> ok (taken over next run) even with a live pid; held long -> fix names the lock file, never ending a process", async () => {
@@ -411,7 +457,8 @@ test("lock held > 6 h -> warn naming the pid; versions; claude-env; node; state-
   const { checks } = await runDoctor(deps);
   assert.equal(by(checks, "lock")!.status, "warn");
   assert.match(by(checks, "lock")!.message, /4242/);
-  assert.equal(by(checks, "t3-version")!.status, "fail");
+  assert.equal(by(checks, "t3-version")!.status, "warn");
+  assert.match(by(checks, "t3-version")!.message, /has not been tested with t3sm.*proceeds/);
   assert.equal(by(checks, "claude-env")!.status, "warn");
   assert.equal(by(checks, "claude-env")!.message, "T3 Code started from this shell would read ~/.claude-org as its default account");
   assert.equal(by(checks, "node-version")!.status, "fail");
@@ -422,15 +469,16 @@ test("lock held > 6 h -> warn naming the pid; versions; claude-env; node; state-
   assert.equal(by(checks, "harness:pi")!.status, "warn");
 });
 
-test("same-minor T3 version is ok; accounts-undiscovered and quarantine-orphans warn", async () => {
+test("same-minor T3 version warns with the same wording as any untested version; accounts-undiscovered and quarantine-orphans warn", async () => {
   const { deps } = fakeDeps({
     readRuntime: async () => ({ origin: "http://127.0.0.1:3773", port: 3773, serverVersion: "0.1.9-nightly.20261111.4515", pid: 1 }),
     discover: async () => [{ home: `${HOME}/.claude`, sources: ["default"], alias: null }, { home: "D:/accts/work", sources: ["shell-profile"], alias: "cw" }],
     findOrphanedQuarantine: async () => [{ accountHome: `${HOME}/.claude`, path: `${HOME}/.claude/session-manager-quarantine/backups/x`, kind: "backup" }],
   });
   const { checks } = await runDoctor(deps);
-  assert.equal(by(checks, "t3-version")!.status, "ok");
-  assert.match(by(checks, "t3-version")!.message, /same minor/);
+  assert.equal(by(checks, "t3-version")!.status, "warn");
+  assert.equal(by(checks, "t3-version")!.message, `0.1.9-nightly.20261111.4515 has not been tested with t3sm (tested: ${TESTED_VERSIONS.join(", ")}); t3sm proceeds with a warning`);
+  assert.equal(by(checks, "t3-version")!.fix, "Nothing is required; every change is journaled and can be undone with t3sm rollback. Pass --allow-untested to hide the warning");
   const u = by(checks, "accounts-undiscovered")!;
   assert.equal(u.status, "warn");
   assert.match(u.message, /D:\/accts\/work \(shell-profile \(cw\)\)/);
@@ -452,30 +500,32 @@ function cliIo(env: NodeJS.ProcessEnv, tty = false) {
   return { io, out: () => out.join(""), err: () => err.join("") };
 }
 
-test("doctor CLI: ASCII table, fix lines under failing checks, verdict, exit 1 on fail; --json prints the checks", async () => {
+test("doctor CLI: the table, what to do under each problem, the verdict panel, exit 1 on fail; --json prints the checks", async () => {
   const { deps } = fakeDeps({ probe: async () => false });
-  const c = cliIo({});
+  const c = cliIo({ TERM: "dumb", LANG: "en_US.UTF-8" }); // ASCII symbols, no colour
   assert.equal(await doctorCommand([], c.io, { deps }), 1);
   const o = c.out();
-  assert.match(o, /FAIL\s+t3-reachable/);
-  assert.match(o, /ok\s+node-version/);
-  assert.match(o, /\n\s+-> Open T3 Code from the Start menu\n/);
-  assert.equal(o.trimEnd().split("\n").at(-1)!, "1 problem to fix. Fix the items marked FAIL, then run t3sm doctor again.");
-  assert.ok(!o.includes("✓"), "no symbols off a TTY");
+  assert.match(o, /^x\s+T3 Code running\s+/m);
+  assert.match(o, /^v\s+Node\s+Node /m);
+  assert.match(o, /\n  What to do: Open T3 Code from the Start menu\n/);
+  assert.match(o, /^\| Fix the items marked x, then run t3sm doctor again\. +\|$/m);
+  assert.match(o, /^\+- x 1 problem to fix -+\+$/m);
+  assert.ok(!o.includes("✓") && !o.includes("\x1b["), "ASCII and no colour on a dumb terminal");
   const j = cliIo({});
   assert.equal(await doctorCommand(["--json"], j.io, { deps }), 1);
   const parsed = JSON.parse(j.out());
   assert.ok(Array.isArray(parsed) && parsed.some((x: Check) => x.id === "t3-reachable" && x.status === "fail"));
-  const ok = cliIo({}, true);
+  const ok = cliIo({ WT_SESSION: "1", LANG: "en_US.UTF-8" }, true);
   assert.equal(await doctorCommand([], ok.io, { deps: fakeDeps().deps }), 0);
   assert.match(ok.out(), /✓/);
-  assert.equal(ok.out().trimEnd().split("\n").at(-1)!, "Ready. Next: t3sm plan");
-  const w = cliIo({});
+  assert.match(ok.out(), /Ready/);
+  assert.match(ok.out(), /Next: t3sm plan/);
+  const w = cliIo({ LANG: "en_US.UTF-8" });
   assert.equal(await doctorCommand([], w.io, { deps: fakeDeps({ env: { CLAUDE_CONFIG_DIR: "C:/x" } }).deps }), 0);
-  assert.equal(w.out().trimEnd().split("\n").at(-1)!, "Ready (1 warning above). Next: t3sm plan");
+  assert.match(w.out(), /Ready, with 1 warning/);
   const nc = cliIo({ NO_COLOR: "1" }, true);
   await doctorCommand([], nc.io, { deps: fakeDeps().deps });
-  assert.ok(!nc.out().includes("✓") && !nc.out().includes("\x1b["));
+  assert.ok(!nc.out().includes("\x1b["));
   const bad = cliIo({});
   assert.equal(await doctorCommand(["--bogus"], bad.io, { deps }), 2);
 });
@@ -742,4 +792,176 @@ test("defaultDoctorDeps().futureMtimes: stat-only walk (no transcript opened), w
   const warm = await collect();
   assert.equal(warm[0]!.path, b);
   assert.equal(warm.length, 2);
+});
+
+test("t3sm-plugin: one line per configured account (installed / outdated / missing); read-only, never a fail", async () => {
+  const seen: string[] = [];
+  const states: Record<string, { state: "installed"; version: string } | { state: "outdated"; version: string } | { state: "missing" }> = {
+    [`${HOME}/.claude`]: { state: "installed", version: "0.3.0" },
+    [`${HOME}/.claude-org`]: { state: "missing" },
+  };
+  const c = by((await runDoctor(fakeDeps({ pluginState: async (h) => { seen.push(h); return states[h]!; } }).deps)).checks, "t3sm-plugin")!;
+  assert.equal(c.status, "ok", "an optional plugin that is missing is not a warning");
+  assert.match(c.message, /^Claude: installed \(0\.3\.0\)/, "each account by its display name");
+  assert.match(c.message, /Org: not installed/);
+  assert.doesNotMatch(c.message, /claude-org|claudeAgent/, "never the raw account id when the account has a name");
+  assert.deepEqual(seen.sort(), [`${HOME}/.claude`, `${HOME}/.claude-org`].sort());
+
+  states[`${HOME}/.claude-org`] = { state: "outdated", version: "0.2.1" };
+  const w = by((await runDoctor(fakeDeps({ pluginState: async (h) => states[h]! }).deps)).checks, "t3sm-plugin")!;
+  assert.equal(w.status, "warn");
+  assert.match(w.message, /Org: outdated: 0\.2\.1 installed, this t3sm is 0\.3\.0/);
+  assert.match(w.fix ?? "", /claude plugin update t3sm@t3code-session-manager/);
+});
+
+test("t3sm-plugin: without the reader the check is skipped, and a throwing reader is a warn, not a crash", async () => {
+  const none = by((await runDoctor(fakeDeps({ pluginState: undefined }).deps)).checks, "t3sm-plugin")!;
+  assert.equal(none.status, "skip");
+  const bad = by((await runDoctor(fakeDeps({ pluginState: async () => { throw new Error("disk"); } }).deps)).checks, "t3sm-plugin")!;
+  assert.equal(bad.status, "warn");
+});
+
+// ---------- sync-watcher: stale version ----------
+
+const HB = { pid: 77, startedAt: "2026-11-11T08:00:00.000Z", lastCycleAt: "2026-11-11T11:55:00.000Z", lastResult: null, nextCycleAt: "2026-11-11T12:10:00.000Z", protocol: 1 };
+const RUNNING = { ...HB, version: "0.3.0", stamp: "2026-11-01T10:00:00.000Z", installRoot: "C:/work/t3sm" };
+const INSTALLED = { version: "0.3.1", stamp: "2026-11-11T11:00:00.000Z" };
+
+test("doctor flags a watcher on another version after one cycle (the install changed before its last cycle ended)", async () => {
+  const roots: (string | null)[] = [];
+  const { deps } = fakeDeps({
+    readHeartbeat: async () => RUNNING,
+    installStamp: (root) => { roots.push(root); return { ...INSTALLED, changedAtMs: Date.parse("2026-11-11T11:50:00.000Z") }; },
+  });
+  const c = by((await runDoctor(deps)).checks, "sync-watcher")!;
+  assert.equal(c.status, "warn");
+  assert.match(c.message, /pid 77.*0\.3\.0.*0\.3\.1 is installed/);
+  assert.match(c.fix!, /t3sm schedule restart/);
+  assert.deepEqual(roots, ["C:/work/t3sm"], "compared with the watcher's own install root");
+  // Same version, rebuilt (another stamp): stale as well.
+  const rebuilt = fakeDeps({ readHeartbeat: async () => RUNNING, installStamp: () => ({ version: "0.3.0", stamp: "2026-11-11T11:00:00.000Z", changedAtMs: Date.parse("2026-11-11T11:50:00.000Z") }) });
+  assert.equal(by((await runDoctor(rebuilt.deps)).checks, "sync-watcher")!.status, "warn");
+});
+
+test("doctor: a new install the watcher has not had a cycle to notice yet is fine (it restarts after its next cycle)", async () => {
+  const { deps } = fakeDeps({ readHeartbeat: async () => RUNNING, installStamp: () => ({ ...INSTALLED, changedAtMs: Date.parse("2026-11-11T11:58:00.000Z") }) });
+  const c = by((await runDoctor(deps)).checks, "sync-watcher")!;
+  assert.equal(c.status, "ok");
+  assert.match(c.message, /running \(pid 77\).*0\.3\.1 is installed; the watcher switches to it after its next cycle/);
+  const same = fakeDeps({ readHeartbeat: async () => RUNNING, installStamp: () => ({ version: "0.3.0", stamp: RUNNING.stamp, changedAtMs: 0 }) });
+  const s = by((await runDoctor(same.deps)).checks, "sync-watcher")!;
+  assert.equal(s.status, "ok");
+  assert.match(s.message, /^running \(pid 77\), last cycle 5 min ago$/);
+  // An unreadable install (null) says nothing about the version.
+  const unknown = fakeDeps({ readHeartbeat: async () => RUNNING, installStamp: () => null });
+  assert.equal(by((await runDoctor(unknown.deps)).checks, "sync-watcher")!.status, "ok");
+});
+
+test("doctor: an install that changed inside the watcher's settle window before its last cycle is not flagged (the watcher skips that restart on purpose)", async () => {
+  const at = (ms: number) => fakeDeps({ readHeartbeat: async () => RUNNING, installStamp: () => ({ ...INSTALLED, changedAtMs: Date.parse(RUNNING.lastCycleAt) - ms }) });
+  const inside = by((await runDoctor(at(15_000).deps)).checks, "sync-watcher")!;
+  assert.equal(inside.status, "ok", "15 s before the cycle ended: still settling, the next cycle restarts it");
+  assert.match(inside.message, /0.3.1 is installed; the watcher switches to it after its next cycle/);
+  assert.equal(by((await runDoctor(at(29_999).deps)).checks, "sync-watcher")!.status, "ok");
+  assert.equal(by((await runDoctor(at(30_000).deps)).checks, "sync-watcher")!.status, "warn", "exactly settled and still not restarted");
+});
+
+test("heartbeat from 0.2.1 (no version) counts as stale-version", async () => {
+  for (const installStamp of [() => ({ ...INSTALLED, changedAtMs: 0 }), () => null, undefined]) {
+    const { deps } = fakeDeps({ readHeartbeat: async () => ({ ...HB, protocol: undefined }), installStamp });
+    const c = by((await runDoctor(deps)).checks, "sync-watcher")!;
+    assert.equal(c.status, "warn");
+    assert.match(c.message, /^running \(pid 77\) on an older t3sm, or one that could not read its install, that does not restart itself after an upgrade$/);
+    assert.match(c.fix!, /t3sm schedule restart/);
+  }
+  // A stopped or dead 0.2.1 watcher is not "running on another version".
+  const stopped = fakeDeps({ readHeartbeat: async () => ({ ...HB, stoppedAt: "2026-11-11T11:56:00.000Z" }) });
+  assert.equal(by((await runDoctor(stopped.deps)).checks, "sync-watcher")!.status, "ok");
+  const dead = fakeDeps({ readHeartbeat: async () => HB, pidAlive: () => false });
+  assert.match(by((await runDoctor(dead.deps)).checks, "sync-watcher")!.message, /is gone without a clean stop/);
+});
+
+test("doctor: a watcher that stopped to restart and has no successor after 20 min warns (as status does)", async () => {
+  const lost = fakeDeps({ readHeartbeat: async () => ({ ...RUNNING, stoppedAt: "2026-11-11T11:30:00.000Z", reason: "restart" as const }) });
+  const c = by((await runDoctor(lost.deps)).checks, "sync-watcher")!;
+  assert.equal(c.status, "warn");
+  assert.match(c.message, /to restart into a newer t3sm, and no new watcher started/);
+  assert.match(c.fix!, /t3sm schedule restart/);
+  const fresh = fakeDeps({ readHeartbeat: async () => ({ ...RUNNING, stoppedAt: "2026-11-11T11:55:00.000Z", reason: "restart" as const }) });
+  assert.equal(by((await runDoctor(fresh.deps)).checks, "sync-watcher")!.status, "ok", "a successor may still be starting");
+});
+
+test("doctor: a 0.3 watcher that could not read its install stamp (version, no stamp) is flagged as not restarting itself", async () => {
+  const { deps } = fakeDeps({ readHeartbeat: async () => ({ ...HB, version: "0.3.0" }), installStamp: () => ({ ...INSTALLED, changedAtMs: 0 }) });
+  const c = by((await runDoctor(deps)).checks, "sync-watcher")!;
+  assert.equal(c.status, "warn");
+  assert.match(c.message, /on t3sm 0\.3\.0, but it could not read its install/);
+  assert.match(c.fix!, /t3sm schedule restart/);
+});
+
+test("the checks a screen interprets carry structured data (merge-pending, harness:<agent>); message and fix unchanged", async () => {
+  const at = "2026-11-11T10:00:00.000Z";
+  const m = by((await runDoctor(fakeDeps({ mergePending: async () => ({ count: 2, orphaned: 1, at }) }).deps)).checks, "merge-pending")!;
+  assert.deepEqual(m.data, { continued: 2, sideBranch: 1, at });
+  assert.match(m.message, /2 sessions continued in a terminal.*1 session has terminal work on a side branch/);
+  const ok = by((await runDoctor(fakeDeps({ mergePending: async () => ({ count: 0, orphaned: 0, at }) }).deps)).checks, "merge-pending")!;
+  assert.deepEqual(ok.data, { continued: 0, sideBranch: 0, at });
+  const { deps } = fakeDeps({
+    instances: [inst("claudeAgent", "C:\Users\demo\.claude")],
+    harnesses: async () => [{ id: "codex", available: true, importable: 2, convertible: 3, skipped: 0, readErrors: 1 }, { id: "pi", available: true }, { id: "opencode", available: false }],
+    findBin: () => null,
+  });
+  const checks = (await runDoctor(deps)).checks;
+  assert.deepEqual(by(checks, "harness:codex")!.data, { harness: "codex", sessions: 5, readErrors: 1, noInstance: true });
+  assert.deepEqual(by(checks, "harness:pi")!.data, { harness: "pi", sessions: null, readErrors: 0, noInstance: true });
+  assert.deepEqual(by(checks, "harness:opencode")!.data, { harness: "opencode", sessions: 0, readErrors: 0, noInstance: false });
+  assert.match(by(checks, "harness:codex")!.fix ?? "", /Enable Codex.*t3sm scan/s, "the fix is unchanged");
+});
+
+test("doctor in Portuguese: every check's result and fix are worded from the catalogue (no English sentence on screen); --json keeps the English message and fix", async () => {
+  const { renderDoctor } = await import("../../src/cli/commands/doctor.ts");
+  const { makeCliUi } = await import("../../src/cli/ui.ts");
+  const runs = [
+    fakeDeps().deps,
+    fakeDeps({ probe: async () => false }).deps,
+    fakeDeps({ env: { CLAUDE_CONFIG_DIR: "C:/x" }, readRuntime: async () => null }).deps,
+    fakeDeps({ scheduleStatus: async () => ({ kind: "schtasks", installed: true, nextRun: null, detail: "Ready", missing: [`${HOME}/old/bin/t3sm.mjs`] }) }).deps,
+  ];
+  for (const deps of runs) {
+    const { checks } = await runDoctor(deps);
+    for (const c of checks) assert.ok(c.say !== undefined && c.say.length > 0 && c.say.every((p) => /^doctor\.say\./.test(p.key)), `${c.id} ${c.status}: worded by catalogue keys`);
+    const pt = renderDoctor(checks, makeCliUi({ color: 0, unicode: true, isTTY: false, columns: 200 }, "pt"));
+    const sentence = (x: string): boolean => x.split(" ").filter((w) => /^[a-z]{3,}$/i.test(w)).length >= 2;
+    for (const c of checks) {
+      // The accounts' list is names and masked emails, the same in every language.
+      const namesOnly = c.id === "instance-accounts" && c.status === "ok";
+      if (sentence(c.message) && !namesOnly) assert.ok(!pt.includes(c.message), `${c.id}: the English message is on the Portuguese screen: ${c.message}`);
+      if (c.fix && c.status !== "ok" && c.status !== "skip") assert.ok(!pt.includes(c.fix), `${c.id}: the English fix on the Portuguese screen: ${c.fix}`);
+    }
+    // English: the catalogue says exactly what the check's own message says.
+    const en = renderDoctor(checks, makeCliUi({ color: 0, unicode: true, isTTY: false, columns: 400 }, "en"));
+    for (const c of checks.filter((x) => x.status === "warn" || x.status === "fail")) assert.ok(en.includes(c.message), `${c.id}: ${c.message}`);
+  }
+  const j = cliIo({});
+  await doctorCommand(["--json"], j.io, { deps: fakeDeps({ probe: async () => false }).deps });
+  for (const c of JSON.parse(j.out()) as Record<string, unknown>[]) {
+    assert.ok(!("say" in c), "--json is unchanged: no wording keys");
+    assert.equal(typeof c["message"], "string");
+  }
+});
+
+test("doctor --json keeps its English messages and fixes verbatim (the screen words them from the catalogue; --json never changes)", async () => {
+  const j = cliIo({});
+  await doctorCommand(["--json"], j.io, { deps: fakeDeps({ probe: async () => false, env: { CLAUDE_CONFIG_DIR: "C:/x" } }).deps });
+  const by = new Map((JSON.parse(j.out()) as Check[]).map((c) => [c.id, c]));
+  assert.deepEqual(by.get("node-version"), { id: "node-version", status: "ok", message: "Node 22.18.0" });
+  assert.deepEqual(by.get("lock"), { id: "lock", status: "ok", message: "free" });
+  assert.deepEqual(by.get("claude-env"), {
+    id: "claude-env", status: "warn", message: "T3 Code started from this shell would read C:/x as its default account",
+    fix: "Start T3 Code from the Start menu, not from this shell",
+  });
+  assert.equal(by.get("t3-reachable")!.message, "T3 Code is not answering at http://127.0.0.1:3773");
+  assert.equal(by.get("t3-reachable")!.fix, "Open T3 Code from the Start menu");
+  assert.deepEqual(by.get("t3-token"), { id: "t3-token", status: "skip", message: "needs a running T3 Code" });
+  assert.equal(by.get("pending-mtimes")!.message, "no transcript file time is left bumped");
 });

@@ -29,9 +29,11 @@ force pushes and deletion. Restrict who can create `v*` tags.
 
 GitHub accepts PNG, JPG or GIF (not SVG), at least 640×320, ideally 1280×640, under 1 MB.
 
-1. `npm run assets` (the card is `docs/assets/social-light.svg` and `social-dark.svg`, 1280×640).
-2. Open `docs/assets/social-light.svg` in a browser at 100% zoom with a 1280×640 window, and take a screenshot of
-   the image (in Chrome or Edge DevTools: Ctrl+Shift+P → "Capture node screenshot" on the `<svg>`).
+1. `npm run assets` (the card is `docs/assets/social-light.svg` and `social-dark.svg`, 1280×640). For the 0.3.0
+   announcement the preview shows the before and after instead: `docs/assets/organize-light.svg` (1280 wide; frame the
+   screenshot at 1280×640, or crop the two sidebars).
+2. Open the chosen SVG, for example `docs/assets/social-light.svg`, in a browser at 100% zoom with a 1280×640
+   window. Take a screenshot of the image (in Chrome or Edge DevTools: Ctrl+Shift+P → "Capture node screenshot" on the `<svg>`).
 3. Settings → General → Social preview → Edit → Upload an image. Do not commit the PNG; the SVG is the source.
 
 ## Before the first public release
@@ -39,17 +41,29 @@ GitHub accepts PNG, JPG or GIF (not SVG), at least 640×320, ideally 1280×640, 
 - [ ] `npm ci && npm run typecheck && npm test && npm run build` on a clean clone.
 - [ ] `node scripts/release.js --check` prints `OK`.
 - [ ] `node scripts/build-assets.js` leaves `git status --porcelain docs/assets` empty.
-- [ ] The README renders on GitHub: hero and demo in light and dark mode, the narrow variants on a phone, the
+- [ ] The README renders on GitHub: hero, demo and the organize before/after in light and dark mode, the narrow variants on a phone, the
       reduced-motion still of the demo.
 - [ ] The private-data search (the denylist method in CONTRIBUTING.md) returns nothing.
 - [ ] CI is green on Windows, macOS and Linux. The CI badge in the README points at this repository's workflow, so
       it shows as broken (404) until the repository exists and CI has run once; check that it renders after the
       first run. The other badges are static and render anywhere.
 - [ ] After pushing the tag, from a machine without a clone:
-      `npx -y github:brunobola-portfolio/t3code-session-manager#v0.2.1 --version` prints `0.1.0`, and `doctor` runs.
+      `npx -y github:brunobola-portfolio/t3code-session-manager#v0.3.0 --version` prints the release's version (`<version>`), and `doctor` runs.
 - [ ] In Claude Code: `/plugin marketplace add brunobola-portfolio/t3code-session-manager`, then
       `/plugin install t3sm@t3code-session-manager`, then ask "check my T3 Code sessions": the skill runs
       `t3sm doctor`.
+
+## Release notes for 0.3.0
+
+The GitHub release takes its notes from the changelog section. The highlights to read first, in this order:
+
+- `t3sm organize` (and `--undo`): archive automated sessions, readable titles, history inside each project, pin recent
+  projects, delete empty projects t3sm created. Optional, previewed, journaled, undoable.
+- Conversations from folders T3 Code refuses (home, Downloads, `Documents/Codex`) are copied whole into the
+  project they worked on, or into General. Continuations made outside T3 Code after the import do not come in.
+- `t3sm status`, optional system notifications, and `/t3sm:status|sync|organize|import` inside T3 Code.
+- Does not refuse an untested T3 Code version: it warns once and goes ahead.
+- Checks before publishing: `npm run release:check` prints OK and `docs/assets/` has no drift.
 
 ## Release routine
 
@@ -71,4 +85,6 @@ The package stays `"private": true`: it is distributed through `npx github:` and
 
 > t3sm brings every Claude Code, Codex, Pi and OpenCode session into T3 Code as resumable threads, each under the
 > Claude subscription it was run with. Review a plan, apply in waves, undo with one command. MIT.
-> `npx -y github:brunobola-portfolio/t3code-session-manager#v0.2.1 doctor`
+> New in 0.3.0: `t3sm organize` brings the imported history back into each project, archives the automated noise
+> and gives conversations readable titles. Every part is optional, and it never touches what you changed by hand.
+> `npx -y github:brunobola-portfolio/t3code-session-manager#v0.3.0 doctor`

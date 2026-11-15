@@ -1,0 +1,20 @@
+t3sm 0.3.0 - Bring your sessions into T3 Code
+------------------------------------------------------------------------------------------------------------------------
+
+* * @ o o o o o o o o  Step 3 of 11 - Accounts
+
++- Here is what I will do ---------------------------------------------------------------------------------------------+
+| Import 5 conversations into 4 projects.                                                                              |
++----------------------------------------------------------------------------------------------------------------------+
+
+Accounts  2
+Path      C:/work/demo/packages/app/src/index.ts
+
+Project  Path                                    Sessions  Note
+------------------------------------------------------------------
+app      C:/work/demo/packages/app/src/index.ts      1234  ready
+api      ~/code/api/services/orders/create.ts          56  waiting
+
+x Needs you
+  3 conversations to decide.
+  > t3sm start --resume

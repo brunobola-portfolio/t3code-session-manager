@@ -1,0 +1,12 @@
+--- unicode on
+Project  Path                                           Count  Note
+──────────────────────────────────────────────────────────────────────────────
+app      C:/work/demo/packages/app/src/index.ts          1234  ready to import
+api      ~/code/api/services/orders/handlers/create.ts     56  waiting
+docs     ~/code/docs                                        7
+--- unicode off
+Project  Path                                           Count  Note
+------------------------------------------------------------------------------
+app      C:/work/demo/packages/app/src/index.ts          1234  ready to import
+api      ~/code/api/services/orders/handlers/create.ts     56  waiting
+docs     ~/code/docs                                        7

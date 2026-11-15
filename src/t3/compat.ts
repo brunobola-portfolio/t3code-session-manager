@@ -1,7 +1,9 @@
-import { T3Incompatible } from "./errors.ts";
-
-/** T3 Code server versions t3sm was verified against (spike S1 source + S1..S4 live). */
-export const TESTED_VERSIONS: readonly string[] = Object.freeze(["0.1.8-nightly.20261105.4218", "0.1.9-nightly.20261110.4465"]);
+/** T3 Code server versions t3sm was verified against (spikes S1..S6; source or live). */
+export const TESTED_VERSIONS: readonly string[] = Object.freeze([
+  "0.1.8-nightly.20261105.4218",
+  "0.1.9-nightly.20261110.4465",
+  "0.1.10-nightly.20261113.4630", // spike S6 + two real imports, 2026-11-14
+]);
 
 export type Compat = "tested" | "same-minor" | "untested";
 
@@ -20,18 +22,41 @@ export function checkCompat(version: string): Compat {
 
 export interface CompatOptions { allowUntested: boolean; onNotice?: (line: string) => void }
 
+/** The one wording every command uses for a T3 Code version not in TESTED_VERSIONS. */
+export function untestedNotice(version: string): string {
+  const v = version.replace(/[\r\n]/g, " ");
+  return `Warning: T3 Code ${v} has not been tested with t3sm (tested: ${TESTED_VERSIONS.join(", ")}). Proceeding; every change is journaled and can be undone with t3sm rollback.`;
+}
+
 /**
- * Applies the gate: "tested" is silent, "same-minor" proceeds with one notice line, "untested" throws T3Incompatible
- * (exit 4) unless allowUntested, in which case it proceeds with one notice line.
+ * Applies the gate (owner decision 2026-11-14: t3sm works with any T3 Code version). It never throws: a version in
+ * TESTED_VERSIONS is silent; any other (same minor or not) emits one untested warning and proceeds, silent with
+ * allowUntested. What protects an unknown version is strict response decoding (decode.ts), and the one thing that
+ * still refuses is a server whose orchestration protocol is not 2 (checked in connectT3, T3Incompatible).
  */
 export function compatGate(version: string, opts: CompatOptions): Compat {
   const c = checkCompat(version);
-  const tested = TESTED_VERSIONS.join(", ");
-  const v = version.replace(/[\r\n]/g, " ");
-  if (c === "same-minor") opts.onNotice?.(`T3 Code ${v} was not tested exactly (tested: ${tested}); same minor version, proceeding.`);
-  if (c === "untested") {
-    if (!opts.allowUntested) throw new T3Incompatible(version, `T3 Code ${v} is untested (tested: ${tested}). Rerun with --allow-untested to proceed anyway.`);
-    opts.onNotice?.(`T3 Code ${v} is untested (tested: ${tested}); proceeding because of --allow-untested.`);
-  }
+  if (c !== "tested" && !opts.allowUntested) opts.onNotice?.(untestedNotice(version));
   return c;
 }
+
+/**
+ * Same gate for the organize commands and their undo, which connect with allowUntested so the connection stays quiet and
+ * this speaks once (ruling R18; identical wording, so a command that runs both prints it once). Never throws.
+ */
+export function organizeGate(version: string, opts: CompatOptions): void {
+  compatGate(version, opts);
+}
+
+/**
+ * How a rehome copy follows its original when the original grows. Spike S5 (docs/spikes/S5-merge.md): T3 only continues a
+ * thread from records it wrote; a merge imports a new revision and archives the old thread (proven). "refresh" (append in
+ * place) is right only if S7a/S7b show the same thread growing: see docs/spikes/S7-followup-and-backdate.md.
+ */
+export const FOLLOW_MODE: "refresh" | "revision" = "revision";
+
+/**
+ * Whether `thread.settle` honours an optional `settledAt` (spike S8, docs/spikes/S7-followup-and-backdate.md).
+ * Unverified, so false: nothing sends `settledAt`.
+ */
+export const SETTLE_BACKDATE = false;

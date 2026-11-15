@@ -1,0 +1,2 @@
+! Running as Administrator: the guided set-up installs the scheduled sync and the /t3sm commands for this user only. Run
+  t3sm from your own account unless that is what you want.

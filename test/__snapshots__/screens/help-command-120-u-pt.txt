@@ -1,0 +1,33 @@
+Uso: t3sm rollback [--run <id>] [--yes | --dry-run] [--instances] [--archive-threads] [--allow-untested]
+
+Desfaz uma execução. Sem --run mostra a execução mais recente que não seja ela própria um rollback (pode ser uma
+sincronização automática) e pergunta; --yes precisa de --run <id>:
+  • os ficheiros convertidos que escreveu são apagados, a menos que tenham sido editados entretanto (aí ficam e são
+    listados);
+  • o que pôs em quarentena volta ao lugar (um caminho original que voltou a existir fica na quarentena e é indicado);
+  • as contas por omissão que definiu nos projetos são repostas (precisa do T3 Code a correr; senão a parte dos
+    ficheiros corre na mesma e o resto é indicado);
+  • uma junção (t3sm merge): a revisão é apagada, a thread antiga desarquivada e a thread da revisão arquivada; uma
+    revisão continuada entretanto fica e as duas threads ficam como estão (indicado);
+  • uma execução de organize (t3sm organize, t3sm projects rename --suggest): as alterações são revertidas onde o T3
+    Code ainda mostra o que o t3sm deixou, tal como t3sm organize --undo <run>; o que mudaste depois fica.
+As threads importadas e as instâncias e projetos criados são listados, nunca apagados. Corrê-lo duas vezes não muda nada
+na segunda.
+
+Opções:
+  --run <id>          A execução a desfazer (ver t3sm runs)
+  --yes               Não pergunta (precisa de --run; obrigatório quando não há terminal)
+  --dry-run           Só lista o que seria desfeito
+  --instances         Repõe também os nomes, cores e pastas das instâncias que a execução mudou
+  --archive-threads   Arquiva (não apaga) as threads que a execução importou
+  --allow-untested    Sem aviso numa versão do T3 Code que o t3sm não testou (nunca bloqueia)
+
+Exemplos:
+  t3sm runs
+  t3sm rollback --run 20261114-120000-abcd --dry-run
+  t3sm rollback --run 20261114-120000-abcd --yes
+
+Opções globais (todos os comandos):
+  --lang en|pt   A língua do que o t3sm escreve. Por omissão: a variável T3SM_LANG, depois "language" no config.json,
+                 depois a língua do sistema, senão inglês. O --json, o plan.md e os registos ficam sempre em inglês.
+  --no-color     Sem cor (o NO_COLOR também é respeitado)

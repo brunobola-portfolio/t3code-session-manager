@@ -1,0 +1,43 @@
+claudeAgent
+  Instance      claudeAgent
+  Display name  Claude Personal
+  Home          ~/.claude
+  Found via     the default folder
+  Signed in as  p***@example.com
+  Auth          signed in
+  Availability  usable
+
+claude-work
+  Instance      claude-work
+  Display name  Claude Work
+  Home          ~/.claude-work
+  Found via     config.json
+  Signed in as  -
+  Auth          signed out
+  Availability  usable
+
+claude-old
+  Instance      (none)
+  Display name  Claude Old
+  Home          ~/.claude-old
+  Found via     config.json
+  Signed in as  -
+  Auth          -
+  Availability  -
+
+! Instance claude-work is signed out
+  Sign in from T3 Code (or run claude
+  with CLAUDE_CONFIG_DIR set to its
+  home).
+
+! Account claude-old (~/.claude-old) has
+  no T3 instance
+  Its sessions cannot be imported until
+  the instance exists; this creates it:
+  › t3sm accounts --apply
+
+! Found ~/.claude-extra (a ~/.claude-*
+  folder) but it is not in config.json
+  Add it to config.json, or rewrite the
+  file with every account found:
+  › t3sm accounts --init --force

@@ -336,7 +336,7 @@ test("opencode snapshot: every lookup query is an index search (EXPLAIN QUERY PL
   }
 });
 
-test("opencode perf smoke: 20k parts -> snapshot + discovery + 10 reads in under 2 s", async () => {
+test("opencode perf smoke: 20k parts -> snapshot + discovery + 10 reads in under 2 s of CPU", async () => {
   const dir = mkdtempSync(join(tmpdir(), "t3sm-oc-test-"));
   temps.push(dir);
   const data = join(dir, ".local", "share", "opencode");
@@ -344,12 +344,16 @@ test("opencode perf smoke: 20k parts -> snapshot + discovery + 10 reads in under
   buildBulkOpenCodeDb(join(data, "opencode.db"), { sessions: 200, messages: 50, parts: 2 }); // 20 000 parts, 5 000 user messages
   const env: Env = { home: dir, platform: process.platform, now: () => NOW, config: defaultConfig([]), stateDir: join(dir, "state"), env: {} };
   const a = createOpenCodeAdapter();
-  const t0 = performance.now();
+  // CPU time of this process, not the wall clock: on a loaded machine the wall clock also counts the time the process
+  // waits for a CPU or the disk (seen at 20x the work), while the CPU time only grows with the work done (a scan
+  // without an index, a copy per read). The query plans themselves are asserted exactly in the EXPLAIN test above.
+  const c0 = process.cpuUsage();
   const all = await collect(a, env);
   for (const s of all.slice(0, 10)) await a.read(s);
-  const ms = performance.now() - t0;
+  const { user, system } = process.cpuUsage(c0);
+  const ms = (user + system) / 1000;
   assert.equal(all.length, 200);
-  assert.ok(ms < 2000, `took ${Math.round(ms)} ms`);
+  assert.ok(ms < 2000, `took ${Math.round(ms)} ms of CPU`);
 });
 
 test("opencode snapshot: versioned name; snapshots and temp files of the old format are deleted on entry", async () => {

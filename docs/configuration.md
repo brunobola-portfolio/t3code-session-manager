@@ -152,20 +152,97 @@ Optional; `{ "convertCompressed": true }` when absent.
 
 ### `language`
 
-`"en"` or `"pt"`, optional, default `"en"`. The language of the guided assistant (`t3sm start`) only; every other
-command prints English. `t3sm start --lang pt` offers to save it here (it asks first). Order: `--lang`, then the
-`T3SM_LANG` variable, then this key, then English. The operating system's language is never used.
+`"en"` or `"pt"`, optional. The language of everything t3sm prints for people: every command's screens and questions,
+the guided assistant, `--help`, `t3sm help` and the system notifications. `t3sm start` offers to save the language
+you chose with `--lang` here (it asks first). The order, first match wins:
+
+1. `--lang en|pt` on the command line (any command, anywhere on the line);
+2. the `T3SM_LANG` variable (`en` or `pt`; anything else is ignored);
+3. this key;
+4. `LC_ALL`, then `LC_MESSAGES`, then `LANG` (a value that starts with `pt`, such as `pt_PT.UTF-8`, gives Portuguese;
+   any other language gives English; empty, `C` and `POSIX` are skipped);
+5. the operating system's locale as Node reports it (`Intl.DateTimeFormat().resolvedOptions().locale`; on Windows,
+   which sets no `LANG`, this is the system's language);
+6. English.
+
+`--json`, `plan.md`, `journal.jsonl` and `logs/sync.log` are always English, whatever the language. Without this key,
+a new General folder follows the language too (`~/T3 Geral` on a Portuguese system); one that already exists in T3 Code
+is kept.
+
+### `organize`
+
+Optional; each field defaults on its own, and an invalid value is a `ConfigError` naming the key. Controls how
+imported history is organized in T3 Code. Paths may start with `~` (kept as written, expanded where used).
+
+| Key | Values | Default | What it changes |
+| :-- | :-- | :-: | :-- |
+| `folders.home` | `import`, `skip`, `rehome` | `rehome` | Sessions started in the home folder |
+| `folders["t3-refused"]` | `import`, `skip`, `rehome` | `rehome` | Sessions in folders T3 Code refuses as projects |
+| `folders.temp` | `import`, `skip`, `rehome` | `skip` | Sessions in temporary folders |
+| `folders.system` | `import`, `skip`, `rehome` | `skip` | Sessions in system folders |
+| `sessions.automated` | `skip`, `import` | `skip` | Automated (non-interactive) sessions |
+| `sessions.orphaned` | `copy`, `skip` | `copy` | Sessions started in T3 Code whose thread was deleted there (T3 Code will not import them again): `copy` brings each back as a faithful copy with a new session id, in its own folder (a folder T3 Code refuses: the rehome target), whatever the folder category; an `overrides` rule still applies (`skip` keeps it out, `rehome:<folder>` sends the copy there); waits for its question (`orphaned`) until answered. A session started in T3 Code whose thread is still there (active or archived) is skipped as already in T3 Code; one whose thread id is unknown is never copied |
+| `generalFolder` | folder path | `~/T3 Geral` (PT) / `~/T3 General` (EN) | Folder that receives rehomed sessions without a project: an absolute folder (or `~/...`) T3 Code accepts; `t3sm apply` creates it when missing (never `sync`) |
+| `overrides` | list of `{ "match": glob, "action": "import" \| "skip" \| "rehome:<folder>" }` | `[]` | Per-folder exceptions to the folder rules above. An override never imports an automated session: `sessions.automated` decides those. `rehome:<folder>` must name an absolute folder (or `~/...`) T3 Code accepts as a project, not a temporary or system one; `t3sm apply` creates it when missing |
+| `names.maxLength` | integer 16-120 | 40 | Longest project name |
+| `history` | `{ "days": 1-3650 or "all", "minPerProject": 0-1000 }`; the 0.2 values `all`, `off` and `days:N` (N 1-3650) still read | `{ "days": 90, "minPerProject": 10 }` | The history rule (below): which imported conversations stay shown inside each project. `all` reads as `{days: "all", minPerProject: 10}`, `days:N` as `{days: N, minPerProject: 10}`, `off` turns the rule off. `t3sm organize --history <days|all|off> --min <n>` overrides it for one run; `t3sm sync` applies it once a day and after each import |
+| `titles` | boolean | `true` | Give imported threads readable titles |
+| `archiveAutomated` | boolean | `true` | Archive imported automated threads |
+| `pinRecent` | `{ "enabled": boolean, "count": 1-20 }` | `{ true, 5 }` | Pin the most recent projects |
+| `decided` | list of keys | `[]` | Questions already asked (`home`, `t3-refused`, `temp`, `system`, `automated`, `orphaned`, `archiveAutomated`, `titles`, `history`, `pinRecent`, `notify`); never asked again |
+
+**The history rule** (`organize.history`), per project:
+
+- every conversation active in the last `days` days is shown inside its project;
+- if fewer than `minPerProject` are shown, the most recent settled ones are shown until `minPerProject` are (every
+  shown conversation counts, including the ones started in T3 Code and pinned ones);
+- every other imported conversation is settled: it stays in its project, on the Settled shelf.
+
+The activity date is T3 Code's own: the newest of the user's last message and the last run's request, start and end,
+else when the conversation was created (a date in the future counts as now). Changes go oldest first, so the Settled
+shelf keeps the order of the history. Only imported conversations (`import:` threads, from t3sm or T3 Code's own
+import) are moved; one you started in T3 Code is only moved by T3 Code's own auto-settle option. One you settled,
+showed, pinned or archived by hand (anything t3sm did not journal as its own last change) is never touched again.
+`"days": "all"` shows everything; `"minPerProject": 0` keeps only the days. Example:
+
+```json
+"organize": { "history": { "days": 90, "minPerProject": 10 } }
+```
+
+T3 Code's own option for conversations started there (`sidebarAutoSettleAfterDays`, 1-90 days or off) is not part of
+this key and is changed only by `t3sm organize --auto-settle <1..90|off>` (the guided assistant offers the same days,
+or, for more than 90 days or `"all"`, to leave it or turn it off). `t3sm sync` never changes it.
+
+### `notify`
+
+`"attention"`, `"all"` or `"off"`, optional, default `"attention"`. Which `sync` results raise a notification:
+only those that need you, all of them, or none.
+
+### `update`
+
+Optional; `{ "auto": true }` when absent.
+
+| Field | Default | Range | Effect |
+| :-- | :-: | :-: | :-- |
+| `auto` | `true` | boolean | `true`: once a day the background watcher looks up the newest `vX.Y.Z` release of the source t3sm was last installed from (GitHub's tags, or the tags on `main` of a checkout on this computer: a drive path such as `D:\Work\t3code-session-manager` on Windows; a network path such as `\\server\share` is refused, though a mapped network drive or a network mount looks local and is not detected) and installs it by itself when it is a patch or minor release (0.x minors included) strictly newer than the installed one; a major release is only announced. After installing, the watcher is restarted into the new version; if no heartbeat of it arrives within 2 minutes, the previous version is reinstalled. `false`: never installs by itself |
+
+Set it with `t3sm update --auto on|off`; `t3sm update --check` shows it, the newest release and the last check (no
+checkout or npx install is ever updated by itself). Looking up the newest release (`git ls-remote` on GitHub, or
+`npm view` when git cannot) is t3sm's only network call; installing a release downloads it with npm, and the optional
+`/t3sm` plugin install in `t3sm start` goes through `claude plugin` after your yes. Every update is journaled (`update` entries in `journal.jsonl`); the source and the previous version are
+kept in `<state>/update.json`.
 
 ## Environment variables
 
 | Variable | Effect |
 | :-- | :-- |
 | `T3SM_HOME` | State folder (default `~/.t3code-session-manager`) |
-| `T3SM_LANG` | `en` or `pt`: language of the guided assistant (`t3sm start`); `--lang` wins over it, it wins over `language` in `config.json` |
+| `T3SM_LANG` | `en` or `pt`: the language t3sm prints in; `--lang` wins over it, it wins over `language` in `config.json` and the system's language ([`language`](#language)) |
+| `LC_ALL`, `LC_MESSAGES`, `LANG` | Read for the language when neither `--lang`, `T3SM_LANG` nor `language` decide |
 | `CODEX_HOME` | Codex home (default `~/.codex`), as T3 Code reads it |
 | `PI_CODING_AGENT_SESSION_DIR`, `PI_CODING_AGENT_DIR` | Pi session folder, as T3 Code reads it |
 | `XDG_DATA_HOME` | OpenCode data folder (default `~/.local/share`, on Windows too) |
-| `NO_COLOR` | No colour in the terminal summary |
+| `NO_COLOR` | No colour (the same as `--no-color`); `FORCE_COLOR` forces it on, `TERM=dumb` turns colour and cursor movement off |
 | `CLAUDE_CONFIG_DIR` | Only read as a hint for account discovery. Never start T3 Code from a shell that sets it: `doctor` warns (`claude-env`) |
 
 ## Recipes

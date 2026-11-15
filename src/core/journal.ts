@@ -150,6 +150,11 @@ export function importedIndex(entries: JournalEntry[]): Map<string, Extract<Jour
   return m;
 }
 
+/** The `organize-failed` entries of one run (journal order): why each change the run could not make failed. */
+export function organizeFailures(entries: JournalEntry[], runId: string): Extract<JournalEntry, { t: "organize-failed" }>[] {
+  return entries.filter((e): e is Extract<JournalEntry, { t: "organize-failed" }> => e.t === "organize-failed" && e.runId === runId);
+}
+
 /**
  * True when `observed` (a stat'd mtime) matches `expected` (a value we set or journaled):
  * within 2 ms, or equal after the truncation a coarse-timestamp filesystem applies

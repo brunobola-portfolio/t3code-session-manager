@@ -62,3 +62,8 @@ test("T3 Code settings change only through the server.updateSettings RPC, never 
   const api = sources().find((f) => f.rel === "t3/api.ts");
   assert.ok(api && /server\.updateSettings/.test(api.text), "t3/api.ts changes settings through server.updateSettings");
 });
+
+test("Windows programs are started by their absolute System32 path, never by a bare name the current folder could shadow", () => {
+  const bare = /\b(?:spawn|spawnSync|run|execFile)\(\s*["'`](?:powershell|taskkill|schtasks|conhost|cmd|net)(?:\.exe)?["'`]/i;
+  for (const f of sources()) assert.doesNotMatch(code(f.text), bare, `${f.rel} starts a Windows program by its bare name`);
+});

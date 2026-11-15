@@ -1,37 +1,53 @@
-import { ConfigError } from "../core/config.ts";
-import { RpcClosed, RpcError, RpcTimeout, ShapeError, T3AuthError, T3HttpError, T3Incompatible, T3NotRunning } from "../t3/errors.ts";
+import { ConfigError, NoPlanError } from "../core/config.ts";
+import { RpcError, ShapeError, T3AuthError, T3HttpError, T3Incompatible, T3NotRunning } from "../t3/errors.ts";
 import { InstanceHomeDrift } from "../ops/accounts.ts";
 import { ApplyRefusal } from "../apply/apply.ts";
 import { JournalWriteError } from "../ops/quarantine.ts";
-import { homedir } from "node:os";
-import { redact } from "../t3/errors.ts";
+import { shownText } from "../plan/names.ts";
+import { lostContact, redactUnexpected } from "../ops/errorCodes.ts";
+import { panel } from "../ui/components.ts";
+import { wrapText } from "../ui/text.ts";
+import { helpCommand } from "./helpTopics.ts";
+import type { CliKey, CliUi } from "./ui.ts";
 
-/** An unexpected error's text, safe to print and log: tokens redacted, the user's home folder shown as ~. */
-function redactUnexpected(message: string): string {
-  const home = homedir();
-  const variants = [home, home.replaceAll("\\", "/"), home.replaceAll("/", "\\")].filter((h) => h.length > 1);
-  let out = message;
-  for (const h of [...new Set(variants)]) out = out.split(h).join("~");
-  return redact(out);
+export { describeError, oneLine } from "../ops/errorCodes.ts";
+
+/**
+ * What a screen says about an error: a title in the user's language (what happened), the detail (the error's own text,
+ * English, sanitised; none when the title says it all), what to do, and the `t3sm help` topic.
+ */
+export function errorParts(e: unknown, platform: NodeJS.Platform = process.platform): { title: CliKey; detail: string | null; todo: CliKey; help: string } {
+  const help = helpCommand("errors");
+  if (e instanceof T3NotRunning) return { title: "error.t3Down.title", detail: null, todo: platform === "win32" ? "error.t3DownWin.todo" : "error.t3Down.todo", help: "t3sm doctor" };
+  if (e instanceof T3Incompatible || e instanceof ShapeError) return { title: "error.incompatible.title", detail: e.message, todo: "error.incompatible.todo", help };
+  if (e instanceof JournalWriteError) return { title: "error.journal.title", detail: e.message, todo: "error.journal.todo", help };
+  if (e instanceof NoPlanError) return { title: "error.noPlan.title", detail: null, todo: "error.noPlan.todo", help: "t3sm plan" };
+  if (e instanceof ConfigError || e instanceof InstanceHomeDrift || e instanceof ApplyRefusal) return { title: "error.config.title", detail: e.message, todo: "error.config.todo", help };
+  if (e instanceof T3AuthError) return { title: "error.auth.title", detail: `${e.message}${e.hint ? ` ${e.hint}` : ""}`, todo: "error.auth.todo", help };
+  if (lostContact(e)) return { title: "error.t3Lost.title", detail: e.message, todo: "error.t3Lost.todo", help: "t3sm doctor" };
+  if (e instanceof T3HttpError || e instanceof RpcError) return { title: "error.rejected.title", detail: e.message, todo: "error.rejected.todo", help };
+  return { title: "error.unexpected.title", detail: redactUnexpected(e instanceof Error ? e.message : String(e)), todo: "error.unexpected.todo", help: "t3sm doctor" };
 }
 
-/** Central error to exit-code mapping: 2 usage/config, 3 T3 not running, 4 incompatible/shape, 1 unexpected. */
-export function describeError(e: unknown): { code: number; message: string } {
-  if (e instanceof T3NotRunning) return { code: 3, message: "T3 Code is not running. Open it from the Start menu and try again." };
-  if (e instanceof T3Incompatible || e instanceof ShapeError) return { code: 4, message: e.message };
-  if (e instanceof JournalWriteError) return { code: 1, message: e.message };
-  if (e instanceof ConfigError || e instanceof InstanceHomeDrift || e instanceof ApplyRefusal) return { code: 2, message: e.message };
-  if (e instanceof T3AuthError) return { code: 1, message: `${e.message}${e.hint ? `\n${e.hint}` : ""}` };
-  // T3 Code unreachable mid-run, whichever transport noticed: the WebSocket closed or stopped answering, or an HTTP
-  // call got no response at all. Exit 3, like "not running".
-  if (e instanceof RpcClosed || e instanceof RpcTimeout || (e instanceof T3HttpError && e.status === null)) {
-    return { code: 3, message: `Lost contact with T3 Code (${e.message}). Is it still running? Try again.` };
+/** The error as a panel: what happened (title and detail), what to do, and the command that helps. Exit codes: describeError. */
+export function renderError(e: unknown, ui: CliUi, platform: NodeJS.Platform = process.platform): string[] {
+  const { s, t } = ui;
+  const width = Math.max(1, ui.width);
+  const p = errorParts(e, platform);
+  const inner = Math.max(1, width - 4);
+  const body: string[] = [];
+  // The detail keeps its own lines (a config error lists one problem per line, then the hint), without Markdown
+  // backticks; an indented line stays indented.
+  if (p.detail !== null) {
+    for (const raw of p.detail.split(/\r?\n/).slice(0, 40)) {
+      const line = shownText(raw.replace(/`([^`\n]+)`/g, "$1"), 2000);
+      if (!line.trim()) continue;
+      const indent = /^\s*/.exec(raw)?.[0].length ? "  " : "";
+      body.push(...wrapText(line.trim(), Math.max(1, inner - indent.length)).map((l) => indent + l));
+    }
   }
-  if (e instanceof T3HttpError || e instanceof RpcError) return { code: 1, message: `T3 Code rejected the request: ${e.message}` };
-  return { code: 1, message: `Unexpected error: ${redactUnexpected(e instanceof Error ? e.message : String(e))}` };
-}
-
-/** The message on one line (for --quiet and scheduler logs). */
-export function oneLine(message: string): string {
-  return message.split(/\r?\n/).map((l) => l.trim()).filter(Boolean).join(" ");
+  if (body.length > 0) body.push("");
+  body.push(...wrapText(`${t("error.whatToDo")}: ${t(p.todo)}`, inner));
+  body.push(`${s.sym.arrow} ${s("key", p.help)}`);
+  return panel(s, { tone: "err", title: t(p.title), body }, width);
 }

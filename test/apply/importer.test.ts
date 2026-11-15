@@ -21,7 +21,7 @@ function setup(f: FakeT3, roots: string[] = [ROOT]) {
   const projectIds = new Map<string, string>();
   for (const r of roots) {
     const id = `p-${projectIds.size + 1}`;
-    f.projects.push({ id, title: r, workspaceRoot: r, defaultModelSelection: null, archived: false, deleted: false });
+    f.projects.push({ id, title: r, workspaceRoot: r, defaultModelSelection: null, archived: false, deleted: false, pinned: false, createdAt: null });
     projectIds.set(r, id);
   }
   const progress: Progress[] = [];

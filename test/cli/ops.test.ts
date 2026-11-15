@@ -10,11 +10,15 @@ import { QUARANTINE_DIR } from "../../src/ops/quarantine.ts";
 import { T3NotRunning } from "../../src/t3/errors.ts";
 import type { T3Api } from "../../src/t3/api.ts";
 import { lines, put, tempRoot } from "../ops/helpers.ts";
+import { fakeT3 } from "../apply/fake-t3.ts";
+import { applyOrganize } from "../../src/organize/apply.ts";
+import type { OrganizeAction, OrganizeKind } from "../../src/organize/types.ts";
+import { compatGate } from "../../src/t3/compat.ts";
 
 function fakeIo(state: string, over: Partial<Io> = {}) {
   const out: string[] = [];
   const err: string[] = [];
-  const io: Io = { stdout: (s) => void out.push(s), stderr: (s) => void err.push(s), isTTY: false, prompt: async () => "", env: { T3SM_HOME: state }, ...over };
+  const io: Io = { stdout: (s) => void out.push(s), stderr: (s) => void err.push(s), isTTY: false, prompt: async () => "", env: { T3SM_HOME: state, LANG: "en_US.UTF-8" }, ...over };
   return { io, out: () => out.join(""), err: () => err.join("") };
 }
 
@@ -223,4 +227,82 @@ test("rollback without --run on a terminal names the run in the question", async
   assert.equal(asked.length, 1);
   assert.match(asked[0]!, new RegExp(`Roll back run ${id} \\(quarantine\\)\\?`));
   assert.equal(existsSync(s.bak), false);
+});
+
+// ---------- rollback of an organize run on any T3 Code version (ruling R18) ----------
+
+/** An organize run journaled in `t.state` on a fake T3 Code 0.2.0, and a connect stub running the real compatGate as connectT3 does. */
+async function organizeRunOn020() {
+  const t = tempRoot();
+  const f = fakeT3({ version: "0.2.0" });
+  f.projects.push({ id: "p3", title: "demo", workspaceRoot: "C:/work/demo", defaultModelSelection: null, archived: false, deleted: false, pinned: false, createdAt: null });
+  f.threads.set("import:claudeAgent:a1", { id: "import:claudeAgent:a1", projectId: "p3", instanceId: "claudeAgent", archived: false, title: "t", updatedAt: 0 });
+  const counts = Object.fromEntries(["archive", "title", "unsettle", "pin", "unpin", "project-delete", "project-title", "auto-settle"].map((k) => [k, 0])) as Record<OrganizeKind, number>;
+  const actions: OrganizeAction[] = [
+    { kind: "archive", target: "import:claudeAgent:a1", projectId: "p3", previous: false, next: true, reason: "test" },
+    { kind: "pin", target: "p3", projectId: "p3", previous: false, next: true, reason: "test" },
+  ];
+  await applyOrganize({ runId: "org1", actions, counts, byProject: [] }, { api: f.api, journal: t.journal, runId: "org1", allowUntested: true });
+  const connect = async (_home: string, o: { allowUntested: boolean; onNotice: (l: string) => void }): Promise<T3Api> => {
+    compatGate(f.api.version, { allowUntested: o.allowUntested, onNotice: o.onNotice });
+    return f.api;
+  };
+  return { t, f, connect };
+}
+
+const warnings = (err: string): string[] => err.split("\n").filter((l) => l.trim() !== "");
+
+test("rollback of an organize run on T3 Code 0.2.0 proceeds with exactly one warning (--yes)", async () => {
+  const { t, f, connect } = await organizeRunOn020();
+  const b = fakeIo(t.state);
+  assert.equal(await rollbackCommand(["--yes", "--run", "org1"], b.io, { home: t.root, connect }), 0, b.err());
+  assert.deepEqual(warnings(b.err()), [
+    "Warning: T3 Code 0.2.0 has not been tested with t3sm (tested: 0.1.8-nightly.20261105.4218, 0.1.9-nightly.20261110.4465, 0.1.10-nightly.20261113.4630). Proceeding; every change is journaled and can be undone with t3sm rollback.",
+  ]);
+  assert.equal(f.threads.get("import:claudeAgent:a1")!.archived, false);
+  assert.equal(f.projects[0]!.pinned, false);
+  assert.match(b.out(), /Reverted organize changes \(2\)/);
+});
+
+test("runs lists an organize run with its change counts, and the undo with what it reverted", async () => {
+  const { t, connect } = await organizeRunOn020();
+  const r = fakeIo(t.state);
+  assert.equal(await runsCommand([], r.io), 0);
+  assert.match(r.out(), /org1 .*organize .*organized 2/);
+  assert.equal(await rollbackCommand(["--yes", "--run", "org1"], fakeIo(t.state).io, { home: t.root, connect }), 0);
+  const r2 = fakeIo(t.state);
+  assert.equal(await runsCommand(["--json"], r2.io), 0);
+  const runs = JSON.parse(r2.out()) as { runId: string; command: string; counts: { organized: number; organizeReverted: number } }[];
+  assert.equal(runs.find((x) => x.runId === "org1")!.counts.organized, 2);
+  assert.equal(runs.find((x) => x.command === "rollback org1")!.counts.organizeReverted, 2);
+  const r3 = fakeIo(t.state);
+  await runsCommand([], r3.io);
+  // 80 columns cannot show every value whole: one block per run, nothing cut (the rollback named in full).
+  assert.match(r3.out(), /rollback org1\n(?: {2}.*\n)*? {2}Changes +reverted 2\n/);
+  assert.match(r3.out(), /Status +ok, rolled back by \d{8}-\d{6}-[0-9a-f]{4}\n/);
+});
+
+test("rollback of an organize run on T3 Code 0.2.0, interactive (preview, then the run): the warning is printed once", async () => {
+  const { t, f, connect } = await organizeRunOn020();
+  const b = fakeIo(t.state, { isTTY: true, prompt: async () => "yes" });
+  assert.equal(await rollbackCommand(["--run", "org1"], b.io, { home: t.root, connect }), 0, b.err());
+  assert.equal(warnings(b.err()).length, 1, b.err());
+  assert.match(b.out(), /Revert organize changes \(2\)/);
+  assert.equal(f.projects[0]!.pinned, false);
+});
+
+test("rollback lists organize changes in organize's words (titles, never ids or raw JSON); a user-changed title is shown cleaned", async () => {
+  const { t, f, connect } = await organizeRunOn020();
+  const counts = Object.fromEntries(["archive", "title", "unsettle", "pin", "unpin", "project-delete", "project-title", "auto-settle"].map((k) => [k, 0])) as Record<OrganizeKind, number>;
+  await applyOrganize({ runId: "org2", actions: [{ kind: "title", target: "import:claudeAgent:a1", projectId: "p3", previous: "t", next: "Fix the login form", reason: "test" }], counts, byProject: [] },
+    { api: f.api, journal: t.journal, runId: "org2", allowUntested: true });
+  // The user renamed the conversation in T3 Code since (with a terminal escape in it).
+  f.threads.get("import:claudeAgent:a1")!.title = "Mine \u001b[31mred\u001b[0m";
+  const a = fakeIo(t.state);
+  assert.equal(await rollbackCommand(["--dry-run", "--run", "org2"], a.io, { home: t.root, connect }), 0, a.err());
+  assert.match(a.out(), /Organize changes left alone \(changed in T3 Code since t3sm made them\) \(1\)\n {2}- 'Mine \[31mred\[0m' \(demo\): changed in T3 Code since t3sm's change\n/);
+  const b = fakeIo(t.state);
+  assert.equal(await rollbackCommand(["--dry-run", "--run", "org1"], b.io, { home: t.root, connect }), 0, b.err());
+  assert.match(b.out(), /Revert organize changes \(2\)\n {2}- Unpin project 'demo'\n {2}- Unarchive 'Mine \[31mred\[0m' \(demo\)\n/);
+  for (const out of [a.out(), b.out()]) assert.doesNotMatch(out, /import:claudeAgent|pin p3|"|\u001b/);
 });

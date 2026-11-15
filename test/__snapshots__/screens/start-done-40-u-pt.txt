@@ -1,0 +1,47 @@
+11/11 · Concluído
+
+╭─ ✓ Concluído ────────────────────────╮
+│ O que mudou                          │
+│ ✓ Instâncias em falta criadas no T3  │
+│   Code                               │
+│ ✓ Pastas de backup movidas para a    │
+│   quarentena (execução R1)           │
+│ ✓ Cópias-espelho movidas para a      │
+│   quarentena (execução R2)           │
+│ ✓ Projeto piloto ~/code/demo         │
+│   importado (execução R3)            │
+│ ✓ Tudo importado (execução R4)       │
+│ ✓ Sincronização em segundo plano     │
+│   instalada                          │
+│                                      │
+│ Como desfazer                        │
+│ · remove cada instância nova nas     │
+│   definições do T3 Code (Providers); │
+│   o t3sm nunca apaga instâncias      │
+│ · t3sm rollback --run R1             │
+│ · t3sm rollback --run R2             │
+│ · t3sm rollback --run R3             │
+│   --archive-threads                  │
+│ · t3sm rollback --run R4             │
+│   --archive-threads                  │
+│ · t3sm schedule remove               │
+│ t3sm runs lista todas as execuções;  │
+│ as threads são arquivadas, nunca     │
+│ apagadas.                            │
+│                                      │
+│ O que acontece a seguir              │
+│ O vigilante em segundo plano importa │
+│ as sessões novas enquanto trabalhas. │
+│ t3sm status    está tudo bem? o que  │
+│                precisa de ti?        │
+│ t3sm projects  que conta usa cada    │
+│                projeto               │
+│ t3sm merge     traz o trabalho       │
+│                continuado num        │
+│                terminal              │
+│                                      │
+│ Relatório do plano:                  │
+│ ~/.t3code-…3/plan.md                 │
+╰──────────────────────────────────────╯
+É tudo. Corre t3sm outra vez quando
+quiseres.

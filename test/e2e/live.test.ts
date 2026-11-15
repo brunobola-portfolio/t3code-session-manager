@@ -53,6 +53,10 @@ test("live T3Code: typed API reads + close() revokes (T3_E2E=1)", { skip: proces
     const threads = await api.listThreads();
     const scan = await api.scanSessions();
     console.log(`live: instances=${inst.length} projects=${projects.length} threads=${threads.length} candidates=${scan.candidates.length}`);
+    // docs/testing-0.3.md "Before you start": compared by hand with what T3 Code shows (orphan copies rely on these
+    // lists being complete: /api/orchestration/shell for active threads, the archived shell snapshot for the rest).
+    const archived = threads.filter((x) => x.archived).length;
+    console.log(`live: thread list: active=${threads.length - archived} archived=${archived}`);
   } finally {
     await api.close();
     await api.close();

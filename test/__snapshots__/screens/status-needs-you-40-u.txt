@@ -1,0 +1,40 @@
+! Needs you (2)
+
+✗ 3 conversations wait for your decision
+  (automated sessions 2, folders T3 Code
+  refuses 1)
+  › t3sm start
+
+✗ The background watcher is not running:
+  pid 4321 ended without a clean stop
+  (last cycle 25 min ago); one you
+  started by hand comes back with t3sm
+  sync --watch
+  › t3sm schedule restart
+
+Worth knowing
+
+· demo is waiting: 'Fix the login form'
+  is in use (first held 25 min ago); it
+  is imported once idle for 10 minutes
+
+· t3sm 0.3.1 is available
+  › t3sm update
+
+Pending imports  3 sessions (plan from
+                 20 hours ago)
+Last sync        3 min ago, ok (run
+                 20261115-115700-a1b2)
+Next sync        in 7 min (watcher)
+Watcher          not running
+t3sm             0.3.0
+Last organize    run
+                 20261114-090000-c3d4, 3
+                 days ago: 12 changes
+t3sm plugin      Claude Personal:
+                 installed (0.3.0);
+                 Claude Work: not
+                 installed (t3sm start
+                 offers to add the /t3sm
+                 commands to T3 Code)
+T3 Code          running (0.1.9)

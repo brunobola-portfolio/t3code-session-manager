@@ -1,0 +1,45 @@
+
+t3sm 0.3.0 - 2 contas Claude
+--------------------------------------------------------------------------------
+
+@ o o o o o o o o o o  Passo 1 de 11 - Boas-vindas
+O t3sm traz as tuas sessões antigas para o T3 Code como threads que podes
+continuar.
+Cada uma fica na conta Claude a que pertence.
+
++- Como funciona ---------------------------------------+
+| - 11 passos curtos. Podes parar em qualquer pergunta. |
+| - Nada se escreve antes de responderes s.             |
+| - Tudo se pode desfazer.                              |
+| - Nenhuma sessão é apagada.                           |
++-------------------------------------------------------+
+s sim - n não - ? mais - v voltar - q sair - Enter escolhe a maiúscula
+Em inglês: t3sm start --lang en
+Pronto para começar? [S/n/?/q] s
+
+* @ o o o o o o o o o  Passo 2 de 11 - Verificação
+Uma verificação rápida deste computador e do T3 Code. Só lê.
+A verificar...
+v Está tudo bem - 1 de 1 verificação sem problemas
+  v Node
+Continuar para as contas? [S/n/?/v/q] s
+
+* * @ o o o o o o o o  Passo 3 de 11 - Contas
+2 contas Claude neste computador. No T3 Code cada uma é uma "instância": uma
+conta Claude dentro do T3 Code, com nome e cor próprios.
+
+#  Conta            No T3 Code   Pasta          Email
+----------------------------------------------------------------
+1  Claude Personal  v sim        ~/.claude      b***@example.com
+2  Claude Org       o ainda não  ~/.claude-org  desconhecido
+1. Origem: a pasta por omissão
+2. Origem: uma pasta ~/.claude-*
+
+1 conta ainda não tem instância no T3 Code: claude-org. A importação cria-a, ou
+podes fazê-lo agora.
+Criar agora as instâncias em falta no T3 Code? Isto altera as definições do
+T3 Code. Desfazer: remove cada instância nova nas definições do T3 Code
+(Providers). [s/N/?/v/q] n
+Estes nomes estão certos? [S/n/?/v/q] q
+
+Parado. Nada ficou a meio; corre t3sm outra vez para continuar.

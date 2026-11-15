@@ -1,0 +1,17 @@
+Help topics: what a message means and what to do
+
+  not-imported          Not imported: T3 Code did not take a conversation
+  t3-native             Started in T3 Code: conversations t3sm leaves out
+  orphaned              Deleted in T3 Code: conversations that come back as copies
+  held                  Held: a project waits while a conversation is in use
+  decisions             Decisions: conversations that wait for your answer
+  history               History: which conversations stay shown in each project
+  updates               Updates: how t3sm updates itself, and when it fails
+  watcher               The watcher: background sync that is not running or late
+  cwd-unreadable        Folder unreadable: T3 Code cannot tell where a conversation ran
+  instance-unavailable  Account off: the conversation's account is not usable in T3 Code
+  project-mismatch      Project mismatch: T3 Code filed a conversation elsewhere
+  convert               Conversion: sessions t3sm converts before importing
+  errors                Errors: when a t3sm command stops
+
+Open one with t3sm help <topic>. Every command explains itself with t3sm <command> --help.

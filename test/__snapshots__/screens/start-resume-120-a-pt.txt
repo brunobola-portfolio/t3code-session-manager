@@ -1,0 +1,14 @@
+
+t3sm 0.3.0 - 2 contas Claude
+--------------------------------------------------------------------------------
+
+@ o o o o o o o o o o  Passo 1 de 11 - Boas-vindas
+Bem-vindo de volta. É aqui que estás:
+  v Contas  v Plano  v Decisões  v Limpeza  v Piloto  @ Importação completa
+  o Arrumar  o Manter sincronizado  o Concluído
+Da última vez: a importação completa terminou com 3 falhas.
+A seguir: uma verificação rápida, depois o passo 8 - Importação completa.
+Em inglês: t3sm start --lang en
+Continuar no passo 8? [S/n/?/q] q
+
+Parado. Nada ficou a meio; corre t3sm outra vez para continuar.

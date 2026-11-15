@@ -1,0 +1,29 @@
+! Precisa de ti (2)
+
+x 3 conversas esperam pela tua decisão (sessões automáticas 2, pastas que o T3
+  Code recusa 1)
+  > t3sm start
+
+x O vigilante em segundo plano não está a correr: o processo 4321 terminou sem
+  uma paragem limpa (último ciclo há 25 min); um que arrancou à mão volta com
+  t3sm sync --watch
+  > t3sm schedule restart
+
+Bom saber
+
+- demo está à espera: 'Fix the login form' está em uso (retido há 25 min); é
+  importado quando estiver parado há 10 minutos
+
+- O t3sm 0.3.1 está disponível
+  > t3sm update
+
+Importações pendentes  3 sessões (plano de há 20 horas)
+Última sincronização   há 3 min, ok (execução 20261115-115700-a1b2)
+Próxima sincronização  daqui a 7 min (vigilante)
+Vigilante              não está a correr
+t3sm                   0.3.0
+Última organização     execução 20261114-090000-c3d4, há 3 dias: 12 alterações
+Plugin do t3sm         Claude Personal: instalado (0.3.0); Claude Work: não
+                       instalado (o t3sm start propõe juntar os comandos /t3sm
+                       ao T3 Code)
+T3 Code                a correr (0.1.9)

@@ -1,0 +1,8 @@
+> Would revert 2 changes of organize run 20261115-090000-a1b2.
+
+Will revert (2)
+  - Unarchive 'Fix the login form' (demo)
+  - Retitle 'Plan the API' (demo) back to '<command-name>/clear</command-name>'
+
+Left alone, changed in T3 Code since t3sm made them (1)
+  - project 'demo': changed in T3 Code since t3sm's change

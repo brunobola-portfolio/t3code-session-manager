@@ -1,5 +1,10 @@
-import { defaultDoctorDeps, runDoctor, type Check, type DoctorDeps } from "../../ops/doctor.ts";
+import { defaultDoctorDeps, runDoctor, sayText, type Check, type DoctorDeps } from "../../ops/doctor.ts";
+import { shownText } from "../../plan/names.ts";
+import { callout, panel, table, type Column } from "../../ui/components.ts";
+import { snugWidth, textLines } from "../screen.ts";
+import { FLAG_SPECS } from "../flags.ts";
 import type { Io } from "../main.ts";
+import { cliUi, type CliKey, type CliUi, unknownOption } from "../ui.ts";
 
 export interface DoctorCommandDeps {
   /** Complete deps (tests). */
@@ -12,68 +17,89 @@ export interface DoctorCommandDeps {
 /** Io plus the terminal width when known (the launcher may set it; tests do). */
 export type DoctorIo = Io & { columns?: number };
 
-const KNOWN = new Set(["--json", "--repair"]);
-const MIN_TEXT = 20;
+const KNOWN = new Set<string>(FLAG_SPECS.doctor.bool);
 
-/** Greedy word wrap; a word longer than the width (a path, a URL) keeps its own line unbroken. */
-function wrap(text: string, width: number): string[] {
-  const out: string[] = [];
-  let cur = "";
-  for (const w of text.split(/\s+/).filter(Boolean)) {
-    if (cur === "") cur = w;
-    else if (cur.length + 1 + w.length <= width) cur += " " + w;
-    else { out.push(cur); cur = w; }
-  }
-  if (cur !== "") out.push(cur);
-  return out.length ? out : [""];
+/** Each check's name on screen (the id stays in --json). */
+const CHECK_NAME: Record<string, CliKey> = {
+  "node-version": "doctor.check.nodeVersion", "state-dir": "doctor.check.stateDir", config: "doctor.check.config",
+  lock: "doctor.check.lock", "pending-mtimes": "doctor.check.pendingMtimes", "future-mtimes": "doctor.check.futureMtimes",
+  "claude-env": "doctor.check.claudeEnv", "t3-runtime": "doctor.check.t3Runtime", "t3-reachable": "doctor.check.t3Reachable",
+  "t3-version": "doctor.check.t3Version", "t3-cli": "doctor.check.t3Cli", "t3-token": "doctor.check.t3Token",
+  instances: "doctor.check.instances", "instance-home-drift": "doctor.check.instanceHomeDrift",
+  "instance-unpinned": "doctor.check.instanceUnpinned", "instance-accounts": "doctor.check.instanceAccounts",
+  "accounts-undiscovered": "doctor.check.accountsUndiscovered", "backups-present": "doctor.check.backupsPresent",
+  "quarantine-orphans": "doctor.check.quarantineOrphans", harnesses: "doctor.check.harnesses",
+  "t3sm-plugin": "doctor.check.t3smPlugin", schedule: "doctor.check.schedule", "sync-watcher": "doctor.check.syncWatcher",
+  "merge-pending": "doctor.check.mergePending",
+};
+const HARNESS_NAME: Record<string, string> = { claude: "Claude Code", codex: "Codex", pi: "Pi", opencode: "OpenCode" };
+
+/** A check's name in the user's language: `harness:codex` -> "Codex sessions"; an unknown id stays as it is. */
+export function checkName(ui: CliUi, id: string): string {
+  const h = /^harness:(.+)$/.exec(id);
+  if (h) return ui.t("doctor.check.harness", { name: HARNESS_NAME[h[1]!] ?? shownText(h[1], 40) });
+  const k = CHECK_NAME[id];
+  return k ? ui.t(k) : shownText(id, 40);
 }
 
-export function renderDoctor(checks: Check[], opts: { fancy: boolean; color: boolean; columns?: number }): string {
-  const sym: Record<Check["status"], string> = opts.fancy
-    ? { ok: "✓", warn: "!", fail: "✗", skip: "-" }
-    : { ok: "ok", warn: "warn", fail: "FAIL", skip: "skip" };
-  const paint: Record<Check["status"], (s: string) => string> = opts.color
-    ? { ok: (s) => `\x1b[32m${s}\x1b[0m`, warn: (s) => `\x1b[33m${s}\x1b[0m`, fail: (s) => `\x1b[31m${s}\x1b[0m`, skip: (s) => `\x1b[2m${s}\x1b[0m` }
-    : { ok: (s) => s, warn: (s) => s, fail: (s) => s, skip: (s) => s };
-  const symW = Math.max(...Object.values(sym).map((s) => s.length));
-  const idW = Math.max(...checks.map((c) => c.id.length));
-  const indentW = symW + 2 + idW + 2;
-  const textW = Math.max(MIN_TEXT, (opts.columns ?? 80) - indentW);
-  const indent = " ".repeat(indentW);
-  const arrow = opts.fancy ? "→" : "->";
-  const lines: string[] = [];
-  for (const c of checks) {
-    const [first, ...rest] = wrap(c.message, textW);
-    lines.push(`${paint[c.status](sym[c.status].padEnd(symW))}  ${c.id.padEnd(idW)}  ${first}`.trimEnd());
-    for (const l of rest) lines.push(indent + l);
-    if (c.fix && (c.status === "warn" || c.status === "fail")) {
-      const [f1, ...fr] = wrap(c.fix, Math.max(MIN_TEXT, textW - arrow.length - 1));
-      lines.push(`${indent}${arrow} ${f1}`);
-      for (const l of fr) lines.push(`${indent}${" ".repeat(arrow.length + 1)}${l}`);
-    }
+interface Row { sym: string; name: string; message: string }
+
+/** A check's result and fix in the user's language: worded from the catalogue (English: the --json message and fix). */
+export function checkWords(c: Check, lang: CliUi["lang"]): { message: string; fix: string | undefined } {
+  return { message: c.say ? sayText(c.say, lang) : c.message, fix: c.sayFix ? sayText(c.sayFix, lang) : c.fix };
+}
+
+/**
+ * The checks as one table (symbol, check, result cut to the width), then every warning and failure in full with what
+ * to do, then the verdict as a panel as wide as it needs. Results and fixes in the user's language (checkWords).
+ */
+export function renderDoctor(checks: Check[], ui: CliUi): string {
+  const { s, t } = ui;
+  const width = Math.max(1, ui.width);
+  const symOf = (c: Check): string => c.status === "ok" ? s("ok", s.sym.ok) : c.status === "warn" ? s("warn", s.sym.warn) : c.status === "fail" ? s("err", s.sym.err) : s("muted", s.sym.ring);
+  // A warning or failure is told once, in full, below the table: its row only points there.
+  const rows: Row[] = checks.map((c) => ({
+    sym: symOf(c), name: checkName(ui, c.id),
+    message: c.status === "warn" || c.status === "fail" ? s("muted", t("doctor.seeBelow")) : shownText(checkWords(c, ui.lang).message, 400),
+  }));
+  const cols: Column[] = [
+    { header: "", get: (r) => (r as Row).sym, priority: 9, min: 1 },
+    { header: t("doctor.col.check"), get: (r) => (r as Row).name, priority: 8, min: 10 },
+    { header: t("doctor.col.result"), get: (r) => (r as Row).message, priority: 5, min: 10 },
+  ];
+  const out = table(s, cols, rows, width);
+  // What is wrong, in full: the message and the fix, never cut.
+  for (const c of checks.filter((x) => x.status === "fail" || x.status === "warn")) {
+    const w = checkWords(c, ui.lang);
+    // `backticked` commands are shown whole, in the key style, without their backticks.
+    const body = [...textLines(s, shownText(w.message, 1000), Math.max(1, width - 2)), ...(w.fix ? textLines(s, t("doctor.whatToDo", { fix: shownText(w.fix, 1000) }), Math.max(1, width - 2)) : [])];
+    out.push("", ...callout(s, { kind: c.status === "fail" ? "needs-you" : "warn", title: checkName(ui, c.id), body }, width));
   }
   const fails = checks.filter((c) => c.status === "fail").length;
   const warns = checks.filter((c) => c.status === "warn").length;
-  const verdict = fails > 0
-    ? `${fails} ${fails === 1 ? "problem" : "problems"} to fix. Fix the items marked ${sym.fail}, then run t3sm doctor again.`
-    : warns > 0 ? `Ready (${warns} ${warns === 1 ? "warning" : "warnings"} above). Next: t3sm plan` : "Ready. Next: t3sm plan";
-  return `${lines.join("\n")}\n\n${verdict}\n`;
+  const v = fails > 0
+    ? { tone: "err" as const, title: t("doctor.problems", { n: fails }), body: [t("doctor.problemsBody", { sym: s.sym.err })] }
+    : { tone: "ok" as const, title: warns > 0 ? t("doctor.readyWarnings", { n: warns }) : t("doctor.ready"), body: [t("doctor.next")] };
+  // As wide as its content (like the other panels), never wider than the window.
+  const verdict = panel(s, v, snugWidth(`${s.sym.ok} ${v.title}`, v.body, width));
+  out.push("", ...verdict);
+  return out.join("\n") + "\n";
 }
 
 export async function doctorCommand(args: string[], io: DoctorIo, d: DoctorCommandDeps = {}): Promise<number> {
   for (const a of args) {
-    if (!KNOWN.has(a)) { io.stderr(`Unknown option: ${a}. Run \`t3sm doctor --help\`.\n`); return 2; }
+    if (!KNOWN.has(a)) { unknownOption(io, a, "doctor"); return 2; }
   }
   const repair = args.includes("--repair");
   const deps: DoctorDeps = d.deps
     ? { ...d.deps, repair: d.deps.repair || repair }
     : { ...defaultDoctorDeps({ home: d.home, env: io.env, repair }), ...(d.overrides ?? {}) };
   const { checks } = await runDoctor(deps);
-  if (args.includes("--json")) io.stdout(JSON.stringify(checks, null, 2) + "\n");
+  // --json is unchanged: the English message and fix, never the screen's wording parts.
+  if (args.includes("--json")) io.stdout(JSON.stringify(checks.map(({ say: _s, sayFix: _f, ...c }) => c), null, 2) + "\n");
   else {
-    const fancy = io.isTTY && !io.env["NO_COLOR"];
-    const columns = io.columns ?? (io.isTTY ? process.stdout.columns : undefined) ?? 80;
-    io.stdout(renderDoctor(checks, { fancy, color: fancy, columns }));
+    const ui = cliUi(io);
+    io.stdout(renderDoctor(checks, io.columns !== undefined ? { ...ui, width: io.columns } : ui));
   }
   return checks.some((c) => c.status === "fail") ? 1 : 0;
 }

@@ -1,0 +1,29 @@
+~/code/app
+  Account     Claude Personal
+  Reason      latest session
+  Pending     12
+  In T3 Code  yes
+  In use      no
+
+C:/work/demo/packages/billing-service
+  Account     Claude Work
+  Reason      your rule
+  Pending     0
+  In T3 Code  archived
+  In use      yes
+
+C:/work/new
+  Account     Claude Work
+  Reason      default account
+  Pending     3
+  In T3 Code  no
+  In use      no
+
+Reason: your rule (a route in
+config.json), VS Code setting
+(.vscode/settings.json), latest session
+(the account of its most recent
+session), default account
+(defaultAccount in config.json).
+> Change one with t3sm projects set
+  "<folder>" <account>.

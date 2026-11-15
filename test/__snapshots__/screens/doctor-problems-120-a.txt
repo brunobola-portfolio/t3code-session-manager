@@ -1,0 +1,23 @@
+   Check            Result
+-------------------------------------------
+v  Node             Node 24.11.1
+x  T3 Code running  see below
+o  T3 Code session  needs a running T3 Code
+!  Backup folders   see below
+!  Watcher          see below
+
+x T3 Code running
+  T3 Code is not answering at http://127.0.0.1:3773
+  What to do: Open T3 Code from the Start menu
+
+! Backup folders
+  2 backup folders inside projects/ (~/.claude: 2); they can show up as duplicate sessions
+  What to do: Run t3sm quarantine (reversible)
+
+! Watcher
+  running (pid 4321) but stale: last cycle 50 min ago, next cycle was due 11:20
+  What to do: End pid 4321 and start it again with t3sm sync --watch (or t3sm schedule install --watch)
+
++- x 1 problem to fix --------------------------------+
+| Fix the items marked x, then run t3sm doctor again. |
++-----------------------------------------------------+

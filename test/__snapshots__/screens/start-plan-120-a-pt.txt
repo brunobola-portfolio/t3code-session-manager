@@ -1,0 +1,31 @@
+* * * @ o o o o o o o  Passo 4 de 11 - Plano
+Agora o plano: que sessões vão para o T3 Code, e em que conta. Só lê, e guarda o
+relatório na pasta do t3sm.
+A construir o plano...
+
++- O plano ------------------+
+| A importar              23 |
+| A converter e importar   0 |
+| Ignoradas                5 |
+| Projetos novos           1 |
+| Instâncias novas         0 |
+| Por conta                  |
+|   Claude Org            20 |
+|   Claude Personal        3 |
++----------------------------+
+Ignoradas mais vezes: sem instância do T3 Code para o seu agente (4), em uso
+neste momento (1).
+! Pi: 4 sessões vão ficar de fora
+  O T3 Code não tem nenhuma instância Pi. Para as trazer, liga o Pi nas
+  definições do T3 Code (Providers) e corre t3sm outra vez.
+Relatório completo: ~/.t3code-session-manager/runs/P1/plan.md
+
+Cada projeto começa as threads novas numa conta:
+#  Projeto      Conta            Porquê
+----------------------------------------------------
+1  ~/code/big   Claude Org       a tua regra
+2  ~/code/busy  Claude Personal  conta por omissão
+3  ~/code/demo  Claude Personal  sessão mais recente
+Um número = mudar a conta desse projeto, Enter ou c = continuar: q
+
+Parado. Nada ficou a meio; corre t3sm outra vez para continuar.

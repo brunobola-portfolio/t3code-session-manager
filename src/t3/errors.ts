@@ -154,7 +154,7 @@ export class ShapeError extends Error {
   }
 }
 
-/** The running T3 Code is a version t3sm was not tested against (and --allow-untested was not given), or speaks another protocol. Exit 4. */
+/** The running T3 Code speaks another orchestration protocol (an untested version only warns). Exit 4. */
 export class T3Incompatible extends Error {
   readonly exitCode = 4;
   version: string;

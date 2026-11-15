@@ -128,6 +128,35 @@ const LABEL_HINT_RE = /"type"\s*:\s*"(custom-title|tag)"/;
  */
 export async function labelRecords(file: string): Promise<Set<string>> {
   const out = new Set<string>();
+  await eachRecord(file, LABEL_HINT_RE, (o) => {
+    if (o["type"] === "custom-title" && typeof o["customTitle"] === "string") out.add(`custom-title:${o["customTitle"]}`);
+    else if (o["type"] === "tag" && typeof o["tag"] === "string") out.add(`tag:${o["tag"]}`);
+  });
+  return out;
+}
+
+const TITLE_HINT_RE = /"type"\s*:\s*"(custom-title|ai-title)"/;
+
+/**
+ * A Claude transcript's title as T3 Code shows it: the newest `custom-title` (set by the user), else the newest
+ * `ai-title`; null when it has neither or cannot be read. Only title records are parsed, never message content.
+ */
+export async function conversationTitle(file: string): Promise<string | null> {
+  let custom: string | null = null;
+  let ai: string | null = null;
+  try {
+    await eachRecord(file, TITLE_HINT_RE, (o) => {
+      if (o["type"] === "custom-title" && typeof o["customTitle"] === "string" && o["customTitle"].trim() !== "") custom = o["customTitle"].trim();
+      else if (o["type"] === "ai-title" && typeof o["aiTitle"] === "string" && o["aiTitle"].trim() !== "") ai = o["aiTitle"].trim();
+    });
+  } catch {
+    return null;
+  }
+  return custom ?? ai;
+}
+
+/** Streams `file`, parsing only the top-level JSON records whose line matches `hint` (and is not oversized). */
+async function eachRecord(file: string, hint: RegExp, fn: (o: Record<string, unknown>) => void): Promise<void> {
   const st = createReadStream(file);
   const rl = createInterface({ input: st, crlfDelay: Infinity });
   const it = rl[Symbol.asyncIterator]();
@@ -138,20 +167,19 @@ export async function labelRecords(file: string): Promise<Set<string>> {
   try {
     for (let r = await Promise.race([it.next(), failed]); !r.done; r = await Promise.race([it.next(), failed])) {
       const l = r.value as string;
-      if (l.length > METADATA_MAX_LINE || !LABEL_HINT_RE.test(l)) continue;
+      if (l.length > METADATA_MAX_LINE || !hint.test(l)) continue;
+      let o: unknown;
       try {
-        const o = JSON.parse(l) as Record<string, unknown>;
-        if (o["type"] === "custom-title" && typeof o["customTitle"] === "string") out.add(`custom-title:${o["customTitle"]}`);
-        else if (o["type"] === "tag" && typeof o["tag"] === "string") out.add(`tag:${o["tag"]}`);
+        o = JSON.parse(l);
       } catch {
-        // not a record
+        continue; // not a record
       }
+      if (typeof o === "object" && o !== null && !Array.isArray(o)) fn(o as Record<string, unknown>);
     }
   } finally {
     rl.close();
     st.destroy();
   }
-  return out;
 }
 
 /** JSON with comments (// and /* *\/ outside strings) and trailing commas, as VS Code writes settings.json. */
@@ -223,7 +251,7 @@ export async function readVscodePin(root: string): Promise<string | null> {
     return null;
   }
   try {
-    return pinFromSettings(parseJsonc(text.replace(/^﻿/, "")));
+    return pinFromSettings(parseJsonc(text.replace(/^\uFEFF/, "")));
   } catch {
     return null;
   }

@@ -1,0 +1,56 @@
+{
+  "projects": [
+    {
+      "id": "00000000-0000-4000-8000-000000000101",
+      "title": "Demo A",
+      "workspaceRoot": "C:\\work\\demo-a",
+      "repositoryIdentity": null,
+      "faviconPath": null,
+      "projectIcon": null,
+      "defaultModelSelection": null,
+      "defaultThreadEnvMode": null,
+      "autoPull": false,
+      "scripts": [],
+      "pinnedAt": "2026-11-12T10:00:00.000Z",
+      "archivedAt": null,
+      "createdAt": "2026-10-01T09:00:00.000Z",
+      "updatedAt": "2026-10-01T09:00:00.000Z",
+      "deletedAt": null
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000102",
+      "title": "Demo B",
+      "workspaceRoot": "C:\\work\\demo-b",
+      "repositoryIdentity": null,
+      "faviconPath": null,
+      "projectIcon": null,
+      "defaultModelSelection": null,
+      "defaultThreadEnvMode": null,
+      "autoPull": false,
+      "scripts": [],
+      "pinnedAt": null,
+      "archivedAt": null,
+      "createdAt": "2026-10-02T09:00:00.000Z",
+      "updatedAt": "2026-10-02T09:00:00.000Z",
+      "deletedAt": null
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000103",
+      "title": "Demo C",
+      "workspaceRoot": "C:\\work\\demo-c",
+      "repositoryIdentity": null,
+      "faviconPath": null,
+      "projectIcon": null,
+      "defaultModelSelection": null,
+      "defaultThreadEnvMode": null,
+      "autoPull": false,
+      "scripts": [],
+      "pinnedAt": null,
+      "archivedAt": null,
+      "createdAt": "2026-10-03T09:00:00.000Z",
+      "updatedAt": "2026-10-03T09:00:00.000Z",
+      "deletedAt": null
+    }
+  ],
+  "updatedAt": "2026-11-13T08:00:00.000Z"
+}

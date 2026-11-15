@@ -1,0 +1,9 @@
+Agent        Account          Sessions
+--------------------------------------
+Claude Code  Claude Personal     1,234
+Claude Code  Claude Work            56
+Codex        -                       7
+
+Total: 1,297 sessions, 56 flagged, 2
+read errors.
+Not installed: Pi, OpenCode.

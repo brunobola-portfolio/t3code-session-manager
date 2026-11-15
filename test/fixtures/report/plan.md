@@ -194,7 +194,7 @@ The working directory could not be read from the transcript.
 
 ### excluded (1)
 
-Matches an `exclude` pattern in config.json.
+Matches an `exclude` pattern, or an `organize.overrides` rule set to "skip", in config.json.
 
 - `00000000-0000-4000-8000-000000000ce4` · claude · claude-org · `C:/work/demo`
 

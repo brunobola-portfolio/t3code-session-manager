@@ -1,0 +1,8 @@
++- x t3sm cannot go on ------------------------------------------------------------------------------------------------+
+| ~/.t3code-session-manager/config.json: invalid config:                                                               |
+|   schedule.everyMinutes: must be an integer 1..1440                                                                  |
+| Fix the file, or delete it to regenerate defaults with t3sm accounts --init.                                         |
+|                                                                                                                      |
+| What to do: Do what the message says, then run the command again.                                                    |
+| > t3sm help errors                                                                                                   |
++----------------------------------------------------------------------------------------------------------------------+

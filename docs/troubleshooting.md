@@ -1,8 +1,35 @@
 # Troubleshooting
 
-Start with `t3sm doctor`. It prints one line per check (`ok`, `warn`, `fail` or `skip`), with a `->` fix under each
-problem, and exits 1 when a check fails. `t3sm doctor --json` gives the same as JSON for an issue report (emails are
+t3sm explains its own messages, in English or European Portuguese: every screen that shows a problem names the
+`t3sm help <topic>` that explains it, and `t3sm help` lists the topics. They ship with t3sm (`docs/help/` in the
+repository, `dist/help/` in the installed package), so they always match the installed version. This page is the
+index of those topics, then a reference for `t3sm doctor`'s checks, the common messages and the exit codes.
+
+Start with `t3sm doctor`. It prints one row per check, then every warning and failure in full with what to do, and
+exits 1 when a check fails. `t3sm doctor --json` gives the same as JSON for an issue report (always English; emails are
 masked and your home folder is shown as `~`, but read it before you paste it).
+
+## Help topics
+
+| Topic | What it explains | English | Portuguese |
+| :-- | :-- | :-- | :-- |
+| `not-imported` | T3 Code did not take a conversation; what to try | [not-imported.md](help/not-imported.md) | [not-imported.pt.md](help/not-imported.pt.md) |
+| `cwd-unreadable` | T3 Code cannot see the folder a conversation ran in | [cwd-unreadable.md](help/cwd-unreadable.md) | [cwd-unreadable.pt.md](help/cwd-unreadable.pt.md) |
+| `instance-unavailable` | The conversation's account (or agent) is off in T3 Code | [instance-unavailable.md](help/instance-unavailable.md) | [instance-unavailable.pt.md](help/instance-unavailable.pt.md) |
+| `project-mismatch` | T3 Code filed a conversation under another project | [project-mismatch.md](help/project-mismatch.md) | [project-mismatch.pt.md](help/project-mismatch.pt.md) |
+| `convert` | OpenCode and compressed Codex sessions, and why a conversion fails | [convert.md](help/convert.md) | [convert.pt.md](help/convert.pt.md) |
+| `held` | A project waits while one of its conversations is in use | [held.md](help/held.md) | [held.pt.md](help/held.pt.md) |
+| `decisions` | Conversations that wait for your answer in `t3sm start` | [decisions.md](help/decisions.md) | [decisions.pt.md](help/decisions.pt.md) |
+| `orphaned` | Conversations you deleted in T3 Code: copied back after your yes, or left out | [orphaned.md](help/orphaned.md) | [orphaned.pt.md](help/orphaned.pt.md) |
+| `t3-native` | Conversations started in T3 Code that t3sm never copies | [t3-native.md](help/t3-native.md) | [t3-native.pt.md](help/t3-native.pt.md) |
+| `history` | Which conversations stay shown in each project, and how to change it | [history.md](help/history.md) | [history.pt.md](help/history.pt.md) |
+| `watcher` | The background sync that is not running or late | [watcher.md](help/watcher.md) | [watcher.pt.md](help/watcher.pt.md) |
+| `updates` | How t3sm updates itself, and when an update fails | [updates.md](help/updates.md) | [updates.pt.md](help/updates.pt.md) |
+| `errors` | When a command stops: the common errors and their exit codes | [errors.md](help/errors.md) | [errors.pt.md](help/errors.pt.md) |
+
+A new topic is a pair of files in `docs/help/` (English, and the `.pt.md` twin) plus its name in `HELP_TOPICS`
+(`src/cli/helpTopics.ts`); `test/cli/help.test.ts` checks that every topic a screen can name exists in both languages
+and that every command a topic shows exists.
 
 ## Doctor checks
 
@@ -50,9 +77,9 @@ not with its server. Open T3 Code once.
 **`t3-reachable`** fail: the runtime file exists but nothing answers at that address. Open T3 Code (the file is left
 behind when it quits). Commands that need T3 Code exit 3.
 
-**`t3-version`** fail: this T3 Code build is not one t3sm was tested against, and not the same minor version. Update
-t3sm, or pass `--allow-untested` to `plan` and `apply` at your own risk (responses are still checked strictly; an
-unexpected shape stops before any write, exit 4).
+**`t3-version`** warn: this T3 Code build is not one t3sm was tested against. Nothing is blocked: commands print
+one warning and proceed, every change is journaled and `t3sm rollback` undoes it, and responses are still checked
+strictly (an unexpected shape stops before any write, exit 4). Pass `--allow-untested` to hide the warning.
 
 **`t3-cli`** fail: T3 Code's `t3` command is not in `~/.t3/bin` or on `PATH`. Reinstall T3 Code, or add `~/.t3/bin`
 to `PATH`. t3sm uses it only to get a short-lived session token.
@@ -117,11 +144,19 @@ by hand, or the journal was deleted). `rollback` cannot move it back; check it b
 
 **`schedule`** warn "its command points at … which no longer exists": the scheduled task runs a t3sm that has moved
 or was removed (common after an `npx` cache cleanup). Install the `t3sm` command
-(`npm install -g --install-links github:brunobola-portfolio/t3code-session-manager#v0.2.1`) and run `t3sm schedule install` again.
+(`npm install -g --install-links github:brunobola-portfolio/t3code-session-manager#v0.3.0`) and run `t3sm schedule install` again.
 
-**`sync-watcher`** warn: the watcher's process is gone without a clean stop, or it stopped reporting. Start it again
-with `t3sm sync --watch` or `t3sm schedule install --watch`. If a watcher you started is stuck, close its window (or
-sign out and back in) before starting another.
+**`sync-watcher`** warn: the watcher's process is gone without a clean stop, it stopped reporting, it still runs
+another t3sm version than the one installed (after it had a cycle to notice), or it stopped to restart into a new
+install and no new watcher followed within 20 minutes. `t3sm schedule restart` stops it safely (its own endpoint, then
+a verified process id, never by name) and starts it again; with nothing installed, `t3sm schedule install --watch`.
+`t3sm help watcher` explains it.
+
+**Updates.** `t3sm status` says it needs you when an update did not go through: "Updating t3sm from X to Y failed; X is
+still installed" or "The update of t3sm from X to Y was interrupted". An update that was rolled back (no healthy
+heartbeat of Y within 2 minutes, so X was reinstalled and runs again) is only worth knowing: "t3sm Y was rolled back; X
+is running (the automatic check skips Y)". `t3sm update` can still install Y on purpose. `t3sm update --check` shows the installed and newest versions, the last check, and how to go back
+after an interrupted update; `t3sm help updates` explains each case. Offline, the daily check just tries again later.
 
 **`merge-pending`** warn: sessions were continued in a terminal after t3sm imported them, and T3 Code does not show
 that work. `t3sm merge` lists them; `t3sm merge --all` brings them in (reversible with `t3sm rollback`).
@@ -135,7 +170,8 @@ A check that takes too long (10 s each; 45 s for `future-mtimes`, 30 s for the a
 | Message | What to do |
 | :-- | :-- |
 | `T3 Code is not running. Open it from the Start menu and try again.` (exit 3) | Open T3 Code, wait until its window is up, run the command again |
-| `T3 Code … is untested (tested: …). Rerun with --allow-untested to proceed anyway.` (exit 4) | Update t3sm, or decide to proceed with `--allow-untested` |
+| `Warning: T3 Code … has not been tested with t3sm (tested: …). Proceeding; …` | Only a warning, the command continues. Update t3sm when a release lists your version, or pass `--allow-untested` to hide it |
+| `T3 Code … speaks orchestration protocol N; t3sm needs protocol 2.` (exit 4) | This T3 Code is incompatible; update t3sm |
 | `Plan is stale; run t3sm plan again.` (exit 2) | The plan is older than 24 hours; plan again |
 | `T3 Code changed from X to Y since the plan. Plan is stale; …` (exit 2) | T3 Code was updated after the plan; plan again |
 | `Refusing to roll back without naming the run: pass --run <id> with --yes` (exit 2) | `t3sm runs` lists the runs; pass the one you mean, so a scheduled `sync` is never undone by mistake |
@@ -147,21 +183,17 @@ A check that takes too long (10 s each; 45 s for `future-mtimes`, 30 s for the a
 | A writing command exits 2 without asking | It ran without a terminal (a script, an agent). Run it in a terminal to answer the prompt, or add `--yes` once you have read the plan |
 | `this filesystem cannot hard-link (…); not moved` | `dedupe`, `quarantine` and conversions need hard links. Move the state folder or the account folder off exFAT/FAT32 or a network share without them |
 | `N sessions pending; run t3sm apply once to import them.` from `sync` | More than `sync.maxUnattendedImports` (200) sessions wait. Do the big import by hand: `t3sm plan`, read it, `t3sm apply` |
-| `Held (a session is in use): …` | A session of that project was written in the last 10 minutes. Close it or wait, then run again |
+| `waiting: <project> — '<conversation>' written N min ago; retried after 10 min idle` | That conversation of the project was written in the last 10 minutes, so its sessions wait (the project itself is already in T3 Code, empty). Close it or wait, then run again; `sync` retries on its own |
+| `Held (a session is in use): …` | A file of that project stayed locked or was in use. Close it or wait, then run again |
 | `deferred N (in use, changed or locked; next run)` | Those sessions changed since the plan, are in use, or a file of their project stayed locked by another program (antivirus, OneDrive: `file-busy`). The next run retries them |
 | `Interrupted: file times restored, no further waves started.` (exit 130) | Run `t3sm apply` again to continue |
 | `Could not verify imports with T3 Code; stopped.` (exit 5) | T3 Code stopped answering after a wave. Run `t3sm plan` and `t3sm apply` again |
 
 ## Sessions that failed to import (exit 5)
 
-`apply` lists each failed session with a reason; the next run retries it once it changes.
-
-| Reason | Meaning |
-| :-- | :-- |
-| `not-imported` | T3 Code did not take it after a retry: its recorded folder does not match the project (see `remap` in [configuration.md](configuration.md)), it has no user message T3 Code can read, or T3 Code logged an error for it (`~/.t3/userdata/logs/`) |
-| `project-mismatch` | The project's folder in T3 Code differs from the planned one (renamed or recreated meanwhile). Plan again |
-| `instance-unavailable` | The account's instance is signed out or disabled in T3 Code |
-| `cwd-unreadable-in-t3` | The session's folder is recorded beyond the first 1 MiB of the transcript, where T3 Code stops looking |
+`apply` and `sync` list each conversation that could not be imported: its project and title, why and what to do, then
+the `t3sm help` topics that explain the reasons (`not-imported`, `cwd-unreadable`, `instance-unavailable`,
+`project-mismatch`, `convert`; see the table above). The next run retries them once they change.
 
 Skipped sessions (`plan.md`, "Skipped by reason") are not failures: each reason is explained there. Two warnings in
 `plan.md` are worth reading: sessions **already in T3 Code under another account** are never imported a second time
@@ -170,12 +202,15 @@ the session id inside** are imported under the id inside, as T3 Code does.
 
 ## Exit codes
 
-`0` done, nothing to do, declined, or another run holds the lock; `1` unexpected error or a failed doctor check;
+`0` done, nothing to do, declined, or another run holds the lock; `1` unexpected error, a failed doctor check, an update
+that failed or was rolled back, or `schedule install --watch`, `restart` or `remove` that could not stop the running
+watcher;
 `2` usage or config error, a writing command without `--yes` on a non-terminal, a plan refused as stale, or T3 Code's
 default instance reading another account folder (`instance-home-drift`); `3` T3 Code not running, or lost mid-run; `4`
-untested T3 Code version or unexpected response; `5` finished with per-session failures; `130` interrupted.
+T3 Code speaking another protocol, or an unexpected response; `5` finished with per-session failures; `10` (`t3sm status` only) something needs you, not an error; `130` interrupted.
 
 ## Still stuck
 
-Open an issue with the output of `t3sm doctor --json` (checked for anything private), the command you ran and its
-output. Security problems: [SECURITY.md](../SECURITY.md).
+Open an issue with the output of `t3sm status --json` and `t3sm doctor --json` (checked for anything private), the
+command you ran and its output, and, for the background sync, the last lines of `~/.t3code-session-manager/logs/sync.log`
+(counts and run ids only). Never paste conversation content. Security problems: [SECURITY.md](../SECURITY.md).

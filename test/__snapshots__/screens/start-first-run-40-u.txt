@@ -1,0 +1,57 @@
+
+t3sm 0.3.0 · 2 Claude accounts
+────────────────────────────────────────
+
+1/11 · Welcome
+t3sm brings your old sessions into T3
+Code as threads you can continue.
+Each one stays on the Claude account it
+belongs to.
+
+╭─ How this works ───────────────╮
+│ · 11 short steps. Stop at any  │
+│   question.                    │
+│ · Nothing is written until you │
+│   answer y.                    │
+│ · Every change can be undone.  │
+│ · No session is ever deleted.  │
+╰────────────────────────────────╯
+y yes · n no · ? more · b back ·
+q quit · Enter takes the capital letter
+In Portuguese: t3sm start --lang pt
+Ready to start? [Y/n/?/q] y
+
+2/11 · Check
+A quick check of this computer and T3
+Code. It only reads.
+Checking…
+✓ All good · 1 of 1 check passed
+  ✓ Node
+Continue to the
+accounts? [Y/n/?/b/q] y
+
+3/11 · Accounts
+2 Claude accounts on this computer. In
+T3 Code each one is an "instance": a
+Claude account inside T3 Code, with its
+own name and colour.
+
+#  Account        In T3 C…  Folder
+────────────────────────────────────────
+1  Claude Perso…  ✓ yes     ~/.claude
+2  Claude Org     ○ not y…  ~/.cla…e-org
+1. Found from: the default folder
+2. Found from: a ~/.claude-* folder
+
+1 account has no instance in T3 Code
+yet: claude-org. The import creates it,
+or you can do it now.
+Create the missing instances in T3
+Code now? This changes T3 Code's
+settings. Undo: remove each new
+instance in T3 Code settings
+(Providers). [y/N/?/b/q] n
+Are these names right? [Y/n/?/b/q] q
+
+Stopped. Nothing is left half done; run
+t3sm again to continue.

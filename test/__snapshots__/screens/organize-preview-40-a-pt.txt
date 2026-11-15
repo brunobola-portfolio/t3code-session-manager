@@ -1,0 +1,25 @@
+- Arquivar 2 conversas automáticas
+  (Agent SDK)
+- Títulos novos para 4 conversas
+  (primeira mensagem técnica)
+- Mostrar 5 conversas dentro de 1
+  projeto (dos últimos 90 dias; a
+  passagem automática para Settled do T3
+  Code não muda)
+- Passar 30 conversas para Settled em 1
+  projeto (sem atividade nos últimos 90
+  dias; ficam no projeto, na prateleira
+  Settled)
+Cada alteração acima pode ser desfeita:
+  t3sm organize --undo
+
+Histórico: últimos 90 dias, pelo menos
+  10 por projeto
+
+Projeto: Visíveis agora -> depois
+demo
+  42 -> 12, Em Settled 30, Renomeadas 4
+app
+  3 -> 6, Arquivadas 2
+a-very-long-project-name-for-the-table
+  2 -> 2

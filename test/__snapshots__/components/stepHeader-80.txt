@@ -1,0 +1,6 @@
+--- unicode on
+● ● ◉ ○ ○ ○ ○ ○ ○ ○ ○  Step 3 of 11 · Accounts
+◉ ○ ○  Step 1 of 3 · A very long step title that never fits in the line
+--- unicode off
+* * @ o o o o o o o o  Step 3 of 11 - Accounts
+@ o o  Step 1 of 3 - A very long step title that never fits in the line

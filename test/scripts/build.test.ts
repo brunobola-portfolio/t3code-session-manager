@@ -59,6 +59,7 @@ test("build output runs as an installed package (under node_modules, where Node 
   mkdirSync(pkgDir, { recursive: true });
   cpSync(join(REPO, "bin"), join(pkgDir, "bin"), { recursive: true });
   cpSync(join(REPO, "package.json"), join(pkgDir, "package.json"));
+  cpSync(join(REPO, "CHANGELOG.md"), join(pkgDir, "CHANGELOG.md"));
   build(join(REPO, "src"), join(pkgDir, "dist"));
   const run = (args: string[]) => spawnSync(process.execPath, [join(pkgDir, "bin", "t3sm.mjs"), ...args], {
     encoding: "utf8", timeout: 30_000, env: { ...process.env, T3SM_HOME: join(root, "state") },
@@ -66,10 +67,46 @@ test("build output runs as an installed package (under node_modules, where Node 
   const v = run(["--version"]);
   assert.equal(v.status, 0, v.stderr);
   assert.equal(v.stdout, `${pkg.version}\n`);
-  const h = run(["--help"]);
+  const h = run(["--help", "--lang", "en"]);
   assert.equal(h.status, 0, h.stderr);
   assert.match(h.stdout, /t3sm update/);
-  const u = run(["update", "--dry-run"]);
+  // Commands that need no network (`update --dry-run` looks up the releases): the package reads its own files.
+  const c = run(["changelog", "--since", "0.2.0", "--lang", "en"]);
+  assert.equal(c.status, 0, c.stderr);
+  assert.match(c.stdout, /^\[0\.2\.1\]/m);
+  const u = run(["update", "--auto", "off", "--dry-run", "--lang", "en"]);
   assert.equal(u.status, 0, u.stderr);
-  assert.match(u.stdout, /installed with npm/);
+  assert.match(u.stdout, /Would turn automatic updates off/);
+  // The help topics ship in dist/help, in both languages.
+  const help = run(["help", "not-imported", "--lang", "en"]);
+  assert.equal(help.status, 0, help.stderr);
+  assert.match(help.stdout, /t3sm apply/);
+  const pt = run(["help", "held", "--lang", "pt"]);
+  assert.equal(pt.status, 0, pt.stderr);
+  assert.match(pt.stdout, /projeto/);
+});
+
+test("build copies docs/help into dist/help (every topic, English and Portuguese)", (t) => {
+  const out = mkdtempSync(join(tmpdir(), "t3sm-build-help-"));
+  t.after(() => rmSync(out, { recursive: true, force: true }));
+  build(join(REPO, "src"), out);
+  const want = readdirSync(join(REPO, "docs", "help")).filter((f) => f.endsWith(".md")).sort();
+  assert.ok(want.length >= 26, `${want.length} topic files`);
+  assert.deepEqual(readdirSync(join(out, "help")).sort(), want);
+  for (const f of want) assert.equal(readFileSync(join(out, "help", f), "utf8"), readFileSync(join(REPO, "docs", "help", f), "utf8"));
+});
+
+test("build writes dist/build.json: {version, builtAt}", (t) => {
+  const out = mkdtempSync(join(tmpdir(), "t3sm-build-stamp-"));
+  t.after(() => rmSync(out, { recursive: true, force: true }));
+  const before = Date.now();
+  build(join(REPO, "src"), out);
+  const stamp = JSON.parse(readFileSync(join(out, "build.json"), "utf8")) as { version: string; builtAt: string };
+  assert.deepEqual(Object.keys(stamp).sort(), ["builtAt", "version"]);
+  assert.equal(stamp.version, pkg.version);
+  const at = Date.parse(stamp.builtAt);
+  assert.ok(at >= before - 1000 && at <= Date.now() + 1000, stamp.builtAt);
+  assert.equal(new Date(at).toISOString(), stamp.builtAt);
+  build(join(REPO, "src"), out, { builtAt: "2026-11-15T10:00:00.000Z" });
+  assert.equal((JSON.parse(readFileSync(join(out, "build.json"), "utf8")) as { builtAt: string }).builtAt, "2026-11-15T10:00:00.000Z");
 });

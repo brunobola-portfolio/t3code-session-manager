@@ -14,12 +14,19 @@ several. `t3sm` is the command you install once ([install.md](../install.md)); `
   extension's per-project pins (`claudeCode.environmentVariables` in `.vscode/settings.json`). More than one account:
   [multiple-accounts.md](multiple-accounts.md).
 - Sub-agent transcripts show inside their parent session, not as threads.
+- Sessions from your home folder, Downloads or another folder T3 Code refuses as a project: copied whole into the
+  project they worked in (or a **General** project), after a yes in `t3sm start`. Work you continue in the original
+  later is brought in by `t3sm sync`.
 
 ## What does not
 
 - Sessions whose folder no longer exists (`cwd-missing`), sessions with a non-UUID id or only hidden records, files
   written in the last 10 minutes (they come with the next run), copies in `.bak` folders and mirror copies of a
   session kept in another account. `plan.md` lists each one with its reason.
+- Sessions started in T3 Code: they are already there, and t3sm never imports them again. One whose T3 Code thread
+  you deleted comes back as a copy after a yes in `t3sm start` (`organize.sessions.orphaned`).
+- Until you answer `t3sm start`'s questions: sessions in temp and system folders and automated (Agent SDK) sessions,
+  which are skipped by default.
 - Tool activity (commands run, files edited) in the timeline: T3 Code imports the conversation text. Only the last 200
   visible messages show; resuming uses everything.
 
@@ -38,6 +45,11 @@ t3sm apply
 
 In T3 Code, open a project from the plan: its sessions are threads. Send a message in one; it continues the session
 with its full context. `t3sm plan` again shows them as `already-in-t3`.
+
+`claude --resume` from a project folder lists the copies t3sm made there too, and resumes them.
+
+If the sidebar looks empty because everything is under **Settled**, `t3sm organize --dry-run` shows how to bring the
+conversations back into their projects ([README](../../README.md#organize-your-history)).
 
 ## Undo
 

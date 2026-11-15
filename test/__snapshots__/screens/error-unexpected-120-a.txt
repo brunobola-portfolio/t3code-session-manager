@@ -1,0 +1,6 @@
++- x Unexpected error -------------------------------------------------------------------------------------------------+
+| EACCES: permission denied, open 'C:/work/demo/state.json'                                                            |
+|                                                                                                                      |
+| What to do: Run t3sm doctor: it checks everything t3sm needs.                                                        |
+| > t3sm doctor                                                                                                        |
++----------------------------------------------------------------------------------------------------------------------+

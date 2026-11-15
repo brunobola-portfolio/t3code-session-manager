@@ -1,0 +1,23 @@
+Sincronização agendada  instalada
+                        (schtasks)
+Comando
+  cmd.exe /c start "" /min
+  "C:/n/node.exe" "C:/t3sm/bin/t3sm.mjs"
+  sync --watch --quiet
+Vigilante               a correr
+                        (processo 4321),
+                        último ciclo
+                        15/11 às 11:56
+                        (feito), próximo
+                        15/11 às 12:11
+Último registo
+  15/11 às 11:56 (há 4 min): feito, 2
+  importadas, execução
+  20261115-115600-c3d4
+
+! O comando agendado aponta para
+  ficheiros que já não existem
+  Aponta para C:/old/t3sm/bin/t3sm.mjs,
+  que já não existe. Instala-o outra vez
+  a partir do t3sm atual:
+  › t3sm schedule install --watch

@@ -1,0 +1,18 @@
+   Check              Result
+────────────────────────────────────────
+✓  Node               Node 24.11.1
+✓  State folder       ~/.t3code-session…
+✓  T3 Code running    answering at http…
+!  CLAUDE_CONFIG_DIR  see below
+○  Codex sessions     no sessions on th…
+
+! CLAUDE_CONFIG_DIR
+  T3 Code started from this shell would
+  read C:/work/demo/.claude-alt as its
+  default account
+  What to do: Start T3 Code from the
+  Start menu, not from this shell
+
+╭─ ✓ Ready, with 1 warning ───╮
+│ Next: t3sm plan             │
+╰─────────────────────────────╯

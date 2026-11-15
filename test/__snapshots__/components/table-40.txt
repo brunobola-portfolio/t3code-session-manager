@@ -1,0 +1,12 @@
+--- unicode on
+Project  Count
+──────────────
+app       1234
+api         56
+docs         7
+--- unicode off
+Project  Count
+--------------
+app       1234
+api         56
+docs         7

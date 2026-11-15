@@ -1,0 +1,57 @@
+* * * * * * @ o o o o  Passo 7 de 11 - Piloto
+Primeiro, experimenta um projeto. Um pequeno que conheças bem, para o
+confirmares no T3 Code.
+
+Sugestões (pequenos, sem uso agora):
+#  Projeto      Conversas  Conta
+------------------------------------------
+1  ~/code/demo          2  Claude Personal
+2  ~/code/big          20  Claude Org
+Projeto a experimentar: 1-2 (Enter = 1), o caminho de uma pasta, ou n para
+saltar o piloto: 
+O que a importação de ~/code/demo faria (ainda não se escreve nada):
+ran apply
+
++- Isto é o que vou fazer -----------------------------+
+| Projeto   ~/code/demo                                |
+| Importar  2 conversas                                |
+| Conta     Claude Personal                            |
+| Desfazer  t3sm rollback --run <id> --archive-threads |
++------------------------------------------------------+
+Importar ~/code/demo agora? Isto escreve no T3 Code; depois podes
+desfazê-lo. [s/N/?/v/q] s
+ran apply
+
+Agora confirma no T3 Code:
+1. Procura ~/code/demo na barra lateral.
+2. As sessões antigas estão lá como threads.
+3. As threads novas começam em Claude Personal.
+4. Abre uma: o histórico aparece.
+Enviar uma mensagem continua essa sessão a sério, nessa conta.
+Parece-te bem? [S/n/?/q] s
+
+* * * * * * * @ o o o  Passo 8 de 11 - Importação completa
+Agora o resto. Antes de responderes s:
+- Não deixes o computador adormecer até terminar.
+- Fecha as sessões que queres importar: um projeto em uso espera por outra
+  execução.
+- Pausa a sincronização na nuvem da pasta pessoal (OneDrive, Dropbox, iCloud).
+A atualizar o plano...
+
++- Isto é o que vou fazer ---------------------------------+
+| Importar      23 conversas                               |
+| Para           3 projetos                                |
+| Em uso agora   1 projeto espera por outra execução       |
+| Desfazer      t3sm rollback --run <id> --archive-threads |
++----------------------------------------------------------+
+Importar tudo agora? Isto escreve no T3 Code; t3sm rollback
+--archive-threads desfá-lo. [s/N/?/v/q] q
+
++- O que esta sessão fez ----------------------------------------------+
+| v Projeto piloto ~/code/demo importado (execução R1)                 |
+|   Desfazer: t3sm rollback --run R1 --archive-threads                 |
+|                                                                      |
+| t3sm runs lista todas as execuções; as threads são arquivadas, nunca |
+| apagadas.                                                            |
++----------------------------------------------------------------------+
+Parado. Nada ficou a meio; corre t3sm outra vez para continuar.

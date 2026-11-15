@@ -136,7 +136,7 @@ export function scanProfile(text: string, kind: Kind): { value: string; alias: s
   let pending: string | null = null; // function header seen, body brace not yet
   let inBlock = false; // PowerShell <# ... #>
   let bodyEnd: ((l: string) => boolean) | null = null; // inside a heredoc / here-string body: its terminator test
-  for (const raw of text.replace(/^﻿/, "").split(/\r?\n/)) {
+  for (const raw of text.replace(/^\uFEFF/, "").split(/\r?\n/)) {
     let line = raw;
     if (bodyEnd) {
       if (bodyEnd(line)) bodyEnd = null;
@@ -235,7 +235,7 @@ const foldCase = (platform: NodeJS.Platform) => platform === "win32" || platform
 function claudeJsonRoots(text: string | null): string[] {
   if (text === null) return [];
   try {
-    const j = JSON.parse(text.replace(/^﻿/, "")) as { projects?: unknown };
+    const j = JSON.parse(text.replace(/^\uFEFF/, "")) as { projects?: unknown };
     return j && typeof j.projects === "object" && j.projects !== null && !Array.isArray(j.projects) ? Object.keys(j.projects) : [];
   } catch { return []; }
 }
@@ -280,7 +280,7 @@ export async function discoverAccountHomes(env: DiscoveryEnv): Promise<Discovere
     const pins = await Promise.all(list.slice(i, i + 32).map(async (r) => {
       const text = await env.readFile(`${r}/.vscode/settings.json`);
       if (text === null) return null;
-      try { return pinFromSettings(parseJsonc(text.replace(/^﻿/, ""))); } catch { return null; }
+      try { return pinFromSettings(parseJsonc(text.replace(/^\uFEFF/, ""))); } catch { return null; }
     }));
     for (const p of pins) if (p) add(expandProfilePath(p, home, platform), "vscode-pin");
   }

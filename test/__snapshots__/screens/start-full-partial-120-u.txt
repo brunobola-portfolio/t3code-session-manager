@@ -1,0 +1,52 @@
+● ● ● ● ● ● ● ◉ ○ ○ ○  Step 8 of 11 · Full import
+Now the rest. Before you say yes:
+- Keep the computer awake until it ends.
+- Close the sessions you want imported: a project in use waits for a later run.
+- Pause cloud sync of your home folder (OneDrive, Dropbox, iCloud).
+Updating the plan…
+
+╭─ Here is what I will do ───────────────────────────────╮
+│ Import      23 conversations                           │
+│ Into         3 projects                                │
+│ In use now   1 project waits for a later run           │
+│ Undo        t3sm rollback --run <id> --archive-threads │
+╰────────────────────────────────────────────────────────╯
+Import everything now? This writes to T3 Code; t3sm rollback
+--archive-threads takes it back. [y/N/?/b/q] y
+24 of 24 processed in 4 s · 18 imported
+
+╭─ ! Imported 18, 6 could not be imported ───────────────────╮
+│ Imported          18                                       │
+│ Could not import   6                                       │
+│ Run               R1                                       │
+│ Undo              t3sm rollback --run R1 --archive-threads │
+╰────────────────────────────────────────────────────────────╯
+
+✗ 6 conversations could not be imported
+Project          Conversation                                      Why                         What to do
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+demo             Fix the login form                                T3 Code did not import it   run t3sm apply again
+api              Plan the API                                      its folder is unreadable    resume it in a terminal
+app              untitled conversation                             account off in T3 Code      turn it on in T3 Code
+billing-service  Refactor the billing module and add tests for it  T3 Code filed it elsewhere  check it in T3 Code
+demo             Notes                                             could not read the session  try again later
+demo             untitled conversation                             unusable destination        pick one in t3sm start
+› More help: t3sm help not-imported, cwd-unreadable, instance-unavailable, project-mismatch, convert
+
+Some conversations were not imported: the list above says why. t3sm apply tries
+them again.
+
+● ● ● ● ● ● ● ● ● ◉ ○  Step 10 of 11 · Keep in sync
+New sessions keep appearing as you work. The background watcher imports them for
+you, carefully: it waits for sessions in use, and never moves files or creates
+instances.
+Install the background watcher now? This adds a task to your system's
+scheduler. Undo: t3sm schedule remove. [y/N/?/b/q] q
+
+╭─ What this session did ─────────────────────────────────────────╮
+│ ! Import finished with 6 failures (run R1)                      │
+│   Undo: t3sm rollback --run R1 --archive-threads                │
+│                                                                 │
+│ t3sm runs lists every run; threads are archived, never deleted. │
+╰─────────────────────────────────────────────────────────────────╯
+Stopped. Nothing is left half done; run t3sm again to continue.

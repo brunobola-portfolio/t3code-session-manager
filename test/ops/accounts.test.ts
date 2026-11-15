@@ -363,10 +363,18 @@ test("accounts: 'Found via' column per account, and a warning for a discovered h
   const f = fake([inst("claudeAgent", join(s.home, ".claude"), { email: "me@x.com" })]);
   assert.equal(await accountsCommand([], s.io, deps(s, f)), 0);
   const o = s.out();
-  assert.match(o.split("\n")[0]!, /Found via/);
-  assert.match(o, /claudeAgent.*default/);
-  assert.match(o, /claude-org.*folder, shell-profile \(claude-org\)/);
-  assert.match(o, /Found ~\/accts\/work \(shell-profile \(cw\)\) but it is not in config\.json/);
+  // 80 columns cannot show every value whole: one block per account, nothing cut and no column left out (Task 22).
+  assert.match(o, /^claudeAgent\n(?: {2}.*\n)*? {2}Found via +the default folder, T3 Code\n/m);
+  assert.match(o, /^claude-org\n(?: {2}.*\n)*? {2}Found via +a ~\/\.claude-\* folder, your shell alias claude-org\n/m);
+  assert.doesNotMatch(o, /…|\.\.\./, "nothing cut");
+  // Wide enough, nothing is cut.
+  const { renderAccounts } = await import("../../src/cli/commands/accounts.ts");
+  const { makeCliUi } = await import("../../src/cli/ui.ts");
+  const config = JSON.parse(readFileSync(join(s.state, "config.json"), "utf8"));
+  const wide = renderAccounts(makeCliUi({ color: 0, unicode: true, isTTY: false, columns: 160 }, "en"), [inst("claudeAgent", join(s.home, ".claude"), { email: "me@x.com" })], config, s.home,
+    [{ home: join(s.home, ".claude-org"), sources: ["folder", "shell-profile"], alias: "claude-org" }]).join("\n");
+  assert.match(wide, /claude-org.*a ~\/\.claude-\* folder, your shell alias claude-org/);
+  assert.match(o, /Found ~\/accts\/work \(your shell alias cw\) but it is not in config\.json/);
   assert.ok(!o.includes(s.home), "home shown ~-relative");
 });
 

@@ -1,0 +1,21 @@
+20261114-093125-c3d4
+  Início      14/11 às 10:00
+  Comando     apply
+  Estado      ok
+  Alterações  importadas 412, ficheiros
+              6, instâncias 1, projetos
+              12
+
+20261115-090000-a1b2
+  Início      15/11 às 09:00
+  Comando     organize
+  Estado      parcial, desfeita por
+              20261115-110000-e5f6
+  Alterações  organizadas 41
+
+20261115-110000-e5f6
+  Início      15/11 às 11:00
+  Comando     rollback
+              20261115-090000-a1b2
+  Estado      ok
+  Alterações  revertidas 40

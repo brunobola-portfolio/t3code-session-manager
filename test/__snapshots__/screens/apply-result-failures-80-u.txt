@@ -1,0 +1,29 @@
+╭─ ! Imported 6, 6 could not be imported ──────────────────────────────────────╮
+│ Imported          6                                                          │
+│ Could not import  6                                                          │
+│ Next run          1 (in use, changed or locked)                              │
+│ Held              2                                                          │
+│ Run               20261115-093125-c3d4                                       │
+│ Undo              t3sm rollback --run 20261115-093125-c3d4 --archive-threads │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+! demo waits: 'Fix the build' is in use (written 3 min ago); imported after 10
+  minutes idle
+! locked waits: a conversation there is in use; it is imported after 10 minutes
+  idle
+
+✗ 6 conversations could not be imported
+demo · Fix the login form
+  T3 Code did not import it · run t3sm apply again
+api · Plan the API
+  its folder is unreadable · resume it in a terminal
+app · untitled conversation
+  account off in T3 Code · turn it on in T3 Code
+billing-service · Refactor the billing module and add tests for it
+  T3 Code filed it elsewhere · check it in T3 Code
+demo · Notes
+  could not read the session · try again later
+demo · untitled conversation
+  unusable destination · pick one in t3sm start
+› More help: t3sm help not-imported, cwd-unreadable, instance-unavailable,
+  project-mismatch, convert

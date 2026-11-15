@@ -6,9 +6,16 @@ import { normalizeCwd } from "../../src/core/paths.ts";
 import type { Plan, PlanItem } from "../../src/core/types.ts";
 import type { Check } from "../../src/ops/doctor.ts";
 import type { RunSummary } from "../../src/ops/rollback.ts";
-import type { AccountRow, AssistantDeps, PlanView } from "../../src/assistant/core.ts";
+import type { OrganizePatch } from "../../src/core/config.ts";
+import type { OrganizePlan, OrganizeAction } from "../../src/organize/types.ts";
+import type { T3Project, T3Thread } from "../../src/t3/decode.ts";
+import type { Term } from "../../src/ui/terminal.ts";
+import type { AccountRow, AssistantDeps, OrganizePreview, PlanView, PluginRow } from "../../src/assistant/core.ts";
+import type { InstallResult } from "../../src/ops/plugin.ts";
 import { runAssistant } from "../../src/assistant/runner.ts";
 import type { Lang } from "../../src/assistant/i18n.ts";
+import type { Caps } from "../../src/ui/caps.ts";
+import type { HistoryRule } from "../../src/core/types.ts";
 import { cfg, sess } from "../plan/helpers.ts";
 
 export const HOME = normalizeCwd(resolve("/home-demo"));
@@ -23,13 +30,39 @@ function item(r: string, instanceId: string, active = false): PlanItem {
   return { session: s, action: { kind: "import", projectRoot: r, instanceId, expectedThreadId: `import:${instanceId}:${s.nativeId}` }, notes: [] };
 }
 
+export const GENERAL = normalizeCwd(resolve("/home-demo/T3 General"));
+export const SCRATCH = root("scratch");
+
+/** Conversations from a refused folder, copied to `to` (a rehomed copy: convert-import with rehomeFrom). */
+export interface Move { from: string; to: string; n: number; share?: { hits: number; total: number } }
+
+/** The questions a plan finds unanswered, the way the planner reports them. */
+export const PENDING = [
+  { key: "home", sessions: 5, folders: 1 }, { key: "t3-refused", sessions: 1, folders: 1 },
+  { key: "temp", sessions: 11, folders: 5 }, { key: "automated", sessions: 7, folders: 3 },
+];
+
+export const MOVES: Move[] = [{ from: HOME, to: DEMO, n: 3 }, { from: HOME, to: GENERAL, n: 2 }, { from: SCRATCH, to: GENERAL, n: 1 }];
+
 /** demo: 2 pending (Personal, latest); big: 20 pending (Org, rule); busy: 1 pending and a session in use (held). */
-export function planView(n = 0, routes: { match: string; account: string }[] = []): PlanView {
+export function planView(n = 0, routes: { match: string; account: string }[] = [], extra: { pending?: { key: string; sessions: number; folders: number }[]; moves?: Move[]; organize?: Record<string, unknown>; under?: string; skipped?: { harness: "pi" | "codex"; n: number }[] } = {}): PlanView {
+  // under: the projects live in this folder (the screen snapshots put them under HOME, so they read the same on every system).
+  const at = (name: string): string => (extra.under ? normalizeCwd(`${extra.under}/${name}`) : root(name));
+  const [DEMO, BIG, BUSY] = [at("demo"), at("big"), at("busy")];
   const items: PlanItem[] = [
     item(DEMO, "claudeAgent"), item(DEMO, "claudeAgent"),
     ...Array.from({ length: 20 }, () => item(BIG, "claude-org")),
     item(BUSY, "claudeAgent"), item(BUSY, "claudeAgent", true),
   ];
+  for (const sk of extra.skipped ?? []) {
+    for (let k = 0; k < sk.n; k++) items.push({ session: { ...sess({ cwd: DEMO }), harness: sk.harness, accountId: null }, action: { kind: "skip", reason: "harness-unavailable" }, notes: [] });
+  }
+  for (const m of extra.moves ?? []) {
+    for (let k = 0; k < m.n; k++) {
+      const s = sess({ cwd: m.from });
+      items.push({ session: s, action: { kind: "convert-import", projectRoot: m.to, instanceId: "claudeAgent", expectedThreadId: `import:claudeAgent:${s.nativeId}`, uuid: s.nativeId, targetFile: `${HOME}/.claude/projects/x/${s.nativeId}.jsonl`, copy: "faithful", rehomeFrom: m.from, ...(m.share ? { rehomeShare: m.share } : {}) }, notes: [] });
+    }
+  }
   const plan: Plan = {
     version: 1, runId: `P${n + 1}`, createdAt: new Date().toISOString(), t3Version: "0.1.9", instancesToCreate: [],
     projectsToCreate: [{ root: DEMO, title: "demo", defaultInstanceId: "claudeAgent" }],
@@ -39,9 +72,37 @@ export function planView(n = 0, routes: { match: string; account: string }[] = [
       { root: DEMO, accountId: "claudeAgent", source: "recent-activity" },
     ],
     projectDefaults: [], mirrorCopies: [{ path: "/h/.claude-org/projects/x/a.jsonl", nativeId: "a", keptPath: "/h/.claude/projects/x/a.jsonl", relation: "identical" }],
-    items, warnings: [],
+    items, warnings: [], ...(extra.pending && extra.pending.length > 0 ? { decisionsPending: extra.pending } : {}),
   };
-  return { plan, names: { claudeAgent: "Claude · Personal", "claude-org": "Claude · Org" }, planPath: `${HOME}/.t3code-session-manager/runs/P${n + 1}/plan.md`, config: cfg({ routes }) };
+  if ((extra.moves ?? []).some((m) => m.to === GENERAL)) plan.projectsToCreate.push({ root: GENERAL, title: "General", defaultInstanceId: "claudeAgent" });
+  return { plan, names: { claudeAgent: "Claude · Personal", "claude-org": "Claude · Org" }, planPath: `${HOME}/.t3code-session-manager/runs/P${n + 1}/plan.md`, config: cfg({ routes, ...(extra.organize ? { organize: extra.organize } : {}) }) };
+}
+
+const project = (id: string, title: string, pinned = false): T3Project => ({ id, title, workspaceRoot: root(id), defaultModelSelection: null, archived: false, deleted: false, pinned, createdAt: null });
+const thread = (id: string, projectId: string, title: string, at: string): T3Thread => ({ id, projectId, instanceId: "claudeAgent", archived: false, title, latestUserMessageAt: at, settledOverride: "settled", settledAt: "2026-11-01T00:00:00Z" });
+const action = (kind: OrganizeAction["kind"], target: string, projectId: string | null, next: unknown, reason: string): OrganizeAction => ({ kind, target, projectId, previous: null, next, reason });
+
+/** What organize would do (synthetic): 4 conversations shown in 2 projects, 2 titles, 3 automated archived, 2 pins, 1 empty project. */
+export function previewFixture(o: { autoSettleDays?: number | null } = {}): OrganizePreview {
+  const projects = [project("alpha", "alpha-app"), project("beta", "beta-api"), project("gamma", "gamma-docs"), project("empty", "scratchpad")];
+  const threads = [
+    thread("import:1", "alpha", "Fix login", "2026-11-10T10:00:00Z"), thread("import:2", "alpha", "Add dark mode", "2026-11-09T10:00:00Z"),
+    thread("import:3", "beta", "Rate limiter", "2026-11-08T10:00:00Z"), thread("import:4", "beta", "Cache layer", "2026-11-07T10:00:00Z"),
+  ];
+  const actions: OrganizeAction[] = [
+    action("archive", "import:a1", "alpha", true, "automated session (Agent SDK)"), action("archive", "import:a2", "alpha", true, "automated session (Agent SDK)"),
+    action("archive", "import:a3", "beta", true, "automated session (Agent SDK)"),
+    action("title", "import:1", "alpha", "Fix the login form", "technical title"), action("title", "import:3", "beta", "Rate limiting", "technical title"),
+    ...["import:1", "import:2", "import:3", "import:4"].map((id, i) => action("unsettle", id, i < 2 ? "alpha" : "beta", "active", "history: all")),
+    action("pin", "alpha", "alpha", true, "top 2 recent"), action("pin", "beta", "beta", true, "top 2 recent"),
+    action("project-delete", "empty", "empty", null, "created by t3sm, no threads"),
+  ];
+  const counts = { archive: 3, title: 2, unsettle: 4, settle: 0, pin: 2, unpin: 0, "project-delete": 1, "project-title": 0, "auto-settle": 0 };
+  const plan: OrganizePlan = {
+    runId: "O1", actions, counts,
+    byProject: [{ projectId: "alpha", title: "alpha-app", visibleBefore: 0, visibleAfter: 2 }, { projectId: "beta", title: "beta-api", visibleBefore: 0, visibleAfter: 2 }],
+  };
+  return { plan, projects, threads, autoSettleDays: o.autoSettleDays === undefined ? 7 : o.autoSettleDays };
 }
 
 export const ACCOUNTS: AccountRow[] = [
@@ -56,6 +117,8 @@ export interface HarnessOptions {
   answers: string[];
   lang?: Lang;
   langFromFlag?: boolean;
+  /** The language t3sm would use without --lang (system / T3SM_LANG); default English. */
+  defaultLang?: Lang;
   color?: boolean;
   checks?: Check[][];
   accounts?: AccountRow[];
@@ -71,6 +134,38 @@ export interface HarnessOptions {
   routes?: { match: string; account: string }[];
   /** A run another t3sm process journals while this command runs (a sync that took the lock). */
   foreign?: (argv: string[]) => RunSummary | null;
+  /** Questions every plan finds unanswered until a saveOrganize answers them (planView extra). */
+  pending?: { key: string; sessions: number; folders: number }[];
+  /** Rehomed conversations a plan holds once home / t3-refused were saved as "rehome". */
+  moves?: Move[];
+  /** What the organize dry run finds (default: nothing imported to organize). */
+  preview?: OrganizePreview | null;
+  /** The configured accounts and their t3sm plugin (default: none, so the last step offers nothing). */
+  plugins?: PluginRow[];
+  /** The result of installing the plugin in one account (default: ok). */
+  install?: (accountId: string) => InstallResult;
+  /** The terminal is a TTY (default: not, so the review lists read numbered lines from the same answers as the prompts). */
+  ttyTerm?: boolean;
+  /** saveOrganize finds the lock taken. */
+  saveLocked?: boolean;
+  /** config() says the newest plan has pending decisions. */
+  configPending?: boolean;
+  /** The terminal's capabilities (default: 100 columns, Unicode, no colour). */
+  caps?: Caps;
+  /** The clock for relative dates. */
+  now?: () => number;
+  /** The plan's projects live in this folder (default: /work). */
+  under?: string;
+  /** Sessions the plan skips because T3 Code has no instance for their agent. */
+  skipped?: { harness: "pi" | "codex"; n: number }[];
+  /** Conversations an import that exits 5 journals as failed (default 2). */
+  importFailed?: number;
+  /** Projects the child `apply` held in use (journaled on its run-end; default none). */
+  heldAfter?: number;
+  /** The accounts' names in the plan (default "Claude · Personal" and "Claude · Org"). */
+  names?: Record<string, string>;
+  /** What the organize dry run finds when asked with a history rule (the assistant re-plans with the numbers typed). */
+  previewFor?: (rule: HistoryRule | null) => OrganizePreview | null;
 }
 
 export interface Harness {
@@ -78,12 +173,21 @@ export interface Harness {
   events: Event[];
   out: string[];
   prompts: string[];
+  /** Every patch saveOrganize received. */
+  saved: OrganizePatch[];
+  /** The language each plan was asked for. */
+  planLangs: string[];
+  /** How many times the terminal was disposed (the runner does it once, at the end; a list never does). */
+  disposed: () => number;
   /** Answers left over when the assistant ended (an exhausted script rejects, which reads as quit). */
   left: () => number;
   exhausted: () => boolean;
   run: () => Promise<number>;
   text: () => string;
-  /** The transcript with every run of whitespace as one space (sentences are wrapped at 80 columns). */
+  /**
+   * The transcript with every run of whitespace as one space (sentences are wrapped to the width), and the borders of
+   * the panels left out, so a sentence wrapped inside a panel reads as one.
+   */
   flat: () => string;
   /** Only what the assistant printed (no prompts, no command output). */
   printed: () => string;
@@ -91,9 +195,9 @@ export interface Harness {
   writes: () => string[];
 }
 
-const run = (id: string, command: string | null, status = "ok"): RunSummary => ({
-  runId: id, at: null, command, status, rolledBackBy: null,
-  counts: { imported: 0, importFailed: 0, filesWritten: 0, quarantined: 0, unquarantined: 0, defaults: 0, instances: 0, projects: 0, archived: 0, merged: 0 },
+const run = (id: string, command: string | null, status = "ok", importFailed = 0, held = 0): RunSummary => ({
+  runId: id, at: null, command, status, rolledBackBy: null, ...(held > 0 ? { held } : {}),
+  counts: { imported: 0, importFailed, filesWritten: 0, quarantined: 0, unquarantined: 0, defaults: 0, instances: 0, projects: 0, archived: 0, merged: 0, organized: 0, organizeReverted: 0 },
 });
 
 export function harness(o: HarnessOptions): Harness {
@@ -104,6 +208,9 @@ export function harness(o: HarnessOptions): Harness {
   const prompts: string[] = [];
   const runs: RunSummary[] = [...(o.runs ?? [])];
   let accounts = (o.accounts ?? ACCOUNTS).map((a) => ({ ...a }));
+  const saved: OrganizePatch[] = [];
+  const planLangs: string[] = [];
+  let disposed = 0;
   let doctorN = 0, planN = 0, lockN = 0, runSeq = 0, exhausted = false;
   let config = { hasPlan: false, ...(o.config ?? { exists: false, language: null }) };
   const call = (name: string, write: boolean, argv?: string[]): void => void events.push({ t: "call", name, argv, write, at: out.length });
@@ -112,10 +219,29 @@ export function harness(o: HarnessOptions): Harness {
     if (argv[0] === "quarantine") return "quarantine";
     if (argv[0] === "dedupe") return "dedupe P1";
     if (argv[0] === "rollback") return `rollback ${argv[argv.indexOf("--run") + 1]}`;
+    if (argv[0] === "organize") return "organize";
     return null;
+  };
+  const term: Term = {
+    isTTY: o.ttyTerm ?? false, columns: o.caps?.columns ?? 100, rows: 30, color: false, unicode: o.caps?.unicode ?? true,
+    write: (s) => void out.push(s),
+    onKey: () => () => undefined,
+    setRaw: () => undefined,
+    // The same script as the assistant's prompts: one reader.
+    readLine: async (q) => {
+      prompts.push(q);
+      if (answers.length === 0) { exhausted = true; return null; }
+      const a = answers.shift()!;
+      events.push({ t: "ask", q, a, at: out.length });
+      out.push(`${q}${a}
+`);
+      return a;
+    },
+    dispose: () => void disposed++,
   };
   const deps: AssistantDeps = {
     home: HOME,
+    term,
     print: (s) => { out.push(s); printed.push(s); },
     prompt: async (q) => {
       prompts.push(q);
@@ -127,11 +253,35 @@ export function harness(o: HarnessOptions): Harness {
     },
     lockHolder: async () => { call("lockHolder", false); return o.lock ? o.lock(lockN++) : null; },
     doctor: async () => { call("doctor", false); const c = o.checks ?? [[{ id: "node-version", status: "ok", message: "Node 22.18" }]]; return c[Math.min(doctorN++, c.length - 1)]!; },
-    config: async () => { call("config", false); return config; },
+    config: async () => { call("config", false); return { ...config, ...(o.configPending ? { decisionsPending: true } : {}) }; },
     runs: async () => runs.map((r) => ({ ...r })),
     scheduleInstalled: async () => { call("scheduleInstalled", false); return o.schedule ?? false; },
     accounts: async (u) => { call(`accounts${u ? ":untested" : ""}`, false); return accounts.map((a) => ({ ...a })); },
-    plan: async (u) => { call(`plan${u ? ":untested" : ""}`, false); if (o.planError) throw o.planError; config = { ...config, exists: true, hasPlan: true }; return planView(planN++, o.routes ?? []); },
+    plan: async (u, lang) => {
+      call(`plan${u ? ":untested" : ""}`, false);
+      planLangs.push(lang);
+      if (o.planError) throw o.planError;
+      config = { ...config, exists: true, hasPlan: true };
+      // What the saved answers did: answered questions are gone; rehomed conversations appear once home / t3-refused say "rehome".
+      const answered = new Set(saved.flatMap((x) => x.decided ?? []));
+      const moved = saved.some((x) => x.folders?.home === "rehome" || x.folders?.["t3-refused"] === "rehome");
+      const pending = (o.pending ?? []).filter((d) => !answered.has(d.key));
+      const v = planView(planN++, o.routes ?? [], { pending, moves: moved ? o.moves : [], ...(o.under ? { under: o.under } : {}), ...(o.skipped ? { skipped: o.skipped } : {}) });
+      return o.names ? { ...v, names: o.names } : v;
+    },
+    pluginAccounts: async () => (o.plugins ?? []).map((p) => ({ ...p })),
+    installPlugin: async (id) => { call(`installPlugin ${id}`, true); return o.install ? o.install(id) : { ok: true, output: "" }; },
+    organizePreview: async (u, rule) => {
+      call(`organizePreview${u ? ":untested" : ""}${rule === undefined ? "" : ` ${JSON.stringify(rule)}`}`, false);
+      return rule !== undefined && o.previewFor ? o.previewFor(rule) : o.preview ?? null;
+    },
+    about: async () => ({ version: "0.3.0", accounts: accounts.length }),
+    saveOrganize: async (patch) => {
+      call(`saveOrganize ${JSON.stringify(patch)}`, true);
+      if (o.saveLocked || (o.lock && o.lock(lockN++))) return false;
+      saved.push(patch);
+      return true;
+    },
     cleanupCounts: async () => { call("cleanupCounts", false); return o.cleanup ?? { backupFolders: 1, mirrorCopies: 1 }; },
     saveLanguage: async (l) => { call(`saveLanguage ${l}`, true); if (o.lock && o.lock(lockN++)) return false; config = { ...config, language: l }; return true; },
     run: async (argv) => {
@@ -145,26 +295,29 @@ export function harness(o: HarnessOptions): Harness {
       const locked = /Another t3sm run is in progress/.test(output); // the command found the lock taken: it wrote nothing
       const other = o.foreign?.(argv) ?? null;
       if (other) runs.push(other);
-      if (write && cmd && code !== 2 && !locked) runs.push(run(`R${++runSeq}`, cmd, code === 5 ? "partial" : code === 130 ? "aborted" : "ok"));
+      if (write && cmd && code !== 2 && !locked) runs.push(run(`R${++runSeq}`, cmd, code === 5 ? "partial" : code === 130 ? "aborted" : "ok", code === 5 && argv[0] === "apply" ? o.importFailed ?? 2 : 0, argv[0] === "apply" ? o.heldAfter ?? 0 : 0));
       if (write && argv[0] === "accounts" && argv[1] === "--rename" && !locked) runs.push(run(`R${++runSeq}`, null, "-"));
       out.push(output);
       return { code, output, locked };
     },
   };
   return {
-    deps, events, out, prompts,
+    deps, events, out, prompts, saved, planLangs, disposed: () => disposed,
     left: () => answers.length,
     exhausted: () => exhausted,
-    run: () => runAssistant(deps, { lang: o.lang ?? "en", color: o.color ?? false, langFromFlag: o.langFromFlag ?? false }),
+    run: () => runAssistant(deps, { lang: o.lang ?? "en", color: o.color ?? (o.caps ? o.caps.color > 0 : false), langFromFlag: o.langFromFlag ?? false, defaultLang: o.defaultLang ?? "en", ...(o.caps ? { caps: o.caps } : {}), ...(o.now ? { now: o.now } : {}) }),
     text: () => out.join(""),
-    flat: () => out.join("").replace(/\s+/g, " "),
+    flat: () => out.join("").replace(/[│╭╮╰╯─]/g, " ").replace(/\s+/g, " "),
     printed: () => printed.join(""),
     calls: () => events.filter((e): e is Extract<Event, { t: "call" }> => e.t === "call").map((e) => e.name),
     writes: () => events.filter((e): e is Extract<Event, { t: "call" }> => e.t === "call" && e.write).map((e) => e.name),
   };
 }
 
-/** Every write call came right after a yes ("y", or "s" in Portuguese) to a question whose default is No ("[y/N"). */
+/**
+ * Every write call came right after a yes ("y", or "s" in Portuguese) to a yes/no question whose default is No: "[y/N"
+ * in English, "[s/N" in Portuguese.
+ */
 export function writesFollowYes(events: Event[]): string[] {
   const bad: string[] = [];
   let last: Extract<Event, { t: "ask" }> | null = null;
@@ -172,7 +325,7 @@ export function writesFollowYes(events: Event[]): string[] {
     if (e.t === "ask") { last = e; continue; }
     if (!e.write) continue;
     const yes = last !== null && ["y", "s", "yes", "sim"].includes(last.a.toLowerCase());
-    if (!yes || !last!.q.includes("[y/N")) bad.push(`${e.name} after ${last ? JSON.stringify(`${last.q}${last.a}`) : "no answer"}`);
+    if (!yes || !["[y/N", "[s/N"].some((k) => last!.q.includes(k))) bad.push(`${e.name} after ${last ? JSON.stringify(`${last.q}${last.a}`) : "no answer"}`);
   }
   return bad;
 }

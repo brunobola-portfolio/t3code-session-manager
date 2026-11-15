@@ -1,0 +1,30 @@
+* * * * * @ o o o o o  Passo 6 de 11 - Limpeza
+O plano encontrou cópias que não devem ir para o T3 Code.
+
++- Cópias encontradas ---------------------------------------------------+
+| Pastas de backup  1 pasta de projeto copiada inteira (.bak)            |
+| Cópias-espelho    1 a mesma sessão numa segunda conta                  |
+|                                                                        |
+| Pô-las de lado é reversível: vão para uma pasta de quarentena na mesma |
+| conta. Nada é apagado.                                                 |
++------------------------------------------------------------------------+
+Mover as pastas de backup para a quarentena? Desfazer: t3sm rollback --run
+<id>. [s/N/?/v/q] n
+Mover as cópias-espelho para a quarentena? Desfazer: t3sm rollback --run
+<id>. [s/N/?/v/q] n
+Não faz mal. Durante a importação o t3sm esconde estas cópias do T3 Code por um
+momento, para não serem importadas por engano.
+
+* * * * * * @ o o o o  Passo 7 de 11 - Piloto
+Primeiro, experimenta um projeto. Um pequeno que conheças bem, para o
+confirmares no T3 Code.
+
+Sugestões (pequenos, sem uso agora):
+#  Projeto      Conversas  Conta
+------------------------------------------
+1  ~/code/demo          2  Claude Personal
+2  ~/code/big          20  Claude Org
+Projeto a experimentar: 1-2 (Enter = 1), o caminho de uma pasta, ou n para
+saltar o piloto: q
+
+Parado. Nada ficou a meio; corre t3sm outra vez para continuar.

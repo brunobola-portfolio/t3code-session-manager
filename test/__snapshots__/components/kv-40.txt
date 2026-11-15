@@ -1,0 +1,14 @@
+--- unicode on
+Accounts  2
+Last run  15/11 at 10:20
+Path      C:/work/demo/packages/app/src/
+          some/very/deep/path/index.ts
+          and then some more words to
+          wrap
+--- unicode off
+Accounts  2
+Last run  15/11 at 10:20
+Path      C:/work/demo/packages/app/src/
+          some/very/deep/path/index.ts
+          and then some more words to
+          wrap

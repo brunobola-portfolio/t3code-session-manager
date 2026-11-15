@@ -1,13 +1,21 @@
 import { readdir, readFile, stat } from "node:fs/promises";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AccountConfig, Config, InstanceSpec } from "./types.ts";
+import type { AccountConfig, Config, InstanceSpec, OrganizeConfig } from "./types.ts";
+import { DEFAULT_HISTORY } from "./history.ts";
 import { expandHome, normalizeCwd, sameCwd } from "./paths.ts";
 import { globToRegExp } from "./glob.ts";
 import { atomicWrite } from "./fsutil.ts";
+import { isT3Refused } from "../plan/folders.ts";
 
 export class ConfigError extends Error {
   override name = "ConfigError";
+}
+
+/** A command that needs a saved plan found none (the screen words it; the message is for logs). */
+export class NoPlanError extends ConfigError {
+  override name = "NoPlanError";
+  constructor() { super("No plan found. Run `t3sm plan` first."); }
 }
 
 const ID_RE = /^[a-zA-Z][a-zA-Z0-9_-]*$/;
@@ -125,6 +133,163 @@ function nonEmpty(v: unknown): v is string {
   return typeof v === "string" && v.trim() !== "";
 }
 
+const NOTIFY = ["attention", "all", "off"];
+const FOLDER_CATEGORIES = ["home", "t3-refused", "temp", "system"] as const;
+const FOLDER_ACTIONS = ["import", "skip", "rehome"];
+
+/** A folder written in config.json (`~` allowed) is absolute once expanded. */
+function absoluteFolder(p: string, platform: NodeJS.Platform, home: string): string | null {
+  const n = normalizeCwd(expandHome(p.trim(), home), platform);
+  const abs = platform === "win32" ? /^[A-Za-z]:\//.test(n) || n.startsWith("//") : n.startsWith("/");
+  return abs ? n : null;
+}
+
+/** Why a folder written in config.json cannot hold a T3 Code project (not absolute, or refused by T3 Code), or null. */
+function projectFolderError(p: string, platform: NodeJS.Platform, home: string): string | null {
+  const target = absoluteFolder(p, platform, home);
+  if (target === null) return "must name an absolute folder (or one starting with ~)";
+  const t3Base = normalizeCwd(expandHome("~/.t3", home), platform);
+  if (isT3Refused(target, { platform, home, tmpdir: tmpdir(), env: {}, t3BaseDir: t3Base, t3WorktreesDir: `${t3Base}/worktrees` })) {
+    return "is a folder T3 Code does not accept as a project (the home folder, Downloads, Documents/Codex, T3 Code's own folders or the temp folder itself)";
+  }
+  return null;
+}
+
+/**
+ * Every field optional; present means checked. Errors name the key (`organize.names.maxLength: ...`). A
+ * `rehome:<folder>` override must name an absolute folder T3 Code accepts as a project (spec 4.3, 3.4).
+ */
+function validateOrganize(o: unknown, errors: string[], platform: NodeJS.Platform, home: string): void {
+  if (!isObj(o)) return void errors.push("organize: must be an object");
+  const has = (x: Record<string, unknown>, k: string): boolean => x[k] !== undefined;
+  const sub = (k: string): Record<string, unknown> | null => {
+    if (!has(o, k)) return null;
+    if (isObj(o[k])) return o[k];
+    errors.push(`organize.${k}: must be an object`);
+    return null;
+  };
+
+  const folders = sub("folders");
+  if (folders) {
+    for (const k of Object.keys(folders)) {
+      if (!(FOLDER_CATEGORIES as readonly string[]).includes(k)) errors.push(`organize.folders.${k}: unknown folder category (use ${FOLDER_CATEGORIES.join(", ")})`);
+      else if (!FOLDER_ACTIONS.includes(folders[k] as string)) errors.push(`organize.folders.${k}: must be "import", "skip" or "rehome"`);
+    }
+  }
+  const sessions = sub("sessions");
+  if (sessions && has(sessions, "automated") && sessions["automated"] !== "skip" && sessions["automated"] !== "import") {
+    errors.push(`organize.sessions.automated: must be "skip" or "import"`);
+  }
+  if (sessions && has(sessions, "orphaned") && sessions["orphaned"] !== "copy" && sessions["orphaned"] !== "skip") {
+    errors.push(`organize.sessions.orphaned: must be "copy" or "skip"`);
+  }
+  if (has(o, "generalFolder")) {
+    const g = o["generalFolder"];
+    if (!nonEmpty(g)) errors.push("organize.generalFolder: must be a non-empty string");
+    else {
+      const why = projectFolderError(g, platform, home);
+      if (why !== null) errors.push(`organize.generalFolder: ${g} ${why}`);
+    }
+  }
+
+  const overrides = o["overrides"];
+  if (has(o, "overrides")) {
+    if (!Array.isArray(overrides)) errors.push("organize.overrides: must be an array");
+    else overrides.forEach((r: unknown, i) => {
+      const p = `organize.overrides[${i}]`;
+      if (!isObj(r)) return void errors.push(`${p}: must be an object`);
+      if (!nonEmpty(r["match"])) errors.push(`${p}.match: must be a non-empty string`);
+      const a = r["action"];
+      const ok = a === "import" || a === "skip" || (typeof a === "string" && a.startsWith("rehome:") && a.slice(7).trim() !== "");
+      if (!ok) return void errors.push(`${p}.action: must be "import", "skip" or "rehome:<folder>" with a folder`);
+      if (typeof a !== "string" || !a.startsWith("rehome:")) return;
+      const why = projectFolderError(a.slice(7), platform, home);
+      if (why !== null) errors.push(`${p}.action: ${a} ${why}`);
+    });
+  }
+
+  const names = sub("names");
+  if (names && has(names, "maxLength") && !intIn(names["maxLength"], 16, 120)) errors.push("organize.names.maxLength: must be an integer 16..120");
+
+  if (has(o, "history")) {
+    const h = o["history"];
+    if (isObj(h)) {
+      if (has(h, "days") && h["days"] !== "all" && !intIn(h["days"], 1, 3650)) errors.push(`organize.history.days: must be "all" or an integer 1..3650`);
+      if (has(h, "minPerProject") && !intIn(h["minPerProject"], 0, 1000)) errors.push("organize.history.minPerProject: must be an integer 0..1000");
+    } else {
+      const m = typeof h === "string" ? /^days:(\d+)$/.exec(h) : null;
+      const ok = h === "all" || h === "off" || (m !== null && Number(m[1]) >= 1 && Number(m[1]) <= 3650);
+      if (!ok) errors.push(`organize.history: must be {days, minPerProject}, or "all", "off" or "days:N" with N 1..3650`);
+    }
+  }
+  for (const k of ["titles", "archiveAutomated"]) {
+    if (has(o, k) && typeof o[k] !== "boolean") errors.push(`organize.${k}: must be a boolean`);
+  }
+  const pin = sub("pinRecent");
+  if (pin) {
+    if (has(pin, "enabled") && typeof pin["enabled"] !== "boolean") errors.push("organize.pinRecent.enabled: must be a boolean");
+    if (has(pin, "count") && !intIn(pin["count"], 1, 20)) errors.push("organize.pinRecent.count: must be an integer 1..20");
+  }
+  const decided = o["decided"];
+  if (has(o, "decided")) {
+    if (!Array.isArray(decided)) errors.push("organize.decided: must be an array");
+    else decided.forEach((d: unknown, i) => { if (!nonEmpty(d)) errors.push(`organize.decided[${i}]: must be a non-empty string`); });
+  }
+}
+
+export { DEFAULT_HISTORY, historyRule, normalizeHistory } from "./history.ts";
+
+/** `organize` with every omitted field filled from the spec defaults (nested objects per field). `lang` only picks the default `generalFolder`. */
+export function organizeSettings(c: Config, lang: "en" | "pt"): OrganizeConfig {
+  const o = c.organize ?? {};
+  return {
+    folders: { home: "rehome", "t3-refused": "rehome", temp: "skip", system: "skip", ...o.folders },
+    sessions: { automated: "skip", orphaned: "copy", ...o.sessions },
+    generalFolder: o.generalFolder ?? (lang === "pt" ? "~/T3 Geral" : "~/T3 General"),
+    overrides: o.overrides ?? [],
+    names: { maxLength: 40, ...o.names },
+    history: o.history ?? { ...DEFAULT_HISTORY },
+    titles: o.titles ?? true,
+    archiveAutomated: o.archiveAutomated ?? true,
+    pinRecent: { enabled: true, count: 5, ...o.pinRecent },
+    decided: o.decided ?? [],
+  };
+}
+
+/** What the guided assistant saves under `organize`: each field only when answered; nested objects merge per field. */
+export interface OrganizePatch {
+  folders?: Partial<OrganizeConfig["folders"]>;
+  sessions?: Partial<OrganizeConfig["sessions"]>;
+  /** Replaces the whole list (the caller merges with what config.json holds). */
+  overrides?: OrganizeConfig["overrides"];
+  history?: OrganizeConfig["history"];
+  titles?: boolean;
+  archiveAutomated?: boolean;
+  pinRecent?: Partial<OrganizeConfig["pinRecent"]>;
+  /** Question keys to add to `decided` (never removed, never duplicated). */
+  decided?: string[];
+}
+
+/** `c` with `patch` applied to its `organize` section; the rest of the config, and `c` itself, are untouched. */
+export function applyOrganizePatch(c: Config, patch: OrganizePatch): Config {
+  const o = c.organize ?? {};
+  const next: NonNullable<Config["organize"]> = { ...o };
+  if (patch.folders) next.folders = { ...o.folders, ...patch.folders } as OrganizeConfig["folders"];
+  if (patch.sessions) next.sessions = { ...o.sessions, ...patch.sessions };
+  if (patch.overrides) next.overrides = patch.overrides.map((r) => ({ ...r }));
+  if (patch.history !== undefined) next.history = patch.history;
+  if (patch.titles !== undefined) next.titles = patch.titles;
+  if (patch.archiveAutomated !== undefined) next.archiveAutomated = patch.archiveAutomated;
+  if (patch.pinRecent) next.pinRecent = { ...o.pinRecent, ...patch.pinRecent } as OrganizeConfig["pinRecent"];
+  if (patch.decided) next.decided = [...new Set([...(o.decided ?? []), ...patch.decided])];
+  return { ...c, organize: next };
+}
+
+/** True when the question `key` (see `OrganizeConfig.decided`) was already asked. */
+export function isDecided(c: Config, key: string): boolean {
+  return c.organize?.decided?.includes(key) ?? false;
+}
+
 export function validateConfig(
   u: unknown,
   platform: NodeJS.Platform = process.platform,
@@ -224,8 +389,20 @@ export function validateConfig(
 
   if (has(u, "language") && u["language"] !== "en" && u["language"] !== "pt") errors.push(`language: must be "en" or "pt"`);
 
+  if (has(u, "notify") && !NOTIFY.includes(u["notify"] as string)) errors.push(`notify: must be "attention", "all" or "off"`);
+
+  const update = u["update"];
+  if (!has(u, "update")) { /* default: automatic updates on */ } else if (!isObj(update)) errors.push("update: must be an object");
+  else if (has(update, "auto") && typeof update["auto"] !== "boolean") errors.push("update.auto: must be a boolean");
+  if (has(u, "organize")) validateOrganize(u["organize"], errors, platform, home);
+
   if (errors.length > 0) return { ok: false, errors };
   return { ok: true, config: withDefaults(u, accs as AccountConfig[]) };
+}
+
+/** Whether the watcher installs newer patch and minor releases by itself (`update.auto`, default true; spec §5.3). */
+export function updateAuto(c: Config | null): boolean {
+  return c?.update?.auto ?? true;
 }
 
 /** Fills every omitted key from defaultConfig; nested objects (batch, schedule, sync) per field. Input is not mutated. */
@@ -278,7 +455,7 @@ export function expandConfig(c: Config, home: string, platform: NodeJS.Platform 
  */
 async function asWritten(file: string, c: Config, home: string, platform: NodeJS.Platform): Promise<Config> {
   let disk: unknown;
-  try { disk = JSON.parse((await readFile(file, "utf8")).replace(/^﻿/, "")); } catch { return c; }
+  try { disk = JSON.parse((await readFile(file, "utf8")).replace(/^\uFEFF/, "")); } catch { return c; }
   if (!isObj(disk)) return c;
   const raw = new Map<string, string>();
   const strs = (u: unknown, f: (x: Record<string, unknown>) => unknown[]): string[] =>
@@ -307,7 +484,7 @@ export async function loadConfig(dir: string, home: string = homedir(), platform
   }
   let parsed: unknown;
   try {
-    parsed = JSON.parse(raw.replace(/^﻿/, ""));
+    parsed = JSON.parse(raw.replace(/^\uFEFF/, ""));
   } catch (e) {
     throw new ConfigError(`${file}: invalid JSON (${(e as Error).message}). ${HINT}`);
   }

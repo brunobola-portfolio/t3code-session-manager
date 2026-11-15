@@ -22,10 +22,13 @@ function fixture(): string {
     packages: { "": { name: "t3code-session-manager", version: "0.1.0" }, "node_modules/typescript": { version: "5.9.3" } } }));
   w(".claude-plugin/plugin.json", json({ name: "t3sm", version: "0.1.0", repository: URL_ }));
   w(".claude-plugin/marketplace.json", json({ plugins: [{ name: "t3sm", version: "0.1.0" }] }));
+  for (const n of ["status", "sync", "organize", "import"]) w(`commands/${n}.md`, `---\ndescription: Demo ${n} command for the fixture\n---\nRun the dry run first; write only after the user says yes.\n`);
   w("README.md", `[![CI](${URL_}/actions/workflows/ci.yml/badge.svg)](${URL_}/actions)\n\nnpx -y github:${REPO}#v0.1.0 doctor\n\nSee also https://github.com/someone/other-project.\n`);
   w("SECURITY.md", `Report at ${URL_}/security.\n`);
   w(".github/ISSUE_TEMPLATE/config.yml", `contact_links:\n  - url: ${URL_}/discussions\n`);
   w("CHANGELOG.md", "# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - 2026-11-11\n\n### Added\n\n- First release.\n");
+  w("docs/help/held.md", "# Held: a project waits\n");
+  w("docs/help/held.pt.md", "# À espera: um projeto espera\n");
   return root;
 }
 
@@ -37,6 +40,21 @@ test("release --check: a consistent project passes", () => {
   try {
     const r = run(root, "--check");
     assert.equal(r.status, 0, r.stderr);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("release --check: flags a missing command file and package.json files without commands/", () => {
+  const root = fixture();
+  try {
+    rmSync(join(root, "commands", "sync.md"));
+    const p = join(root, "package.json");
+    const pkg = JSON.parse(readFileSync(p, "utf8"));
+    pkg.files = ["dist/"];
+    writeFileSync(p, JSON.stringify(pkg, null, 2) + "\n");
+    const r = run(root, "--check");
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, /commands\/sync\.md is missing/);
+    assert.match(r.stderr, /"files" does not include "commands\/"/);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
@@ -82,4 +100,16 @@ test("release <X.Y.Z>: bumps the package-lock top-level versions too, never a de
     const r = run(root, "--check");
     assert.ok(!/package-lock/.test(r.stderr), r.stderr);
   } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("release check: every help topic in docs/help has its English file and its Portuguese twin (they ship in dist/help)", async (t) => {
+  const { helpTopicProblems } = await import("../../scripts/release.js");
+  assert.deepEqual(helpTopicProblems(), [], "the repository's own topics");
+  const root = mkdtempSync(join(tmpdir(), "t3sm-help-check-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  assert.deepEqual(helpTopicProblems(root), ["docs/help is missing (the help topics ship in dist/help)"]);
+  mkdirSync(join(root, "docs", "help"), { recursive: true });
+  writeFileSync(join(root, "docs", "help", "held.md"), "# Held\n");
+  writeFileSync(join(root, "docs", "help", "errors.pt.md"), "# Erros\n");
+  assert.deepEqual(helpTopicProblems(root).sort(), ["docs/help/errors.md is missing (the English topic)", "docs/help/held.pt.md is missing (the Portuguese twin)"]);
 });

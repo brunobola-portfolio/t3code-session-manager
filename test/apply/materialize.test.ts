@@ -7,8 +7,10 @@ import { tmpdir } from "node:os";
 import path, { join } from "node:path";
 import { materializeConversions, type MaterializeFs } from "../../src/apply/materialize.ts";
 import { toClaudeJsonl } from "../../src/apply/claudeWriter.ts";
+import { faithfulCopy } from "../../src/apply/copyTranscript.ts";
+import { RENAME_RETRIES } from "../../src/core/fsutil.ts";
 import { Journal } from "../../src/core/journal.ts";
-import { encodeClaudeProjectDir } from "../../src/core/paths.ts";
+import { encodeClaudeProjectDir, normalizeCwd } from "../../src/core/paths.ts";
 import { uuidV5 } from "../../src/core/uuid.ts";
 import type { AccountConfig, CanonicalTranscript, DiscoveredSession, HarnessId, JournalEntry, PlanItem } from "../../src/core/types.ts";
 import { SessionActiveError, SourceBusyError, type SourceAdapter } from "../../src/sources/types.ts";
@@ -228,6 +230,73 @@ test("materializeConversions: a file that appears at the target between the chec
   assert.equal(readFileSync(target(it), "utf8"), FOREIGN);
 });
 
+const refused = (): NodeJS.ErrnoException => Object.assign(new Error("EPERM: operation not permitted, rename"), { code: "EPERM" });
+
+// Windows refuses to rename over a file another process has open, and an antivirus scan of the file we just hashed
+// does exactly that for a moment: on a loaded machine the refresh then failed (`write-failed: EPERM`). The refusal is
+// retried like atomicWrite's, and the file is re-checked before every attempt.
+test("materializeConversions: a refresh whose rename is refused for a moment (EPERM) is retried and written", async () => {
+  const e = setup();
+  const it = e.item("ses_a");
+  await e.run([it]);
+  (e.transcripts.get("ses_a") as CanonicalTranscript).messages.push({ role: "user", text: "more in OpenCode", timestamp: "2026-01-01T00:00:09Z" });
+  let calls = 0;
+  const slept: number[] = [];
+  let moved: { to: string; data: string } | null = null;
+  // Every rename is the stub's (no real rename, no real wait), so a scanner on a loaded machine can never add a refusal:
+  // the third call succeeds and records what it would have moved.
+  const r = await e.run([it], "run-2", {
+    link, unlink,
+    rename: async (a, b) => { if (++calls <= 2) throw refused(); moved = { to: b, data: readFileSync(a, "utf8") }; },
+    sleep: async (ms) => void slept.push(ms),
+  });
+  assert.deepEqual(r.failed, []);
+  assert.deepEqual(r.written, [target(it)]);
+  assert.equal(calls, 3);
+  assert.deepEqual(slept, [10, 20]);
+  const m = moved as { to: string; data: string } | null;
+  assert.equal(m?.to, target(it));
+  assert.match(m?.data ?? "", /more in OpenCode/);
+  assert.deepEqual(tmpLeft(path.dirname(target(it))), []);
+  assert.equal((await e.journal.readAll()).at(-1)!.t, "file-written");
+});
+
+test("materializeConversions: a refused refresh rename re-checks the file first: resumed meanwhile -> left alone, the write aborted", async () => {
+  const e = setup();
+  const it = e.item("ses_a");
+  await e.run([it]);
+  (e.transcripts.get("ses_a") as CanonicalTranscript).messages.push({ role: "user", text: "more in OpenCode", timestamp: "2026-01-01T00:00:09Z" });
+  let calls = 0;
+  const r = await e.run([it], "run-2", {
+    link, unlink,
+    // Refused because Claude Code has it open: it appends to the transcript while we wait.
+    rename: async () => { calls++; appendFileSync(target(it), `{"type":"last-prompt","leafUuid":"x"}
+`); throw refused(); },
+    sleep: async () => {},
+  });
+  assert.equal(calls, 1, "no second rename over a changed file");
+  assert.deepEqual(r.written, []);
+  assert.deepEqual(r.resumed, [target(it)]);
+  assert.match(readFileSync(target(it), "utf8"), /last-prompt/);
+  assert.doesNotMatch(readFileSync(target(it), "utf8"), /more in OpenCode/);
+  assert.equal((await e.journal.readAll()).at(-1)!.t, "file-write-aborted");
+  assert.deepEqual(tmpLeft(path.dirname(target(it))), []);
+});
+
+test("materializeConversions: a refresh rename that stays refused gives up after the retries (write-failed), the write aborted", async () => {
+  const e = setup();
+  const it = e.item("ses_a");
+  await e.run([it]);
+  (e.transcripts.get("ses_a") as CanonicalTranscript).messages.push({ role: "user", text: "more in OpenCode", timestamp: "2026-01-01T00:00:09Z" });
+  let calls = 0;
+  const r = await e.run([it], "run-2", { link, unlink, rename: async () => { calls++; throw refused(); }, sleep: async () => {} });
+  assert.equal(calls, RENAME_RETRIES + 1);
+  assert.deepEqual(r.written, []);
+  assert.match(r.failed[0]!.reason, /^write-failed: EPERM/);
+  assert.equal((await e.journal.readAll()).at(-1)!.t, "file-write-aborted");
+  assert.deepEqual(tmpLeft(path.dirname(target(it))), []);
+});
+
 test("materializeConversions: a refresh of our own file is skipped when it changes right before the replace (re-hash) or is in use", async () => {
   const e = setup();
   const it = e.item("ses_a");
@@ -331,7 +400,8 @@ test("integration: a compressed Codex rollout is discovered, planned convert-imp
   const zstBefore = readFileSync(zst);
 
   const accounts: AccountConfig[] = [{ id: "claudeAgent", home: claudeHome, displayName: "Personal", accentColor: null }];
-  const config = defaultConfig(accounts);
+  // The project folder lives under os.tmpdir(): a temp folder, imported only once that question is answered "import".
+  const config = { ...defaultConfig(accounts), organize: { decided: ["temp"], folders: { home: "rehome" as const, "t3-refused": "rehome" as const, temp: "import" as const, system: "skip" as const } } };
   const env = { home: base, platform: process.platform, now: Date.now, config, stateDir: join(base, "state"), env: {} };
   const codex = createCodexAdapter();
   const discovered: DiscoveredSession[] = [];
@@ -389,4 +459,246 @@ test("B3: a converted transcript never gets a time older than now - 20 days (Cla
   assert.ok(Math.abs(Date.now() - 20 * DAY - st) < 60_000, `clamped to now - 20 days (${new Date(st).toISOString()})`);
   assert.ok(Math.abs(fw.mtimeMs! - st) <= 2, "the journal carries the chosen time");
   assert.equal(fw.source!.updatedAt, old, "the source's real activity is still recorded");
+});
+
+// ---------- faithful copies (rehome, spec §4.3) ----------
+const HOME_ID = "11111111-2222-4333-8444-555555555555";
+
+/** A Claude transcript in the home folder (synthetic) and its faithful convert-import item into ROOT. */
+function rehomeSetup() {
+  const base = mkdtempSync(join(tmpdir(), "t3sm-faithful-"));
+  temps.push(base);
+  const home = join(base, ".claude");
+  const srcDir = join(home, "projects", encodeClaudeProjectDir(base));
+  mkdirSync(srcDir, { recursive: true });
+  const src = join(srcDir, `${HOME_ID}.jsonl`);
+  const t0 = Date.now() - 3 * DAY;
+  const at = (n: number): string => new Date(t0 + n * 1000).toISOString();
+  const rec = (n: number, type: "user" | "assistant", text: string): string =>
+    JSON.stringify({ parentUuid: n === 1 ? null : `u-${n - 1}`, isSidechain: false, cwd: base, sessionId: HOME_ID, type, message: { role: type, content: text }, uuid: `u-${n}`, timestamp: at(n) }) + "\n";
+  let n = 0;
+  /** The source's mtime: its last activity (idle), or now (in use). */
+  const touch = (active: boolean): void => {
+    const m = active ? Date.now() / 1000 : (t0 + n * 1000) / 1000;
+    utimesSync(src, m, m);
+  };
+  const grow = (text: string, o: { active?: boolean } = {}): void => {
+    n++;
+    appendFileSync(src, rec(n, n % 2 === 1 ? "user" : "assistant", text));
+    touch(o.active === true);
+  };
+  grow("synthetic question ação ✅");
+  grow("synthetic answer");
+  const accounts: AccountConfig[] = [{ id: "claudeAgent", home, displayName: "Personal", accentColor: null }];
+  const journal = new Journal(join(base, "state", "journal.jsonl"));
+  const uuid = uuidV5(`claude:${HOME_ID}`);
+  const targetFile = join(home, "projects", encodeClaudeProjectDir(ROOT), `${uuid}.jsonl`);
+  const item = (): PlanItem => {
+    const st = statSync(src);
+    const session: DiscoveredSession = {
+      harness: "claude", accountId: "claudeAgent", nativeId: HOME_ID, cwd: base, startedAt: at(1), updatedAt: at(n), messageCount: n, corruptLines: 0,
+      file: { path: src, size: st.size, mtimeMs: st.mtimeMs, atimeMs: st.atimeMs }, flags: [], cwdOffsetBytes: 0,
+    };
+    return {
+      session,
+      action: { kind: "convert-import", projectRoot: ROOT, instanceId: "claudeAgent", expectedThreadId: `import:claudeAgent:${uuid}`, uuid, targetFile, copy: "faithful", rehomeFrom: base },
+      notes: [],
+    };
+  };
+  const run = (runId = "run-1", fs?: MaterializeFs) => materializeConversions([item()], new Map(), accounts, journal, runId, { fs });
+  const copyText = async (): Promise<string> =>
+    (await faithfulCopy(src, { cwd: NATIVE_ROOT, sessionId: uuid, provenance: { fromPath: src, fromSessionId: HOME_ID, fromCwd: base } })).text;
+  return { base, home, src, journal, uuid, targetFile, at, grow, touch, run, copyText };
+}
+
+test("faithful copy: written at the target without any reader, journaled (source + rehomeOf) before it is published, mtime = the source's last activity, wave-ready", async () => {
+  const e = rehomeSetup();
+  const srcBytes = readFileSync(e.src);
+  const srcSt = statSync(e.src);
+  let seenAtPublish: { journaled: boolean; exists: boolean } | null = null;
+  const r = await e.run("run-1", racing(async (t) => {
+    seenAtPublish = { journaled: fileWritten(await e.journal.readAll()).some((x) => x.path === t), exists: existsSync(t) };
+  }));
+  assert.deepEqual(r.failed, []);
+  assert.deepEqual(r.deferred, []);
+  assert.deepEqual(r.written, [e.targetFile]);
+  assert.deepEqual(seenAtPublish, { journaled: true, exists: false }, "journal BEFORE the write is published");
+  const text = readFileSync(e.targetFile, "utf8");
+  assert.equal(text, await e.copyText());
+  const lines = text.trimEnd().split("\n").map((l) => JSON.parse(l) as Record<string, unknown>);
+  assert.deepEqual(lines.slice(0, 2).map((l) => [l.cwd, l.sessionId]), [[NATIVE_ROOT, e.uuid], [NATIVE_ROOT, e.uuid]]);
+  assert.equal(lines[2]!.type, "t3sm-provenance");
+  const activity = Date.parse(e.at(2));
+  assert.ok(Math.abs(statSync(e.targetFile).mtimeMs - activity) <= 2, "mtime = the source's last activity");
+  assert.deepEqual(fileWritten(await e.journal.readAll()), [{
+    t: "file-written", runId: "run-1", path: e.targetFile, sha256: sha(text), mtimeMs: activity,
+    source: { harness: "claude", nativeId: HOME_ID, updatedAt: e.at(2), messageCount: 2 },
+    rehomeOf: { path: e.src, nativeId: HOME_ID, cwd: e.base, size: srcSt.size, mtimeMs: srcSt.mtimeMs },
+  }]);
+  assert.equal(r.ready.length, 1);
+  const ready = r.ready[0]!;
+  assert.equal(ready.session.file.path, e.targetFile);
+  assert.equal(ready.session.nativeId, HOME_ID);
+  assert.equal(ready.session.cwdOffsetBytes, Buffer.byteLength(text.slice(0, text.indexOf("\n") + 1)), "the first record carries cwd");
+  assert.deepEqual(readFileSync(e.src), srcBytes, "the original is never modified");
+  assert.equal(statSync(e.src).mtimeMs, srcSt.mtimeMs, "nor its time");
+});
+
+test("Review Focus 1: a rehome copy waits while the source is active and refreshes in place later (same path, same id; never a second copy); a resumed copy is left as it is", async () => {
+  const e = rehomeSetup();
+  e.touch(true);
+  const r1 = await e.run("run-1");
+  assert.deepEqual(r1.deferred.map((d) => d.reason), ["active"]);
+  assert.deepEqual([r1.written, r1.failed, r1.ready], [[], [], []]);
+  assert.ok(!existsSync(e.targetFile));
+  assert.deepEqual(fileWritten(await e.journal.readAll()), []);
+
+  e.touch(false);
+  assert.deepEqual((await e.run("run-2")).written, [e.targetFile]);
+  const first = readFileSync(e.targetFile);
+
+  // The source grows and is still in use: nothing is written, the copy stays as it is.
+  e.grow("continued in the terminal", { active: true });
+  const r3 = await e.run("run-3");
+  assert.deepEqual(r3.deferred.map((d) => d.reason), ["active"]);
+  assert.deepEqual(readFileSync(e.targetFile), first);
+
+  // Idle again: the same file is rewritten in place.
+  e.touch(false);
+  const r4 = await e.run("run-4");
+  assert.deepEqual(r4.written, [e.targetFile]);
+  assert.equal(readFileSync(e.targetFile, "utf8"), await e.copyText());
+  assert.match(readFileSync(e.targetFile, "utf8"), /continued in the terminal/);
+  assert.deepEqual(readdirSync(path.dirname(e.targetFile)).filter((f) => f.endsWith(".jsonl")), [`${e.uuid}.jsonl`], "one copy, same id");
+  const fw = fileWritten(await e.journal.readAll());
+  assert.deepEqual(fw.map((x) => [x.runId, x.path, x.source?.messageCount]), [["run-2", e.targetFile, 2], ["run-4", e.targetFile, 3]]);
+
+  // Resumed since (T3 Code or the CLI appended to the copy): never rewritten again, still handed to the importer.
+  appendFileSync(e.targetFile, JSON.stringify({ type: "user", cwd: NATIVE_ROOT, sessionId: e.uuid, entrypoint: "t3-code", message: { role: "user", content: "more in T3" }, uuid: "r-1", timestamp: e.at(10) }) + "\n");
+  const old = (Date.now() - 2 * DAY) / 1000;
+  utimesSync(e.targetFile, old, old);
+  const resumed = readFileSync(e.targetFile);
+  e.grow("and more in the terminal");
+  const r5 = await e.run("run-5");
+  assert.deepEqual(r5.written, []);
+  assert.deepEqual(r5.resumed, [e.targetFile]);
+  assert.equal(r5.ready.length, 1);
+  assert.deepEqual(readFileSync(e.targetFile), resumed, "left exactly as it is");
+});
+
+test("faithful copy: a file at the target that t3sm did not write (or that lacks this source's provenance) is never replaced", async () => {
+  const e = rehomeSetup();
+  mkdirSync(path.dirname(e.targetFile), { recursive: true });
+  writeFileSync(e.targetFile, FOREIGN);
+  const r = await e.run("run-1");
+  assert.deepEqual(r.failed.map((f) => f.reason), ["target-exists"]);
+  assert.equal(readFileSync(e.targetFile, "utf8"), FOREIGN);
+  // Journaled as ours, but the file holds no provenance record of this source: still not ours.
+  const e2 = rehomeSetup();
+  await e2.run("run-1");
+  const other = `{"type":"user","sessionId":"${e2.uuid}"}\n`;
+  writeFileSync(e2.targetFile, other);
+  const r2 = await e2.run("run-2");
+  assert.deepEqual(r2.failed.map((f) => f.reason), ["target-exists"]);
+  assert.equal(readFileSync(e2.targetFile, "utf8"), other);
+});
+
+test("integration: a home-folder Claude session is discovered, planned as a faithful copy, materialized; the next plans see the copy as its own (converted, then already-in-t3, no note) until the original changes", async () => {
+  const { createClaudeAdapter } = await import("../../src/sources/claude.ts");
+  const { buildPlan } = await import("../../src/plan/planner.ts");
+  const { defaultConfig } = await import("../../src/core/config.ts");
+  const base = mkdtempSync(join(tmpdir(), "t3sm-faithful-it-"));
+  temps.push(base);
+  const claudeHome = join(base, ".claude");
+  const proj = join(base, "proj");
+  mkdirSync(proj);
+  const srcDir = join(claudeHome, "projects", encodeClaudeProjectDir(base));
+  mkdirSync(srcDir, { recursive: true });
+  const at = (n: number) => new Date(Date.now() - 3 * DAY + n * 1000).toISOString();
+  const recs: unknown[] = [{ type: "user", cwd: base, sessionId: HOME_ID, entrypoint: "cli", message: { role: "user", content: "synthetic question" }, uuid: "u-0", timestamp: at(0) }];
+  for (let n = 1; n <= 6; n++) {
+    recs.push({ type: "assistant", cwd: base, sessionId: HOME_ID, message: { role: "assistant", content: [{ type: "tool_use", id: `t-${n}`, name: "Edit", input: { file_path: join(proj, `f${n}.ts`) } }] }, uuid: `u-${n}`, timestamp: at(n) });
+  }
+  recs.push({ type: "ai-title", aiTitle: "Synthetic work", sessionId: HOME_ID });
+  const src = join(srcDir, `${HOME_ID}.jsonl`);
+  writeFileSync(src, recs.map((r) => JSON.stringify(r)).join("\n") + "\n");
+  const old = (Date.now() - 3 * DAY) / 1000;
+  utimesSync(src, old, old);
+
+  const accounts: AccountConfig[] = [{ id: "claudeAgent", home: claudeHome, displayName: "Personal", accentColor: null }];
+  const config = { ...defaultConfig(accounts), organize: { decided: ["home", "t3-refused", "temp", "system", "automated"] } };
+  const env = { home: base, platform: process.platform, now: Date.now, config, stateDir: join(base, "state"), env: {} };
+  const folderEnv = { platform: process.platform, home: base, tmpdir: join(base, "no-tmp"), env: {}, t3BaseDir: join(base, ".t3"), t3WorktreesDir: join(base, ".t3", "worktrees") };
+  const instance = { id: "claudeAgent", driver: "claudeAgent" as const, displayName: "Personal", accentColor: null, homePath: claudeHome, environment: [] };
+  const discover = async (): Promise<DiscoveredSession[]> => {
+    const out: DiscoveredSession[] = [];
+    for await (const s of createClaudeAdapter().discover(env)) out.push(s);
+    return out;
+  };
+  const planOf = async (sessions: DiscoveredSession[], journal: JournalEntry[], threads: string[]) => buildPlan({
+    sessions, config, journal, now: Date.now(), runId: "r", home: base, folderEnv,
+    t3: {
+      version: "0.1.10", projects: [{ id: "p1", title: "proj", workspaceRoot: proj, defaultModelSelection: null, archived: false, deleted: false, pinned: false, createdAt: null }],
+      threads: threads.map((id) => ({ id, projectId: "p1", instanceId: "claudeAgent", archived: false, title: "t" })), instances: [instance], providers: [],
+    },
+    existsDir: async (d) => { try { return statSync(d).isDirectory(); } catch { return false; } },
+    readVscodePin: async () => null,
+  });
+  const p1 = await planOf(await discover(), [], []);
+  const it = p1.items[0]!;
+  assert.equal(p1.items.length, 1);
+  assert.equal(it.action.kind, "convert-import", JSON.stringify(it.action));
+  if (it.action.kind !== "convert-import") return;
+  assert.equal(it.action.copy, "faithful");
+  assert.equal(it.action.uuid, uuidV5(`claude:${HOME_ID}`));
+
+  const journal = new Journal(join(base, "state", "journal.jsonl"));
+  const srcBytes = readFileSync(src);
+  const r = await materializeConversions(p1.items, new Map(), accounts, journal, "run-1");
+  assert.deepEqual([r.failed, r.deferred], [[], []]);
+  assert.deepEqual(r.written, [it.action.targetFile]);
+  assert.deepEqual(readFileSync(src), srcBytes, "the original is never modified");
+
+  const again = await discover();
+  assert.equal(again.length, 2);
+  const copyId = it.action.uuid;
+  const copy = again.find((s) => s.nativeId === copyId)!;
+  assert.ok(copy, "the copy is discovered under its new id");
+  assert.equal(normalizeCwd(copy.cwd!, process.platform), normalizeCwd(proj, process.platform));
+  const es = await journal.readAll();
+  const p2 = await planOf(again, es, []);
+  assert.deepEqual(p2.items.find((i) => i.session === copy)!.action, { kind: "skip", reason: "converted" });
+  assert.equal(p2.items.find((i) => i.session !== copy)!.action.kind, "convert-import", "not in T3 yet: still planned (same target)");
+  const p3 = await planOf(again, es, [it.action.expectedThreadId]);
+  assert.deepEqual(p3.items.map((i) => [i.action, i.notes]), [[{ kind: "skip", reason: "already-in-t3" }, []], [{ kind: "skip", reason: "already-in-t3" }, []]],
+    "the journaled activity is exactly what discovery reports: no false continued-outside-t3");
+
+  // Renamed in the terminal afterwards (a custom-title record: no timestamp, no message): continued after the rehome (R11).
+  appendFileSync(src, JSON.stringify({ type: "custom-title", customTitle: "Renamed", sessionId: HOME_ID }) + "\n");
+  const later = (Date.now() - 2 * DAY) / 1000;
+  utimesSync(src, later, later);
+  const p4 = await planOf(await discover(), es, [it.action.expectedThreadId]);
+  const orig = p4.items.find((i) => i.session.nativeId === HOME_ID)!;
+  assert.deepEqual([orig.action, orig.notes], [{ kind: "skip", reason: "already-in-t3" }, ["continued-after-rehome"]]);
+});
+
+test("faithful copy: rollback of the run removes the copy (unchanged since written) and never touches the original; a resumed copy is kept", async () => {
+  const { rollbackRun } = await import("../../src/ops/rollback.ts");
+  const e = rehomeSetup();
+  const srcBytes = readFileSync(e.src);
+  await e.journal.append({ t: "run-start", runId: "run-1", at: new Date().toISOString(), command: "apply p" });
+  await e.run("run-1");
+  assert.ok(existsSync(e.targetFile));
+  const rb = await rollbackRun("run-1", { journal: e.journal, accountHomes: [e.home] });
+  assert.deepEqual(rb.filesRemoved, [e.targetFile]);
+  assert.ok(!existsSync(e.targetFile));
+  assert.deepEqual(readFileSync(e.src), srcBytes);
+
+  const e2 = rehomeSetup();
+  await e2.journal.append({ t: "run-start", runId: "run-1", at: new Date().toISOString(), command: "apply p" });
+  await e2.run("run-1");
+  appendFileSync(e2.targetFile, `{"type":"last-prompt","leafUuid":"x"}\n`);
+  const rb2 = await rollbackRun("run-1", { journal: e2.journal, accountHomes: [e2.home] });
+  assert.deepEqual(rb2.filesKeptModified, [e2.targetFile]);
+  assert.ok(existsSync(e2.targetFile));
 });

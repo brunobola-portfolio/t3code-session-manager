@@ -1,0 +1,9 @@
+╭─ ! Attention ────────────────────────────────────────────────────────────────╮
+│ Conversations already continued in a terminal: decide.                       │
+╰──────────────────────────────────────────────────────────────────────────────╯
+Last run  15/11 at 10:20
+Sessions  Description         Action
+────────────────────────────────────
+Sessions  Start of migration  action
+· Worth knowing
+  No Pi instance was found.

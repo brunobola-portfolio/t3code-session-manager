@@ -55,11 +55,11 @@ function ids(...xs: string[]) {
   return () => { const v = q.shift(); if (!v) throw new Error("id factory exhausted"); return v; };
 }
 
-async function makeApi(opts: { routes?: Record<string, Route>; replies?: Record<string, unknown>; newId?: () => string; onClose?: () => Promise<void>; origin?: string } = {}) {
+async function makeApi(opts: { routes?: Record<string, Route>; replies?: Record<string, unknown>; newId?: () => string; onClose?: () => Promise<void>; origin?: string; backdate?: boolean } = {}) {
   const ff = fakeFetch(opts.routes ?? {});
   const rpc = new FakeRpc();
   Object.assign(rpc.replies, opts.replies ?? {});
-  const api = createT3Api({ origin: opts.origin ?? ORIGIN, token: TOKEN, rpc, fetchImpl: ff.fetch, version: "0.1.9-nightly.20261110.4465", newId: opts.newId ?? ids(), platform: "win32", onClose: opts.onClose });
+  const api = createT3Api({ origin: opts.origin ?? ORIGIN, token: TOKEN, rpc, fetchImpl: ff.fetch, version: "0.1.9-nightly.20261110.4465", newId: opts.newId ?? ids(), platform: "win32", onClose: opts.onClose, backdate: opts.backdate });
   return { api, rpc, calls: ff.calls };
 }
 
@@ -485,15 +485,18 @@ test("connectT3: manageProviders adds providers:manage", async () => {
   } finally { await h.cleanup(); }
 });
 
-test("connectT3: untested version -> T3Incompatible before any token; allowUntested proceeds with a notice", async () => {
+test("connectT3: an untested version proceeds with one warning; allowUntested silences it", async () => {
   const h = await connectHarness({ envVersion: "0.2.0-nightly.1" });
   try {
-    await assert.rejects(connectT3(h.home, { allowUntested: false, fetchImpl: h.ff.fetch, run: h.run, transportFactory: h.transportFactory }), T3Incompatible);
-    assert.equal(h.runs.length, 0);
     const notes: string[] = [];
-    const api = await connectT3(h.home, { allowUntested: true, onNotice: (l) => notes.push(l), fetchImpl: h.ff.fetch, run: h.run, transportFactory: h.transportFactory });
+    const api = await connectT3(h.home, { allowUntested: false, onNotice: (l) => notes.push(l), fetchImpl: h.ff.fetch, run: h.run, transportFactory: h.transportFactory });
     assert.equal(notes.length, 1);
+    assert.match(notes[0]!, /^Warning: T3 Code 0.2.0-nightly.1 has not been tested with t3sm/);
     await api.close();
+    const quiet: string[] = [];
+    const api2 = await connectT3(h.home, { allowUntested: true, onNotice: (l) => quiet.push(l), fetchImpl: h.ff.fetch, run: h.run, transportFactory: h.transportFactory });
+    assert.deepEqual(quiet, []);
+    await api2.close();
   } finally { await h.cleanup(); }
 });
 
@@ -560,4 +563,120 @@ test("updateInstanceAppearance: implicit claudeAgent is pinned to its home in th
   const sent = (rpc.calls.find((c) => c.tag === "server.updateSettings")!.payload as any).providerInstanceMutation;
   assert.equal(sent.operation, "upsert");
   assert.equal(JSON.stringify(sent.instance), JSON.stringify({ driver: "claudeAgent", config: { homePath: home.replaceAll("/", "\\") }, displayName: "Claude · Pessoal" }));
+});
+
+const UID = "import:claudeAgent:00000000-0000-4000-8000-000000000011";
+const dispatchPayloads = (rpc: FakeRpc) => rpc.calls.map((c) => [c.tag, JSON.stringify(c.payload)]);
+
+test("settleThread / unsettleThread / setThreadTitle: exact dispatchCommand payloads (S6); unsettle carries reason user", async () => {
+  const { api, rpc } = await makeApi({ replies: { "orchestration.dispatchCommand": { sequence: 3 } }, newId: ids("c1", "c2", "c3") });
+  await api.settleThread(UID);
+  await api.unsettleThread(UID);
+  await api.setThreadTitle(UID, "Fix the build");
+  assert.deepEqual(dispatchPayloads(rpc), [
+    ["orchestration.dispatchCommand", JSON.stringify({ type: "thread.settle", commandId: "c1", threadId: UID })],
+    ["orchestration.dispatchCommand", JSON.stringify({ type: "thread.unsettle", commandId: "c2", threadId: UID, reason: "user" })],
+    ["orchestration.dispatchCommand", JSON.stringify({ type: "thread.metadata.update", commandId: "c3", threadId: UID, title: "Fix the build" })],
+  ]);
+  const { api: bad } = await makeApi({ replies: { "orchestration.dispatchCommand": { sequence: 3 } }, newId: ids("c") });
+  await assert.rejects(bad.settleThread(""), /threadId/);
+  await assert.rejects(bad.setThreadTitle(UID, "  "), /title/);
+});
+
+test("setProjectPinned: POST /api/projects/mutate project.update with only pinned; response decoded", async () => {
+  const body = await fx("http-projects-pinned.json");
+  const resp = body.projects[0];
+  const { api, calls } = await makeApi({ routes: { "POST /api/projects/mutate": () => json(resp) }, newId: ids("c1", "c2") });
+  await api.setProjectPinned(resp.id, true);
+  await api.setProjectPinned(resp.id, false);
+  assert.equal(calls.length, 2);
+  assertHttpBasics(calls[0]!);
+  assert.equal(calls[0]!.body, JSON.stringify({ type: "project.update", commandId: "c1", projectId: resp.id, pinned: true }));
+  assert.equal(calls[1]!.body, JSON.stringify({ type: "project.update", commandId: "c2", projectId: resp.id, pinned: false }));
+  const { api: bad } = await makeApi({ routes: { "POST /api/projects/mutate": () => json({ nope: 1 }) }, newId: ids("c") });
+  await assert.rejects(bad.setProjectPinned("p", true), ShapeError);
+});
+
+test("setProjectTitle: POST /api/projects/mutate project.update with only title; blank refused before T3; response decoded", async () => {
+  const body = await fx("http-projects-pinned.json");
+  const resp = body.projects[0];
+  const { api, calls } = await makeApi({ routes: { "POST /api/projects/mutate": () => json(resp) }, newId: ids("c1") });
+  await api.setProjectTitle(resp.id, "Demo app");
+  assert.equal(calls.length, 1);
+  assertHttpBasics(calls[0]!);
+  assert.equal(calls[0]!.body, JSON.stringify({ type: "project.update", commandId: "c1", projectId: resp.id, title: "Demo app" }));
+  await assert.rejects(api.setProjectTitle(resp.id, "   "), /title/);
+  await assert.rejects(api.setProjectTitle("", "Demo"), /projectId/);
+  assert.equal(calls.length, 1, "invalid values never reach T3");
+  const { api: bad } = await makeApi({ routes: { "POST /api/projects/mutate": () => json({ nope: 1 }) }, newId: ids("c") });
+  await assert.rejects(bad.setProjectTitle("p", "Demo"), ShapeError);
+});
+
+test("deleteProject: project.delete with no force (T3 refuses a project that still has threads); HTTP error surfaces", async () => {
+  const body = await fx("http-projects-pinned.json");
+  const resp = { ...body.projects[1], deletedAt: "2026-11-14T10:00:00.000Z" };
+  const { api, calls } = await makeApi({ routes: { "POST /api/projects/mutate": () => json(resp) }, newId: ids("c1") });
+  await api.deleteProject(resp.id);
+  assert.equal(calls[0]!.body, JSON.stringify({ type: "project.delete", commandId: "c1", projectId: resp.id }));
+  const { api: refused } = await makeApi({ routes: { "POST /api/projects/mutate": () => json({ _tag: "ProjectNotEmptyError" }, 409) }, newId: ids("c") });
+  await assert.rejects(refused.deleteProject("p"), (e: unknown) => e instanceof T3HttpError && e.status === 409);
+});
+
+test("getServerSetting / setAutoSettleAfterDays: reads settings, patches only the key, returns previous", async () => {
+  const cfg = await exitValue("ws-getconfig.exit.json");
+  const upd = await exitValue("ws-updatesettings.exit.json");
+  const { api, rpc } = await makeApi({
+    replies: { "server.getConfig": cfg, "server.updateSettings": (p: unknown) => ({ ...upd, sidebarAutoSettleAfterDays: (p as { patch: { sidebarAutoSettleAfterDays: number | null } }).patch.sidebarAutoSettleAfterDays }) },
+  });
+  assert.equal(await api.getServerSetting("sidebarAutoSettleAfterDays"), 7);
+  assert.deepEqual(await api.setAutoSettleAfterDays(30), { previous: 7 });
+  assert.deepEqual(await api.setAutoSettleAfterDays(null), { previous: 7 });
+  assert.deepEqual(rpc.calls.filter((c) => c.tag === "server.updateSettings").map((c) => JSON.stringify(c.payload)), [
+    '{"patch":{"sidebarAutoSettleAfterDays":30}}', '{"patch":{"sidebarAutoSettleAfterDays":null}}',
+  ]);
+  for (const bad of [0, 91, 1.5, Number.NaN]) await assert.rejects(api.setAutoSettleAfterDays(bad), /1.*90/);
+  assert.equal(rpc.calls.filter((c) => c.tag === "server.updateSettings").length, 2, "invalid values never reach T3");
+});
+
+test("setAutoSettleAfterDays: unchanged value sends nothing; a server that does not echo the value is a ShapeError", async () => {
+  const cfg = await exitValue("ws-getconfig.exit.json");
+  const upd = await exitValue("ws-updatesettings.exit.json");
+  const same = await makeApi({ replies: { "server.getConfig": cfg, "server.updateSettings": upd } });
+  assert.deepEqual(await same.api.setAutoSettleAfterDays(7), { previous: 7 });
+  assert.deepEqual(same.rpc.calls.map((c) => c.tag), ["server.getConfig"]);
+  const stale = await makeApi({ replies: { "server.getConfig": cfg, "server.updateSettings": upd } }); // echoes 7, asked for 30
+  await assert.rejects(stale.api.setAutoSettleAfterDays(30), ShapeError);
+  const noKey = structuredClone(cfg);
+  delete noKey.settings.sidebarAutoSettleAfterDays;
+  const missing = await makeApi({ replies: { "server.getConfig": noKey } });
+  await assert.rejects(missing.api.getServerSetting("sidebarAutoSettleAfterDays"), ShapeError);
+});
+
+test("an auto-settle value outside 1..90 (a newer T3 Code): the setting reads as unknown and is never changed; the rest works", async () => {
+  const cfg = await exitValue("ws-getconfig.exit.json");
+  const future = { ...cfg, settings: { ...cfg.settings, sidebarAutoSettleAfterDays: 120 } };
+  const { api, rpc } = await makeApi({ replies: { "server.getConfig": future, "server.updateSettings": await exitValue("ws-updatesettings.exit.json") } });
+  assert.ok((await api.providerInstances()).length > 0, "instances still read");
+  await assert.rejects(api.getServerSetting("sidebarAutoSettleAfterDays"), /auto-settle value t3sm does not know/);
+  await assert.rejects(api.setAutoSettleAfterDays(null), /auto-settle value t3sm does not know/);
+  assert.equal(rpc.calls.filter((c) => c.tag === "server.updateSettings").length, 0, "never written");
+});
+
+test("settle sends settledAt only when backdating is supported", async () => {
+  const when = "2026-08-01T10:00:00.000Z";
+  const replies = { "orchestration.dispatchCommand": { sequence: 3 } };
+  const off = await makeApi({ replies, newId: ids("a", "b"), backdate: false });
+  await off.api.settleThread(UID, when);
+  await off.api.settleThread(UID);
+  assert.deepEqual(dispatchPayloads(off.rpc), [
+    ["orchestration.dispatchCommand", JSON.stringify({ type: "thread.settle", commandId: "a", threadId: UID })],
+    ["orchestration.dispatchCommand", JSON.stringify({ type: "thread.settle", commandId: "b", threadId: UID })],
+  ]);
+  const on = await makeApi({ replies, newId: ids("c", "d"), backdate: true });
+  await on.api.settleThread(UID, when);
+  await on.api.settleThread(UID);
+  assert.deepEqual(dispatchPayloads(on.rpc), [
+    ["orchestration.dispatchCommand", JSON.stringify({ type: "thread.settle", commandId: "c", threadId: UID, settledAt: when })],
+    ["orchestration.dispatchCommand", JSON.stringify({ type: "thread.settle", commandId: "d", threadId: UID })],
+  ]);
 });

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, readFile, readdir, rm, utimes, writeFile } from "node:fs/promises";
 import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
-import { spawn, spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { acquireLock, lockInfo, releaseStealMutex, takeStealMutex } from "../../src/core/lock.ts";
 
 async function tmp(): Promise<string> {
@@ -83,16 +83,16 @@ test("creates the lock dir if missing", async () => {
 });
 
 
-function deadPid(): number {
-  const r = spawnSync(process.execPath, ["-e", ""]);
-  assert.ok(r.pid);
-  return r.pid;
-}
+/**
+ * A pid no process can have: Windows pids are multiples of 4, Linux's pid_max is at most 2^22 and macOS's 99998. (The
+ * pid of a child that just exited could be reused by the time the lock is read: the OS hands pids out again.)
+ */
+const NO_PROCESS_PID = 2 ** 31 - 2;
 
-test("pid of an exited child is stale", async () => {
+test("a pid no process can have is stale", async () => {
   const d = await tmp();
   try {
-    await writeFile(join(d, "lock"), JSON.stringify({ pid: deadPid(), startedAt: "x", hostname: hostname() }));
+    await writeFile(join(d, "lock"), JSON.stringify({ pid: NO_PROCESS_PID, startedAt: "x", hostname: hostname() }));
     const a = await acquireLock(d);
     assert.ok(a);
     await a.release();
@@ -112,7 +112,11 @@ test("EPERM from kill means alive => held; ESRCH => stale", async () => {
   } finally { await rm(d, { recursive: true, force: true }); }
 });
 
-test("concurrent stealers of one stale lock: exactly one wins, no leftovers", async () => {
+// Real files, no clock: 50 rounds of three stealers racing on one directory. Every acquire writes and fsyncs a temp
+// file, and on a loaded machine (16 test suites at once) one round took over a second instead of about 20 ms, so the
+// 50 rounds ran into the 60 s default test timeout. The timeout is only a backstop for a hang; the assertions are
+// about who wins.
+test("concurrent stealers of one stale lock: exactly one wins, no leftovers", { timeout: 300_000 }, async () => {
   for (let i = 0; i < 50; i++) {
     const d = await tmp();
     try {
@@ -144,7 +148,7 @@ test("lockInfo reports owner and age; null when absent", async () => {
 
 test("multi-process stealers (stale lock, and stale lock + stale mutex): exactly one winner", { timeout: 60_000 }, async () => {
   const worker = join(import.meta.dirname, "lock-worker.ts");
-  const dead = deadPid();
+  const dead = NO_PROCESS_PID;
   const N = 4;
   for (let i = 0; i < 10; i++) {
     const d = await tmp();
