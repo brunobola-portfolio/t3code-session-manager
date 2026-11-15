@@ -1,0 +1,44 @@
+* * * * * * * @ o o o  Step 8 of 11 - Full import
+Now the rest. Before you say yes:
+- Keep the computer awake until it ends.
+- Close the sessions you want imported: a project in use waits for a later run.
+- Pause cloud sync of your home folder (OneDrive, Dropbox, iCloud).
+Updating the plan...
+
++- Here is what I will do -------------------------------+
+| Import      23 conversations                           |
+| Into         3 projects                                |
+| In use now   1 project waits for a later run           |
+| Undo        t3sm rollback --run <id> --archive-threads |
++--------------------------------------------------------+
+Import everything now? This writes to T3 Code; t3sm rollback
+--archive-threads takes it back. [y/N/?/b/q] y
+Imported 22 of 22 in 4 s
+
++- v Imported 22 conversations ----------------------+
+| Imported  22                                       |
+| Held       1                                       |
+| Run       R1                                       |
+| Undo      t3sm rollback --run R1 --archive-threads |
++----------------------------------------------------+
+
+! busy waits: 'Fix the build' is in use (written 3 min ago); imported after 10
+  minutes idle
+
+v Done; 1 project waits until its conversation is idle (t3sm imports it then;
+  t3sm help held)
+
+* * * * * * * * * @ o  Step 10 of 11 - Keep in sync
+New sessions keep appearing as you work. The background watcher imports them for
+you, carefully: it waits for sessions in use, and never moves files or creates
+instances.
+Install the background watcher now? This adds a task to your system's
+scheduler. Undo: t3sm schedule remove. [y/N/?/b/q] q
+
++- What this session did -----------------------------------------+
+| v Imported everything (run R1)                                  |
+|   Undo: t3sm rollback --run R1 --archive-threads                |
+|                                                                 |
+| t3sm runs lists every run; threads are archived, never deleted. |
++-----------------------------------------------------------------+
+Stopped. Nothing is left half done; run t3sm again to continue.

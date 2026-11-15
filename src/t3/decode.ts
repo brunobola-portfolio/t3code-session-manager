@@ -37,6 +37,27 @@ class D {
     if (nullable && v === null) return null;
     return this.fail(key(path, k), nullable ? "string or null" : "string");
   }
+  /**
+   * Optional auto-settle days (SidebarAutoSettleAfterDays): an integer 1..90, or null (off); absent -> undefined. An integer outside 1..90 (a newer T3 Code's range) is "unknown":
+   * the other commands go on, organize leaves the setting alone. Any other type is a shape change.
+   */
+  optAutoSettleDays(o: Obj, k: string, path: string): number | null | "unknown" | undefined {
+    if (!(k in o) || o[k] === undefined) return undefined;
+    const v = o[k];
+    if (v === null) return null;
+    if (typeof v !== "number" || !Number.isInteger(v)) return this.fail(key(path, k), "integer 1..90 or null");
+    return v >= 1 && v <= 90 ? v : "unknown";
+  }
+  /**
+   * Optional key holding one of the given strings or null; absent -> null. Another string (a value a newer T3 Code
+   * added) -> "unknown"; any other type is a shape change.
+   */
+  optEnumOrUnknown<T extends string>(o: Obj, k: string, path: string, allowed: readonly T[]): T | "unknown" | null {
+    if (!(k in o) || o[k] === undefined || o[k] === null) return null;
+    const v = o[k];
+    if (typeof v !== "string") return this.fail(key(path, k), `one of ${allowed.join(", ")}, another string or null`);
+    return (allowed as readonly string[]).includes(v) ? (v as T) : "unknown";
+  }
   bool(o: Obj, k: string, path: string): boolean {
     const v = o[k];
     return typeof v === "boolean" ? v : this.fail(key(path, k), "boolean");
@@ -81,6 +102,8 @@ export interface T3Project {
   id: string; title: string; workspaceRoot: string; defaultModelSelection: ModelSelection | null;
   /** archivedAt != null */ archived: boolean;
   /** deletedAt != null (listProjects drops these) */ deleted: boolean;
+  /** pinnedAt != null (GET /api/projects and the mutate response carry `pinnedAt`) */ pinned: boolean;
+  /** `createdAt`; null when T3 does not send it. */ createdAt: string | null;
 }
 
 function modelSelection(d: D, u: unknown, path: string): ModelSelection {
@@ -102,7 +125,9 @@ function project(d: D, u: unknown, path: string): T3Project {
   const defaultModelSelection = sel === null ? null : modelSelection(d, sel, key(path, "defaultModelSelection"));
   const archivedAt = d.optStr(o, "archivedAt", path, true) ?? null;
   const deletedAt = d.optStr(o, "deletedAt", path, true) ?? null;
-  return { id, title, workspaceRoot, defaultModelSelection, archived: archivedAt !== null, deleted: deletedAt !== null };
+  const pinnedAt = d.optStr(o, "pinnedAt", path, true) ?? null;
+  const createdAt = d.optStr(o, "createdAt", path, true) ?? null;
+  return { id, title, workspaceRoot, defaultModelSelection, archived: archivedAt !== null, deleted: deletedAt !== null, pinned: pinnedAt !== null, createdAt };
 }
 
 /** GET /api/projects -> `{projects: Project[], updatedAt}`. */
@@ -132,6 +157,23 @@ export interface T3Thread {
    * newest user message; a later value means a turn was sent in T3 (t3sm merge's "T3 evidently wrote" check).
    */
   latestUserMessageAt?: string | null;
+  /**
+   * `settledOverride`: "settled" (user/auto settled), "active" (user unsettled) or null (no override); "unknown": a
+   * value this t3sm does not know (a newer T3 Code), on which organize plans nothing.
+   */
+  settledOverride?: "settled" | "active" | "unknown" | null;
+  settledAt?: string | null;
+  unsettledAt?: string | null;
+  /** `pinnedAt` of the thread. */
+  pinnedAt?: string | null;
+  /**
+   * Flat shell fields `latestRunRequestedAt` / `latestRunStartedAt` / `latestRunCompletedAt` (the newest run's times;
+   * null while it has not happened) and the thread's `createdAt`. ISO strings or null; undefined when the field is absent.
+   */
+  latestRunRequestedAt?: string | null;
+  latestRunStartedAt?: string | null;
+  latestRunCompletedAt?: string | null;
+  createdAt?: string | null;
 }
 
 const NATIVE_THREAD_RE = /:native-thread:(.+)$/s;
@@ -146,17 +188,41 @@ function shellThread(d: D, u: unknown, path: string, inArchived: boolean): T3Thr
   const ref = d.optStr(o, "activeProviderThreadId", path, true);
   const nativeSessionId = typeof ref === "string" ? (NATIVE_THREAD_RE.exec(ref)?.[1] ?? null) : null;
   const latestUserMessageAt = d.optStr(o, "latestUserMessageAt", path, true) ?? null;
-  return { id, projectId, instanceId, archived: inArchived || archivedAt !== null, title, nativeSessionId, latestUserMessageAt };
+  const settledOverride = d.optEnumOrUnknown(o, "settledOverride", path, ["settled", "active"] as const);
+  const settledAt = d.optStr(o, "settledAt", path, true) ?? null;
+  const unsettledAt = d.optStr(o, "unsettledAt", path, true) ?? null;
+  const pinnedAt = d.optStr(o, "pinnedAt", path, true) ?? null;
+  const latestRunRequestedAt = d.optStr(o, "latestRunRequestedAt", path, true);
+  const latestRunStartedAt = d.optStr(o, "latestRunStartedAt", path, true);
+  const latestRunCompletedAt = d.optStr(o, "latestRunCompletedAt", path, true);
+  const createdAt = d.optStr(o, "createdAt", path, true);
+  return {
+    id, projectId, instanceId, archived: inArchived || archivedAt !== null, title, nativeSessionId, latestUserMessageAt, settledOverride, settledAt, unsettledAt, pinnedAt,
+    latestRunRequestedAt, latestRunStartedAt, latestRunCompletedAt, createdAt,
+  };
 }
 
 /**
  * GET /api/orchestration/shell (protocol 2). The server hard-codes `archivedThreads: []` here (ShellStream.ts), so this
  * yields active threads only; archived ones come from decodeArchivedShell.
  */
+/**
+ * Paging fields a thread list could grow. t3sm reads both thread lists as complete (a session T3 holds no thread of
+ * is "orphaned" and copied back), so a list that says it continues elsewhere is an unknown shape, never a partial read.
+ */
+const PAGING_FIELDS = ["hasMore", "nextCursor", "nextPageToken", "pageToken", "continuationToken", "truncated", "pageInfo"] as const;
+function completeList(d: D, o: Record<string, unknown>): void {
+  for (const k of PAGING_FIELDS) {
+    const v = o[k];
+    if (v !== undefined && v !== null && v !== false) d.fail(`$.${k}`, "absent (t3sm reads the thread list as one complete page)");
+  }
+}
+
 export function decodeShell(u: unknown): T3Thread[] {
   const d = new D("GET /api/orchestration/shell");
   const o = d.obj(u, "$");
   if (o.schemaVersion !== 2) d.fail("$.schemaVersion", "2");
+  completeList(d, o);
   const active = d.arr(o, "threads", "$", (x, p) => shellThread(d, x, p, false));
   const archived = d.arr(o, "archivedThreads", "$", (x, p) => shellThread(d, x, p, true));
   return [...active, ...archived];
@@ -167,6 +233,7 @@ export function decodeArchivedShell(u: unknown): T3Thread[] {
   const d = new D("orchestration.getArchivedShellSnapshot");
   const o = d.obj(u, "$");
   if (o.schemaVersion !== 2) d.fail("$.schemaVersion", "2");
+  completeList(d, o);
   d.count(o, "snapshotSequence", "$");
   return d.arr(o, "threads", "$", (x, p) => shellThread(d, x, p, true));
 }
@@ -195,7 +262,11 @@ export interface T3Provider {
 }
 
 export interface T3Config {
-  settings: { providerInstances: Record<string, ProviderInstanceEntry>; defaultModelSelection?: ModelSelection | null };
+  settings: { providerInstances: Record<string, ProviderInstanceEntry>; defaultModelSelection?: ModelSelection | null;
+    /** Integer 1..90 days, null = auto-settle off; undefined when T3 does not report it, or reports a value outside 1..90. */
+    sidebarAutoSettleAfterDays?: number | null;
+    /** true: T3 reported an auto-settle value outside 1..90 (a newer T3 Code); t3sm never changes that setting then. */
+    sidebarAutoSettleUnknown?: true };
   providers: T3Provider[];
 }
 
@@ -265,6 +336,9 @@ export function decodeConfig(u: unknown): T3Config {
   const s = d.obj(o.settings, "$.settings");
   const providerInstances = instanceMap(d, s, "$.settings");
   const settings: T3Config["settings"] = { providerInstances };
+  const days = d.optAutoSettleDays(s, "sidebarAutoSettleAfterDays", "$.settings");
+  if (days === "unknown") settings.sidebarAutoSettleUnknown = true;
+  else if (days !== undefined) settings.sidebarAutoSettleAfterDays = days;
   if ("defaultModelSelection" in s && s.defaultModelSelection !== undefined) {
     settings.defaultModelSelection = s.defaultModelSelection === null ? null : modelSelection(d, s.defaultModelSelection, "$.settings.defaultModelSelection");
   }
@@ -273,10 +347,21 @@ export function decodeConfig(u: unknown): T3Config {
 }
 
 /** server.updateSettings success value: the full ServerSettings; t3sm checks `providerInstances` (S4 §1). */
-export function decodeServerSettings(u: unknown): { providerInstances: Record<string, ProviderInstanceEntry> } {
+export interface ServerSettingsReply {
+  providerInstances: Record<string, ProviderInstanceEntry>;
+  sidebarAutoSettleAfterDays?: number | null;
+  /** As T3Config: an auto-settle value outside 1..90. */
+  sidebarAutoSettleUnknown?: true;
+}
+
+export function decodeServerSettings(u: unknown): ServerSettingsReply {
   const d = new D("server.updateSettings");
   const o = d.obj(u, "$");
-  return { providerInstances: instanceMap(d, o, "$") };
+  const out: ServerSettingsReply = { providerInstances: instanceMap(d, o, "$") };
+  const days = d.optAutoSettleDays(o, "sidebarAutoSettleAfterDays", "$");
+  if (days === "unknown") out.sidebarAutoSettleUnknown = true;
+  else if (days !== undefined) out.sidebarAutoSettleAfterDays = days;
+  return out;
 }
 
 // ---------- agentSessions ----------

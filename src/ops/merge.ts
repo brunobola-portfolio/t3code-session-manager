@@ -52,6 +52,7 @@ import { exposureOf, liveExposure } from "../apply/apply.ts";
 import { runWaves, type BumpFile } from "../apply/importer.ts";
 import { buildWaves, rootKey } from "../apply/waves.ts";
 import { WRITTEN_MAX_AGE_MS, writtenMtime } from "../apply/materialize.ts";
+import { JournalWriteError } from "./quarantine.ts";
 
 export { revisionUuid };
 
@@ -66,6 +67,7 @@ export type MergeSkipReason =
   | BranchProblem
   | "active" // written in the last 10 minutes (or while the merge ran): next time
   | "not-continued" // no positive evidence of terminal work on the branch `claude --resume` continues
+  | "rehomed-copy" // a conversation copied from a folder T3 Code refuses (plan note continued-after-rehome): merge cannot apply (R11)
   | "no-t3-marker" // T3 wrote since the import, but no record carries entrypoint "t3-code": T3's marker may have changed
   | "already-merged" // this exact revision (same session, same size) was merged before
   | "thread-archived" // its T3 thread is archived (merged earlier, or archived by the user)
@@ -425,13 +427,14 @@ export interface MergeDeps {
   linkFs?: LinkFs;
 }
 
-const IMPORT_THREAD = /^import:([^:]+):(.+)$/s;
+/** A thread T3 imported from a transcript: `import:<instance>:<native id>`. */
+export const IMPORT_THREAD = /^import:([^:]+):(.+)$/s;
 
 type MergedEntry = Extract<JournalEntry, { t: "merged" }>;
 type WrittenEntry = Extract<JournalEntry, { t: "file-written" }>;
 
 /** Merges still standing: not rolled back. */
-function standingMerges(entries: JournalEntry[]): MergedEntry[] {
+export function standingMerges(entries: JournalEntry[]): MergedEntry[] {
   const rolledBack = new Set(entries.flatMap((e) => (e.t === "rolled-back" ? [e.targetRunId] : [])));
   return entries.filter((e): e is MergedEntry => e.t === "merged" && !rolledBack.has(e.runId));
 }
@@ -478,6 +481,8 @@ export async function findMergeCandidates(items: PlanItem[], deps: MergeDeps): P
     if (seen.has(s.nativeId)) continue;
     seen.add(s.nativeId);
     const skip = (reason: MergeSkipReason): void => void skipped.push({ nativeId: s.nativeId, reason });
+    // Its T3 thread is a faithful copy under another id (spec §4.3): a revision of this file could not reach it (R11).
+    if (item.notes.includes("continued-after-rehome")) { skip("rehomed-copy"); continue; }
     const st = await statSafe(s.file.path).catch(() => null);
     if (st === null) continue;
     const rev = revisionUuid(s.nativeId, st.size);
@@ -564,13 +569,129 @@ export async function findMergeCandidates(items: PlanItem[], deps: MergeDeps): P
 // ---------------- merging ----------------
 
 /** Removes a file while it is still exactly what t3sm wrote. */
-async function removeIfOurs(file: string, sha: string): Promise<boolean> {
+export async function removeIfOurs(file: string, sha: string): Promise<boolean> {
   try {
     if ((await sha256File(file)) !== sha) return false;
     await rm(file, { force: true });
     return true;
   } catch {
     return false; // gone, or unreadable: left as it is
+  }
+}
+
+type WrittenExtra = Pick<WrittenEntry, "revisionOf" | "source" | "rehomeOf">;
+
+/**
+ * The revision write (merge, and follow: src/ops/follow.ts). `tmp` (next to `target`, not a .jsonl) is journaled as
+ * `file-written` BEFORE it is published, then published without clobbering (link + unlink only: never replaces a file at
+ * the target, never falls back to rename) and given `mtimeMs`. Not published: the temp is removed and the write is
+ * cancelled with `file-write-aborted`, so the journal never claims a file t3sm did not write.
+ */
+export async function publishRevision(o: {
+  tmp: string; target: string; sha256: string; mtimeMs: number; journal: Journal; runId: string; entry: WrittenExtra; linkFs?: LinkFs;
+}): Promise<"published" | "target-exists" | "copy-failed"> {
+  await o.journal.append({ t: "file-written", runId: o.runId, path: o.target, sha256: o.sha256, mtimeMs: o.mtimeMs, ...o.entry });
+  try {
+    await publishNoClobber(o.tmp, o.target, o.linkFs ?? { link, unlink });
+  } catch (e) {
+    await rm(o.tmp, { force: true }).catch(() => {});
+    await o.journal.append({ t: "file-write-aborted", runId: o.runId, path: o.target });
+    return e instanceof MoveRefused && e.code === "EEXIST" ? "target-exists" : "copy-failed";
+  }
+  await utimes(o.target, o.mtimeMs / 1000, o.mtimeMs / 1000);
+  return "published";
+}
+
+export interface RevisionImportCtx {
+  api: T3Api; journal: Journal; runId: string; now: () => number; platform: NodeJS.Platform;
+  projectId: string; projectRoot: string;
+  /** T3's provider instances (read once per run by the caller). */
+  providers: Awaited<ReturnType<T3Api["providerInstances"]>>;
+  /** Every discovered session T3 could import while the revision imports (exposure). */
+  exposureItems: PlanItem[];
+  accountHomes?: Record<string, string>;
+  batch?: Config["batch"];
+  aborted?: () => boolean;
+  onPendingFiles?: (files: BumpFile[] | null) => void;
+  /** The api runWaves talks to (default `api`); follow's refresh mode passes a view of it. */
+  wavesApi?: T3Api;
+}
+
+/** What importRevision did: imported (in T3's thread list), unverified (T3 may have it), or why it was not imported. */
+export type RevisionImportOutcome = "imported" | "import-unverified" | "project-in-use" | "clock-jump" | "file-busy" | "copy-failed" | "active" | "import-failed" | "aborted";
+
+/**
+ * The import step (merge and follow): one item through runWaves (bump / park / restore, exposure, held projects), alone
+ * in its project's wave. The file is never removed here: the caller removes it (removeIfOurs) when it was not imported.
+ */
+export async function importRevision(item: PlanItem, o: RevisionImportCtx): Promise<RevisionImportOutcome> {
+  const batch = o.batch ?? DEFAULT_BATCH;
+  const cost = (x: PlanItem): number => x.session.cwdOffsetBytes;
+  const homes = o.accountHomes ?? {};
+  const provs = o.providers;
+  const waves = await runWaves({
+    api: o.wavesApi ?? o.api, journal: o.journal, runId: o.runId, now: o.now, platform: o.platform, batch, cost,
+    projectIds: new Map([[o.projectRoot, o.projectId]]),
+    importRoots: new Map([[rootKey(o.projectRoot, o.platform), o.projectRoot]]),
+    instanceAvailability: new Map(provs.map((p) => [p.instanceId, p.availability] as const)),
+    exposure: exposureOf(o.exposureItems, provs, o.platform),
+    liveExposure: liveExposure(() => provs, o.platform, undefined, { accountHome: (id) => (Object.hasOwn(homes, id) ? homes[id] : undefined) }),
+    aborted: o.aborted,
+    onPendingFiles: o.onPendingFiles,
+    onProgress: () => {},
+  }, buildWaves([item], batch, cost, { platform: o.platform }));
+  if (waves.imported.includes(item)) return "imported";
+  if (waves.unverified.includes(item)) return "import-unverified"; // T3 may have it: the caller keeps the file
+  const deferred = waves.deferred.find((d) => d.item === item);
+  if (deferred) {
+    return deferred.reason === "project-in-use" || deferred.reason === "clock-jump" || deferred.reason === "file-busy" ? deferred.reason : deferred.reason === "missing" ? "copy-failed" : "active";
+  }
+  if (waves.failed.some((f) => f.item === item)) return "import-failed";
+  return "aborted";
+}
+
+/**
+ * The archive step (merge and follow): only once the new thread is confirmed in T3's thread list (read once more right
+ * before the old thread is touched). A rolled-back earlier swap left the new thread archived: unarchived first
+ * (journaled), so the session always keeps one active thread. `beforeArchive` (follow: carry the old thread's title and
+ * settled state) runs on the fresh new thread; its errors propagate. Then the old thread is archived and journaled
+ * `thread-archived`. The caller journals what the swap was for (`merged`).
+ */
+export async function swapThreads(o: {
+  api: T3Api; journal: Journal; runId: string; oldThreadId: string; newThreadId: string;
+  /** false: do not archive the old thread (follow: the copy changed meanwhile); the new thread is left as it is. */
+  beforeArchive?: (fresh: T3Thread) => Promise<boolean | void>;
+}): Promise<"swapped" | "import-unverified" | "archive-failed" | "cancelled"> {
+  const listed = await o.api.listThreads().catch(() => null);
+  const fresh = listed?.find((t) => t.id === o.newThreadId);
+  if (!fresh) return "import-unverified";
+  if (fresh.archived) {
+    try {
+      await o.api.unarchiveThread(o.newThreadId);
+    } catch {
+      return "archive-failed";
+    }
+    await appendOrStop(o.journal, { t: "thread-unarchived", runId: o.runId, threadId: o.newThreadId }, `the unarchive of ${o.newThreadId}`);
+  }
+  if (o.beforeArchive && (await o.beforeArchive({ ...fresh, archived: false })) === false) return "cancelled";
+  try {
+    await o.api.archiveThread(o.oldThreadId);
+  } catch {
+    return "archive-failed";
+  }
+  await appendOrStop(o.journal, { t: "thread-archived", runId: o.runId, threadId: o.oldThreadId }, `the archive of ${o.oldThreadId}`);
+  return "swapped";
+}
+
+/**
+ * Journals a change T3 Code already holds. A failure is a JournalWriteError: the run stops (merge, follow and sync
+ * never go on with T3 holding a change the journal did not hear of, which no rollback could undo).
+ */
+export async function appendOrStop(j: Journal, e: JournalEntry, what: string): Promise<void> {
+  try {
+    await j.append(e);
+  } catch (err) {
+    throw new JournalWriteError(`Could not write the journal (${err instanceof Error ? err.message : String(err)}) after T3 Code accepted ${what}; stopped.`);
   }
 }
 
@@ -621,10 +742,15 @@ export async function executeMerges(candidates: MergeCandidate[], deps: MergeDep
       // Ours (sha checked when it became a candidate) and aged past now - 20 days while unmerged: re-clamped (utimes
       // only), so it never drifts into Claude Code's cleanup zone while it waits.
       const revSt = await statSafe(c.revisionFile).catch(() => null);
+      let revMtime = revSt?.mtimeMs ?? now();
       if (revSt !== null && revSt.mtimeMs < now() - WRITTEN_MAX_AGE_MS) {
-        const t = writtenMtime(c.source.mtimeMs, now());
-        await utimes(c.revisionFile, t / 1000, t / 1000);
+        revMtime = writtenMtime(c.source.mtimeMs, now());
+        await utimes(c.revisionFile, revMtime / 1000, revMtime / 1000);
       }
+      // Journaled again in this run, before the import (as publishRevision does): the run that swaps the revision in
+      // owns it, so a rollback of the earlier run keeps it ("rewritten") and a rollback of this one undoes the merge.
+      await deps.journal.append({ t: "file-written", runId: await runId(), path: c.revisionFile, sha256: sha, mtimeMs: revMtime, revisionOf: { harness: "claude", nativeId: c.nativeId } });
+      journalNow = null;
     } else {
       let prep: PreparedRevision;
       try {
@@ -646,18 +772,11 @@ export async function executeMerges(candidates: MergeCandidate[], deps: MergeDep
       const rid = await runId();
       const harness: HarnessId = "claude";
       const revMtime = writtenMtime(c.source.mtimeMs, now()); // never inside Claude Code's cleanup zone (materialize.ts)
-      await deps.journal.append({ t: "file-written", runId: rid, path: c.revisionFile, sha256: prep.sha256, mtimeMs: revMtime, revisionOf: { harness, nativeId: c.nativeId } });
-      try {
-        // link + unlink only: never replaces a file at the target, never falls back to rename (fsutil.publishNoClobber).
-        await publishNoClobber(prep.tmp, c.revisionFile, deps.linkFs ?? { link, unlink });
-      } catch (e) {
-        await rm(prep.tmp, { force: true }).catch(() => {});
-        // Not published: the journal must not claim the file at that path is ours.
-        await deps.journal.append({ t: "file-write-aborted", runId: rid, path: c.revisionFile });
-        skip(e instanceof MoveRefused && e.code === "EEXIST" ? "target-exists" : "copy-failed");
-        continue;
-      }
-      await utimes(c.revisionFile, revMtime / 1000, revMtime / 1000);
+      const pub = await publishRevision({
+        tmp: prep.tmp, target: c.revisionFile, sha256: prep.sha256, mtimeMs: revMtime, journal: deps.journal, runId: rid,
+        entry: { revisionOf: { harness, nativeId: c.nativeId } }, linkFs: deps.linkFs,
+      });
+      if (pub !== "published") { skip(pub); continue; }
       sha = prep.sha256;
       firstLineBytes = prep.firstLineBytes;
     }
@@ -675,44 +794,21 @@ export async function executeMerges(candidates: MergeCandidate[], deps: MergeDep
       notes: [],
     };
     providers ??= await deps.api.providerInstances();
-    const provs = providers;
-    const batch = deps.batch ?? DEFAULT_BATCH;
-    const cost = (x: PlanItem): number => x.session.cwdOffsetBytes;
-    const homes = deps.accountHomes ?? {};
-    const waves = await runWaves({
-      api: deps.api, journal: deps.journal, runId: rid, now, platform, batch, cost,
-      projectIds: new Map([[c.projectRoot, c.projectId]]),
-      importRoots: new Map([[rootKey(c.projectRoot, platform), c.projectRoot]]),
-      instanceAvailability: new Map(provs.map((p) => [p.instanceId, p.availability] as const)),
-      exposure: exposureOf(deps.exposureItems ?? candidates.map((x) => x.item), provs, platform),
-      liveExposure: liveExposure(() => provs, platform, undefined, { accountHome: (id) => (Object.hasOwn(homes, id) ? homes[id] : undefined) }),
-      aborted: deps.aborted,
-      onPendingFiles: deps.onPendingFiles,
-      onProgress: () => {},
-    }, buildWaves([item], batch, cost, { platform }));
+    const outcome = await importRevision(item, {
+      api: deps.api, journal: deps.journal, runId: rid, now, platform, projectId: c.projectId, projectRoot: c.projectRoot, providers,
+      exposureItems: deps.exposureItems ?? candidates.map((x) => x.item), accountHomes: deps.accountHomes, batch: deps.batch,
+      aborted: deps.aborted, onPendingFiles: deps.onPendingFiles,
+    });
     threadIdsNow = null;
 
-    if (waves.imported.includes(item)) {
-      // Confirmed in the thread list by the importer; read once more right before touching the old thread.
-      const listed = await deps.api.listThreads().catch(() => null);
-      const fresh = listed?.find((t) => t.id === c.newThreadId);
-      if (!fresh) { skip("import-unverified"); continue; }
-      try {
-        // A rolled-back merge of the same revision left its thread archived: bring it back first (one active thread).
-        if (fresh.archived) {
-          await deps.api.unarchiveThread(c.newThreadId);
-          await deps.journal.append({ t: "thread-unarchived", runId: rid, threadId: c.newThreadId });
-        }
-        await deps.api.archiveThread(c.oldThreadId);
-      } catch {
-        skip("archive-failed");
-        continue;
-      }
-      await deps.journal.append({ t: "thread-archived", runId: rid, threadId: c.oldThreadId });
-      await deps.journal.append({
+    if (outcome === "imported") {
+      // Confirmed in the thread list by the importer; swapThreads reads it once more before touching the old thread.
+      const swapped = await swapThreads({ api: deps.api, journal: deps.journal, runId: rid, oldThreadId: c.oldThreadId, newThreadId: c.newThreadId });
+      if (swapped !== "swapped") { skip(swapped === "cancelled" ? "archive-failed" : swapped); continue; }
+      await appendOrStop(deps.journal, {
         t: "merged", runId: rid, harness: "claude", nativeId: c.nativeId, revisionUuid: c.revisionUuid, revisionFile: c.revisionFile,
         oldThreadId: c.oldThreadId, newThreadId: c.newThreadId, sourceSize: c.source.size, sourceMtimeMs: c.source.mtimeMs,
-      });
+      }, `the archive of ${c.oldThreadId}`);
       journalNow = null;
       res.merged.push({
         nativeId: c.nativeId, revisionUuid: c.revisionUuid, revisionFile: c.revisionFile, newThreadId: c.newThreadId, oldThreadId: c.oldThreadId,
@@ -721,14 +817,9 @@ export async function executeMerges(candidates: MergeCandidate[], deps: MergeDep
       deps.onProgress?.(`Merged ${c.nativeId} -> ${c.newThreadId}`);
       continue;
     }
-    if (waves.unverified.includes(item)) { skip("import-unverified"); continue; } // T3 may have it: keep the file
+    if (outcome === "import-unverified") { skip("import-unverified"); continue; } // T3 may have it: keep the file
     await removeIfOurs(c.revisionFile, sha);
-    const deferred = waves.deferred.find((d) => d.item === item);
-    if (deferred) {
-      skip(deferred.reason === "project-in-use" || deferred.reason === "clock-jump" || deferred.reason === "file-busy" ? deferred.reason : deferred.reason === "missing" ? "copy-failed" : "active");
-    }
-    else if (waves.failed.some((f) => f.item === item)) skip("import-failed");
-    else skip("aborted");
+    skip(outcome);
   }
   return res;
 }

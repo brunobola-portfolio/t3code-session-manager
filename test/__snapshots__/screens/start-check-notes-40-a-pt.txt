@@ -1,0 +1,35 @@
+2/11 - Verificação
+Uma verificação rápida deste computador
+e do T3 Code. Só lê.
+A verificar...
+v Pronto, 2 a ter em conta
+  3 de 5 verificações sem problemas
+  v Node
+  v T3 Code a correr
+  ! Pastas de cópia
+  ! Sessões continuadas
+  o Sessões do Pi
+  o Sessões do Codex
+
+A ter em conta (nada disto impede a
+importação):
+! Pastas de cópia
+  2 pastas de cópia de segurança dentro
+  de projects/ (~/.claude: 2); podem
+  aparecer como sessões duplicadas
+  O passo 6 propõe pô-las de lado.
+! Sessões continuadas
+  1 sessão tem trabalho num ramo lateral
+  que o T3 Code não mostra: continua-a
+  num terminal com claude --resume.
+  3 conversas foram continuadas num
+  terminal (verificado há 2 h).
+  O T3 Code ainda não mostra esse
+  trabalho. Este comando lista-as e
+  trá-las:
+  > t3sm merge
+Continuar para as
+contas? [S/n/?/v/q] q
+
+Parado. Nada ficou a meio; corre t3sm
+outra vez para continuar.

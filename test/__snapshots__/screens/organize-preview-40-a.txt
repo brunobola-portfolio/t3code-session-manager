@@ -1,0 +1,24 @@
+- Archive 2 automated conversations
+  (Agent SDK)
+- New titles for 4 conversations
+  (technical first message)
+- Show 5 conversations inside 1 project
+  (from the last 90 days; T3 Code's own
+  auto-settle setting does not change)
+- Settle 30 conversations in 1 project
+  (no activity in the last 90 days; they
+  stay in their project, on its Settled
+  shelf)
+Every change above can be undone:
+  t3sm organize --undo
+
+History: the last 90 days, at least 10
+  per project
+
+Project: Shown now -> after
+demo
+  42 -> 12, Settled 30, Retitled 4
+app
+  3 -> 6, Archived 2
+a-very-long-project-name-for-the-table
+  2 -> 2

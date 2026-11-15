@@ -1,0 +1,11 @@
+╭─ ! Atenção ──────────────────────────╮
+│ Conversações já continuadas num      │
+│ terminal: decida o destino.          │
+╰──────────────────────────────────────╯
+Última execução  15/11 às 10:20
+Sessões  Descrição           Ação
+─────────────────────────────────
+Sessões  Início da migração  ação
+· Útil saber
+  Não encontrámos nenhuma instância do
+  Pi.

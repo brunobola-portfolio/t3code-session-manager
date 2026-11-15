@@ -455,8 +455,8 @@ test("an older cache file (version 1 or 2: before the shared scanner, before ses
     await collect(ad.discover(c.env));
     const file = join(c.env.stateDir, "cache", "claude-discovery.json");
     const cache = JSON.parse(await readFile(file, "utf8"));
-    assert.equal(cache.version, 3);
-    cache.version = 2;
+    assert.equal(cache.version, 5);
+    cache.version = 3;
     await writeFile(file, JSON.stringify(cache));
     opened.length = 0;
     await collect(ad.discover(c.env));
@@ -489,4 +489,106 @@ test("B11: nativeId follows T3's rule: the last non-hidden record's sessionId (t
     assert.equal(byFile(uid(120)).nativeId, uid(120));
     assert.ok(!byFile(uid(120)).flags.includes("id-mismatch"));
   } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+async function originOf(entries: object[]): Promise<{ scan: Awaited<ReturnType<typeof scanTranscript>>; origin: DiscoveredSession["origin"] }> {
+  const c = await setup();
+  try {
+    const id = uid(90);
+    const f = join(c.a, "projects", "C--work-demo", `${id}.jsonl`);
+    await writeFile(f, entries.map((e) => JSON.stringify(e)).join("\n") + "\n");
+    await utimes(f, OLD, OLD);
+    const scan = await scanTranscript(f);
+    const origin = find(await collect(createClaudeAdapter().discover(c.env)), id).origin;
+    return { scan, origin };
+  } finally { await rm(c.dir, { recursive: true, force: true }); }
+}
+const userRec = (extra: object): object => ({ type: "user", message: { role: "user", content: "hi" }, cwd: "C:/work/demo", timestamp: "2026-01-01T00:00:00Z", ...extra });
+
+test("entrypoint sdk-py marks the session automated", async () => {
+  const { scan, origin } = await originOf([userRec({ entrypoint: "sdk-py" })]);
+  assert.equal(scan.entrypoint, "sdk-py");
+  assert.equal(origin, "automated");
+});
+
+test("cli, claude-vscode, claude-desktop and missing entrypoint are human", async () => {
+  for (const ep of ["cli", "claude-vscode", "claude-desktop", "t3-code", undefined]) {
+    const { scan, origin } = await originOf([userRec(ep === undefined ? {} : { entrypoint: ep })]);
+    assert.equal(scan.entrypoint, ep ?? null);
+    assert.equal(origin, "human", String(ep));
+  }
+});
+
+test("entrypoint is read from the first record that has one even after metadata records", async () => {
+  const { scan, origin } = await originOf([
+    { type: "summary", summary: "x" }, { type: "custom-title", customTitle: "t" },
+    userRec({ entrypoint: "sdk-ts" }), userRec({ entrypoint: "cli" }),
+  ]);
+  assert.equal(scan.entrypoint, "sdk-ts");
+  assert.equal(origin, "automated");
+});
+
+async function sessionOf(entries: object[]): Promise<{ scan: Awaited<ReturnType<typeof scanTranscript>>; session: DiscoveredSession }> {
+  const c = await setup();
+  try {
+    const id = uid(91);
+    const f = join(c.a, "projects", "C--work-demo", `${id}.jsonl`);
+    await writeFile(f, entries.map((e) => JSON.stringify(e)).join("\n") + (entries.length ? "\n" : ""));
+    await utimes(f, OLD, OLD);
+    const scan = await scanTranscript(f);
+    return { scan, session: find(await collect(createClaudeAdapter().discover(c.env)), id) };
+  } finally { await rm(c.dir, { recursive: true, force: true }); }
+}
+
+test("first entrypoint t3-code marks the session started in T3", async () => {
+  const { scan, session } = await sessionOf([userRec({ entrypoint: "t3-code" })]);
+  assert.equal(scan.t3Native, true);
+  assert.equal(session.startedIn, "t3");
+});
+
+test("t3-code only on later records stays elsewhere (an imported session continued in T3)", async () => {
+  const { scan, session } = await sessionOf([userRec({ entrypoint: "cli" }), userRec({ entrypoint: "t3-code" })]);
+  assert.equal(scan.t3Native, false);
+  assert.equal(session.startedIn, "elsewhere");
+});
+
+test("empty transcript has no entrypoint", async () => {
+  const { scan, session } = await sessionOf([]);
+  assert.equal(scan.entrypoint, null);
+  assert.equal(scan.t3Native, false);
+  assert.equal(session.startedIn, undefined);
+  assert.equal(session.t3ThreadId, undefined);
+});
+
+test('handoff "Thread: <uuid>" is read; absent gives undefined', async () => {
+  const tid = "0a1b2c3d-1111-4222-8333-444455556666";
+  const withIt = await sessionOf([userRec({ entrypoint: "t3-code", message: { role: "user", content: [{ type: "text", text: `Continue.
+Thread: ${tid}
+bye` }] } })]);
+  assert.equal(withIt.scan.handoffThreadId, tid);
+  assert.equal(withIt.session.t3ThreadId, tid);
+  const sys = await sessionOf([{ type: "system", content: `Thread: ${tid}`, timestamp: "2026-01-01T00:00:00Z" }, userRec({})]);
+  assert.equal(sys.session.t3ThreadId, tid);
+  const assistant = await sessionOf([userRec({}), { type: "assistant", message: { role: "assistant", content: `Thread: ${tid}` } }]);
+  assert.equal(assistant.session.t3ThreadId, undefined, "assistant text is not a handoff");
+  const none = await sessionOf([userRec({ entrypoint: "t3-code" })]);
+  assert.equal(none.scan.handoffThreadId, null);
+  assert.equal(none.session.t3ThreadId, undefined);
+  const late = await sessionOf([...Array.from({ length: 200 }, () => userRec({})), userRec({ message: { role: "user", content: `Thread: ${tid}` } })]);
+  assert.equal(late.session.t3ThreadId, undefined, "only the first 200 records are looked at");
+});
+
+test("cache v4 entries are rescanned", async () => {
+  const c = await setup();
+  try {
+    const opened: string[] = [];
+    const ad = createClaudeAdapter({ onScan: (p) => opened.push(p) });
+    await collect(ad.discover(c.env));
+    const cache = JSON.parse(await readFile(CACHE(c), "utf8"));
+    cache.version = 4;
+    await writeFile(CACHE(c), JSON.stringify(cache));
+    opened.length = 0;
+    await collect(ad.discover(c.env));
+    assert.equal(opened.length, 14);
+  } finally { await rm(c.dir, { recursive: true, force: true }); }
 });

@@ -1,0 +1,19 @@
+20261114-093125-c3d4
+  Started  Nov 14, 10:00
+  Command  apply
+  Status   ok
+  Changes  imported 412, files 6,
+           instances 1, projects 12
+
+20261115-090000-a1b2
+  Started  Nov 15, 09:00
+  Command  organize
+  Status   partial, rolled back by
+           20261115-110000-e5f6
+  Changes  organized 41
+
+20261115-110000-e5f6
+  Started  Nov 15, 11:00
+  Command  rollback 20261115-090000-a1b2
+  Status   ok
+  Changes  reverted 40

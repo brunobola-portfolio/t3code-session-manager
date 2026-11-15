@@ -1,4 +1,5 @@
 import { homedir } from "node:os";
+import { resolveLang } from "../../assistant/i18n.ts";
 import { mkdir } from "node:fs/promises";
 import { stat } from "node:fs/promises";
 import { join } from "node:path";
@@ -15,7 +16,10 @@ import { connectT3, instancesFromConfig, type T3Api, type T3Project } from "../.
 import { allAdapters } from "../../sources/registry.ts";
 import type { SourceAdapter } from "../../sources/types.ts";
 import { RUN_IN_PROGRESS_NOTE, discoverAll, makeEnv, runInProgress } from "./scan.ts";
+import { FLAG_SPECS } from "../flags.ts";
 import type { Io } from "../main.ts";
+import { cliUi, unknownOption } from "../ui.ts";
+import { shownAccountName } from "../../plan/names.ts";
 
 export interface PlanDeps {
   adapters?: SourceAdapter[];
@@ -23,6 +27,8 @@ export interface PlanDeps {
   now?: () => number;
   connect?: (home: string, opts: { allowUntested: boolean; manageProviders: boolean; onNotice: (l: string) => void }) => Promise<T3Api>;
   existsDir?: (p: string) => Promise<boolean>;
+  /** Language of the General folder and its project title (default: the Io's language, see cli/ui.ts langOf). */
+  lang?: "en" | "pt";
 }
 
 export async function isDir(p: string): Promise<boolean> {
@@ -37,6 +43,8 @@ export interface FreshPlanOptions {
   runId?: string;
   adapters?: SourceAdapter[];
   existsDir?: (p: string) => Promise<boolean>;
+  /** Language of the General folder and its project title (default: resolveLang from `env` and config.json "language"). */
+  lang?: "en" | "pt";
   /** No config.json: "save" writes the detected default (plan), "memory" uses it without writing (sync). */
   missingConfig: "save" | "memory";
   onNotice?: (line: string) => void;
@@ -83,7 +91,7 @@ export async function freshPlan(api: T3Api, o: FreshPlanOptions): Promise<FreshP
   const plan: Plan = await buildPlan({
     sessions, config, journal, now: o.now(), runId, home: o.home,
     t3: { version: api.version, projects, threads, instances, providers },
-    existsDir: o.existsDir ?? isDir,
+    existsDir: o.existsDir ?? isDir, lang: o.lang ?? resolveLang(null, o.env, config.language),
   });
   // Implicit default instance (no settings entry) + a config account for ~/.claude: apply pins it there.
   const defHome = defaultClaudeHome(o.home);
@@ -91,16 +99,16 @@ export async function freshPlan(api: T3Api, o: FreshPlanOptions): Promise<FreshP
   plan.pinDefault = implicit && accountHomes.some((h) => sameCwd(h, defHome))
     ? { instanceId: DEFAULT_ID, homePath: normalizeCwd(defHome) } : null;
   const names: Record<string, string> = {};
-  for (const a of config.accounts) names[a.id] = a.displayName;
-  for (const i of instances) names[i.id] ??= i.displayName;
+  for (const a of config.accounts) names[a.id] = shownAccountName(a.displayName);
+  for (const i of instances) names[i.id] ??= shownAccountName(i.displayName);
   return { plan, config, projects, names };
 }
 
 export async function planCommand(args: string[], io: Io, deps: PlanDeps = {}): Promise<number> {
-  const known = new Set(["--json", "--allow-untested"]);
+  const known = new Set<string>(FLAG_SPECS.plan.bool);
   const bad = args.find((a) => !known.has(a));
   if (bad !== undefined) {
-    io.stderr(`Unknown option: ${bad}. Run \`t3sm plan --help\`.\n`);
+    unknownOption(io, bad, "plan");
     return 2;
   }
   const json = args.includes("--json");
@@ -110,12 +118,16 @@ export async function planCommand(args: string[], io: Io, deps: PlanDeps = {}): 
   const connect = deps.connect ?? connectT3;
   if (await runInProgress(dir)) io.stderr(`${RUN_IN_PROGRESS_NOTE}\n`);
   const { plan, names, planPath } = await writeFreshPlan(io, { ...deps, home, now, connect }, args.includes("--allow-untested"));
-  if (json) io.stdout(JSON.stringify(plan, null, 2) + "\n");
+  if (json) io.stdout(JSON.stringify(planForJson(plan), null, 2) + "\n");
   else {
-    const color = io.isTTY && !io.env["NO_COLOR"];
-    io.stdout(renderTerminalSummary(plan, { color, planPath, names }));
+    io.stdout(renderTerminalSummary(plan, { planPath, names, ui: cliUi(io, { now }) }));
   }
   return 0;
+}
+
+/** The plan as `--json` prints it: a copy whose account display names are masked (shownAccountName); plan.json keeps them. */
+export function planForJson(plan: Plan): Plan {
+  return { ...plan, instancesToCreate: plan.instancesToCreate.map((i) => ({ ...i, displayName: shownAccountName(i.displayName, 200) })) };
 }
 
 /**
@@ -131,7 +143,7 @@ export async function writeFreshPlan(io: Io, deps: PlanDeps, allowUntested: bool
   const api = await connect(home, { allowUntested, manageProviders: false, onNotice: (l) => io.stderr(`${l}\n`) });
   try {
     const fresh = await freshPlan(api, {
-      home, env: io.env, now, adapters: deps.adapters, existsDir: deps.existsDir, missingConfig: "save", onNotice: (l) => io.stderr(`${l}\n`),
+      home, env: io.env, now, adapters: deps.adapters, existsDir: deps.existsDir, lang: deps.lang ?? io.lang, missingConfig: "save", onNotice: (l) => io.stderr(`${l}\n`),
     });
     const runDir = join(dir, "runs", fresh.plan.runId);
     await mkdir(runDir, { recursive: true });

@@ -1,0 +1,47 @@
+claudeAgent
+  Instância        claudeAgent
+  Nome             Claude Personal
+  Pasta            ~/.claude
+  Encontrada por   a pasta por omissão
+  Sessão de        p***@example.com
+  Sessão           iniciada
+  Disponibilidade  utilizável
+
+claude-work
+  Instância        claude-work
+  Nome             Claude Work
+  Pasta            ~/.claude-work
+  Encontrada por   config.json
+  Sessão de        -
+  Sessão           terminada
+  Disponibilidade  utilizável
+
+claude-old
+  Instância        (nenhuma)
+  Nome             Claude Old
+  Pasta            ~/.claude-old
+  Encontrada por   config.json
+  Sessão de        -
+  Sessão           -
+  Disponibilidade  -
+
+! A instância claude-work tem a sessão
+  terminada
+  Inicia a sessão no T3 Code (ou corre
+  claude com o CLAUDE_CONFIG_DIR a
+  apontar para a pasta dela).
+
+! A conta claude-old (~/.claude-old) não
+  tem instância no T3
+  As sessões dela não podem ser
+  importadas enquanto a instância não
+  existir; isto cria-a:
+  › t3sm accounts --apply
+
+! Encontrei ~/.claude-extra (uma pasta
+  ~/.claude-*), mas não está no
+  config.json
+  Acrescenta-a ao config.json, ou
+  reescreve o ficheiro com todas as
+  contas encontradas:
+  › t3sm accounts --init --force

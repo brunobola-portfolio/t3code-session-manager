@@ -1,0 +1,22 @@
+* @ o o o o o o o o o  Step 2 of 11 - Check
+A quick check of this computer and T3 Code. It only reads.
+Checking...
+v Ready, 2 worth knowing - 3 of 5 checks passed
+  v Node                 v T3 Code running      ! Backup folders
+  ! Continued sessions   o Pi sessions          o Codex sessions
+
+Worth knowing (none of this stops the import):
+! Backup folders
+  2 backup folders inside projects/ (~/.claude: 2); they can show up as
+  duplicate sessions
+  Step 6 offers to move them aside.
+! Continued sessions
+  1 session has work on a side branch that T3 Code cannot show: continue it in a
+  terminal with claude --resume.
+  3 conversations were continued in a terminal (checked 2 h ago).
+  T3 Code does not show that work yet. This command lists them and brings them
+  in:
+  > t3sm merge
+Continue to the accounts? [Y/n/?/b/q] q
+
+Stopped. Nothing is left half done; run t3sm again to continue.

@@ -1,0 +1,15 @@
+   Check            Result
+───────────────────────────────────────────
+✓  Node             Node 24.11.1
+✗  T3 Code running  see below
+○  T3 Code session  needs a running T3 Code
+
+✗ T3 Code running
+  T3 Code is not answering at http://127.0.0.1:3773 and every check that needs
+  it was skipped for that reason
+  What to do: Open T3 Code from the Start menu, wait until its window shows your
+  projects, then run t3sm doctor again
+
+╭─ ✗ 1 problem to fix ────────────────────────────────╮
+│ Fix the items marked ✗, then run t3sm doctor again. │
+╰─────────────────────────────────────────────────────╯

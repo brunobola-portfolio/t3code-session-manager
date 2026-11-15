@@ -7,7 +7,7 @@ import { T3AuthError, T3HttpError, T3Incompatible, T3NotRunning, ShapeError, pin
 import { isT3Running, parseLocalOrigin, readServerRuntime, resolveT3Cli } from "./runtime.ts";
 import { DEFAULT_SCOPES, issueSessionToken, mintWsTicket, revokeSession, type Runner } from "./auth.ts";
 import { RpcClient, buildWsUrl, webSocketTransport, type Transport } from "./rpc.ts";
-import { compatGate } from "./compat.ts";
+import { SETTLE_BACKDATE, compatGate } from "./compat.ts";
 import {
   decodeArchivedShell, decodeConfig, decodeDispatch, decodeEnvironment, decodeImport, decodeProject, decodeProjects, decodeScan,
   decodeServerSettings, decodeShell,
@@ -55,6 +55,22 @@ export interface T3Api {
   updateInstanceAppearance(instanceId: string, a: { displayName?: string; accentColor?: string }): Promise<{ previous: unknown; changed: boolean }>;
   archiveThread(threadId: string): Promise<void>;
   unarchiveThread(threadId: string): Promise<void>;
+  /** thread.settle (no reason; S6). `settledAt` (an ISO date) is sent only when SETTLE_BACKDATE says T3 Code honours it. */
+  settleThread(threadId: string, settledAt?: string): Promise<void>;
+  /** thread.unsettle; `reason: "user"` is required by T3 (S6). */
+  unsettleThread(threadId: string): Promise<void>;
+  /** thread.metadata.update { title }. */
+  setThreadTitle(threadId: string, title: string): Promise<void>;
+  /** POST /api/projects/mutate project.update { pinned } (nothing else is sent). */
+  setProjectPinned(projectId: string, pinned: boolean): Promise<void>;
+  /** POST /api/projects/mutate project.update { title } (nothing else is sent; T3 marks the title custom). */
+  setProjectTitle(projectId: string, title: string): Promise<void>;
+  /** POST /api/projects/mutate project.delete (never `force`: T3 refuses a project that still has threads, ProjectNotEmptyError). */
+  deleteProject(projectId: string): Promise<void>;
+  /** Server setting read from server.getConfig; ShapeError when T3 does not report it. null = auto-settle off. */
+  getServerSetting(key: "sidebarAutoSettleAfterDays"): Promise<number | null>;
+  /** server.updateSettings { patch: { sidebarAutoSettleAfterDays } }: integer 1..90 or null (off). Sends nothing when unchanged. */
+  setAutoSettleAfterDays(days: number | null): Promise<{ previous: number | null }>;
   scanSessions(): Promise<T3ScanResult>;
   importSessions(projectId: string, root: string): Promise<{ importedCount: number; skippedCount: number }>;
   /** Closes the socket and revokes the bearer session once. Idempotent; never rejects (a revoke failure is a notice). */
@@ -74,10 +90,16 @@ export interface T3ApiDeps {
   onClose?: () => Promise<void>;
   /** One-line notices (e.g. a failed revoke). Default: one line on stderr. */
   onNotice?: (line: string) => void;
+  /** Whether thread.settle may carry `settledAt` (default SETTLE_BACKDATE from compat.ts); tests set it. */
+  backdate?: boolean;
 }
 
 const isObj = (u: unknown): u is Record<string, unknown> => typeof u === "object" && u !== null && !Array.isArray(u);
 const str = (u: unknown): string | null => (typeof u === "string" ? u : null);
+
+function checkThreadId(id: string): void {
+  if (typeof id !== "string" || id === "") throw new Error("threadId must be a non-empty string");
+}
 
 function checkInstanceId(id: string): void {
   if (typeof id !== "string" || id.length === 0 || id.length > 64 || !INSTANCE_ID_RE.test(id)) {
@@ -213,10 +235,25 @@ export function createT3Api(deps: T3ApiDeps): T3Api {
     }
   }
 
-  const dispatch = async (type: "thread.archive" | "thread.unarchive", threadId: string): Promise<void> => {
-    if (typeof threadId !== "string" || threadId === "") throw new Error("threadId must be a non-empty string");
-    await rpc.call("orchestration.dispatchCommand", { type, commandId: newId(), threadId }, decodeDispatch);
+  const dispatch = async (type: "thread.archive" | "thread.unarchive" | "thread.settle", threadId: string, extra: Record<string, unknown> = {}): Promise<void> => {
+    checkThreadId(threadId);
+    await rpc.call("orchestration.dispatchCommand", { type, commandId: newId(), threadId, ...extra }, decodeDispatch);
   };
+  const backdate = deps.backdate ?? SETTLE_BACKDATE;
+
+  const mutateProject = async (type: "project.update" | "project.delete", projectId: string, extra: Record<string, unknown> = {}): Promise<void> => {
+    if (typeof projectId !== "string" || projectId === "") throw new Error("projectId must be a non-empty string");
+    await http("POST", "/api/projects/mutate", (u) => decodeProject(u), { body: { type, commandId: newId(), projectId, ...extra } });
+  };
+
+  async function autoSettleDays(): Promise<number | null> {
+    const settings = (await getConfig()).settings;
+    // A value outside 1..90 (a newer T3 Code): organize neither offers nor makes a change to it.
+    if (settings.sidebarAutoSettleUnknown === true) throw new Error("T3 Code reports an auto-settle value t3sm does not know; t3sm leaves that setting alone");
+    const days = settings.sidebarAutoSettleAfterDays;
+    if (days === undefined) throw new ShapeError("server.getConfig", "$.settings.sidebarAutoSettleAfterDays", "integer 1..90 or null");
+    return days;
+  }
 
   let closing: Promise<void> | null = null;
 
@@ -328,6 +365,42 @@ export function createT3Api(deps: T3ApiDeps): T3Api {
     archiveThread: (threadId) => dispatch("thread.archive", threadId),
     unarchiveThread: (threadId) => dispatch("thread.unarchive", threadId),
 
+    settleThread: (threadId, settledAt) => dispatch("thread.settle", threadId, backdate && settledAt !== undefined ? { settledAt } : {}),
+    async unsettleThread(threadId) {
+      checkThreadId(threadId);
+      await rpc.call("orchestration.dispatchCommand", { type: "thread.unsettle", commandId: newId(), threadId, reason: "user" }, decodeDispatch);
+    },
+    async setThreadTitle(threadId, title) {
+      checkThreadId(threadId);
+      if (typeof title !== "string" || title.trim() === "") throw new Error("title must be a non-empty string");
+      await rpc.call("orchestration.dispatchCommand", { type: "thread.metadata.update", commandId: newId(), threadId, title }, decodeDispatch);
+    },
+
+    setProjectPinned(projectId, pinned) {
+      if (typeof pinned !== "boolean") throw new Error("pinned must be a boolean");
+      return mutateProject("project.update", projectId, { pinned });
+    },
+    async setProjectTitle(projectId, title) {
+      if (typeof title !== "string" || title.trim() === "") throw new Error("title must be a non-empty string");
+      await mutateProject("project.update", projectId, { title });
+    },
+    deleteProject: (projectId) => mutateProject("project.delete", projectId),
+
+    getServerSetting: (key) => {
+      if (key !== "sidebarAutoSettleAfterDays") throw new Error(`unsupported server setting ${JSON.stringify(key)}`);
+      return autoSettleDays();
+    },
+    async setAutoSettleAfterDays(days) {
+      if (days !== null && (typeof days !== "number" || !Number.isInteger(days) || days < 1 || days > 90)) {
+        throw new Error(`auto-settle days must be an integer from 1 to 90, or null to turn it off; got ${String(days)}`);
+      }
+      const previous = await autoSettleDays();
+      if (previous === days) return { previous };
+      const settings = await rpc.call("server.updateSettings", { patch: { sidebarAutoSettleAfterDays: days } }, decodeServerSettings);
+      if (settings.sidebarAutoSettleAfterDays !== days) throw new ShapeError("server.updateSettings", "$.sidebarAutoSettleAfterDays", `the requested value ${days === null ? "null" : days}`);
+      return { previous };
+    },
+
     scanSessions: () => rpc.call("agentSessions.scan", {}, decodeScan, AGENT_SESSIONS_TIMEOUT_MS),
     importSessions: (projectId, root) =>
       rpc.call("agentSessions.import", { projectId, expectedWorkspaceRoot: root }, decodeImport, AGENT_SESSIONS_TIMEOUT_MS),
@@ -346,6 +419,7 @@ export function createT3Api(deps: T3ApiDeps): T3Api {
 }
 
 export interface ConnectOptions {
+  /** Silences the untested-version warning (the version never blocks). */
   allowUntested: boolean;
   /** Adds providers:manage to the token (only for instance create/upsert). */
   manageProviders?: boolean;
@@ -360,7 +434,8 @@ export interface ConnectOptions {
 
 /**
  * Connects to the running T3 Code: liveness (T3NotRunning, exit 3) -> environment read + compatibility gate
- * (T3Incompatible / ShapeError, exit 4; done before any token exists, so a refused version leaves no session behind)
+ * (T3Incompatible for a wrong orchestration protocol, ShapeError for a changed shape, exit 4; done before any token exists,
+ * so a refused server leaves no session behind; an untested version only warns)
  * -> least-privilege token -> ws ticket -> socket. If anything after the token fails, the session is revoked
  * (best effort) and the original error is rethrown.
  */

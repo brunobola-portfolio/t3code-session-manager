@@ -31,7 +31,7 @@ trabalho, não a partir de um terminal que defina `CLAUDE_CONFIG_DIR`.
 **1. Instala uma vez.** A mesma linha no Windows, no macOS e no Linux:
 
 ```bash
-npm install -g --install-links github:brunobola-portfolio/t3code-session-manager#v0.2.1
+npm install -g --install-links github:brunobola-portfolio/t3code-session-manager#v0.3.0
 ```
 
 **2. Corre:**
@@ -40,17 +40,28 @@ npm install -g --install-links github:brunobola-portfolio/t3code-session-manager
 t3sm start --lang pt
 ```
 
-O assistente guiado faz o resto: verificação, plano, um projeto piloto, a importação completa e a sincronização em
-segundo plano. Explica cada passo e pergunta antes de qualquer escrita. Podes parar em qualquer pergunta e voltar a
-correr `t3sm` para continuar. Aceita guardar o português e, daí em diante, basta `t3sm`.
+O assistente guiado faz o resto: verificação, plano, as perguntas a que só tu podes responder, um projeto piloto, a
+importação completa, a arrumação do histórico e a sincronização em segundo plano. Explica cada passo e pergunta antes
+de qualquer escrita. Podes parar em qualquer pergunta e voltar a correr `t3sm` para continuar. Num sistema em português
+o t3sm já fala português sem o `--lang pt`; aceita guardar a língua e, daí em diante, basta `t3sm`.
 
-**3. Atualiza** mais tarde com `t3sm update`. As definições e o histórico de execuções mantêm-se.
+<picture>
+  <source media="(max-width: 600px) and (prefers-color-scheme: dark)" srcset="docs/assets/screen-start-narrow-dark.svg">
+  <source media="(max-width: 600px)" srcset="docs/assets/screen-start-narrow-light.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screen-start-dark.svg">
+  <img alt="O t3sm start, passo 5 de 11 (Decisões), com dados sintéticos e em inglês: uma barra com os 11 passos e depois a primeira de 3 perguntas num painel: 5 conversas começaram na pasta pessoal, que o T3 Code não aceita; o t3sm pode copiar cada uma para o projeto em que mais trabalhou. Mostra o valor por omissão e onde mudá-lo depois; a resposta é y." src="docs/assets/screen-start-light.svg" width="75%">
+</picture>
+
+**3. As atualizações chegam sozinhas.** Com a sincronização em segundo plano instalada, o t3sm instala uma vez por dia
+as versões de correção e as versões menores mais recentes e reinicia-se ([Atualizações
+automáticas](#atualizações-automáticas)); o `t3sm update` fá-lo à mão. As definições e o histórico de execuções
+mantêm-se.
 
 <details>
 <summary><b>Preferes correr cada passo tu mesmo?</b></summary>
 
 ```bash
-t3sm doctor                        # verifica: avisos não fazem mal; uma linha "fail" diz como a resolver
+t3sm doctor                        # verifica: avisos (!) não fazem mal; uma falha (✗) diz como a resolver
 t3sm plan                          # escreve o plan.md e mostra o caminho: lê-o
 t3sm apply --dry-run               # o que o apply faria (não escreve nada)
 t3sm apply --only "C:/work/demo"   # piloto num projeto
@@ -65,7 +76,7 @@ tabela **Project accounts**: diz que subscrição cada projeto vai usar. Passo a
 
 </details>
 
-Sem instalar nada? `npx -y github:brunobola-portfolio/t3code-session-manager#v0.2.1 <comando>` corre qualquer
+Sem instalar nada? `npx -y github:brunobola-portfolio/t3code-session-manager#v0.3.0 <comando>` corre qualquer
 comando (a sincronização em segundo plano precisa do comando instalado). Para seres rigoroso com o que corres, fixa um
 commit em vez da tag (`#<sha do commit>`). Outras origens: [docs/migrate/](docs/migrate/claude-code.pt.md). No Claude
 Code também podes pedir em linguagem natural, com a skill incluída
@@ -99,13 +110,22 @@ Code também podes pedir em linguagem natural, com a skill incluída
 
 ## Confirmar que funcionou
 
-- O `apply` termina com uma linha como `Imported 412, failed 0, converted 6. Run 20261111-093125-c3d4.` e código de
-  saída 0. Esse id de execução é o que o `t3sm runs` lista e o `t3sm rollback` recebe.
+<picture>
+  <source media="(max-width: 600px) and (prefers-color-scheme: dark)" srcset="docs/assets/screen-import-narrow-dark.svg">
+  <source media="(max-width: 600px)" srcset="docs/assets/screen-import-narrow-light.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screen-import-dark.svg">
+  <img alt="O t3sm apply com dados sintéticos, em inglês: uma barra de progresso redesenhada no mesmo sítio (260 de 412, o ritmo e o tempo que falta) e depois o painel do resultado: 410 importadas, 2 que não puderam ser importadas, 6 convertidas, a execução e o comando que a desfaz; a seguir as duas conversas que falharam, cada uma com o projeto, o título e o porquê em palavras, e os tópicos do t3sm help que as explicam." src="docs/assets/screen-import-light.svg" width="75%">
+</picture>
+
+- O `apply` importa atrás de uma barra de progresso e termina com um painel: o que foi importado, o que espera, o id
+  da execução e o comando que a desfaz, e código de saída 0. Esse id de execução é o que o `t3sm runs` lista e o
+  `t3sm rollback` recebe. As conversas que não puderam ser importadas aparecem por projeto e título, com o motivo em
+  palavras (código 5); o `t3sm help <tópico>` explica cada motivo.
 - No T3 Code, cada projeto do plano está na barra lateral, com as sessões antigas como threads. Abrir uma thread
   mostra o histórico. Enviar uma mensagem continua a sessão original, como um turno real na conta dessa thread (gasta
   da tua subscrição).
 - As threads novas de um projeto abrem com a conta da tabela **Project accounts**.
-- Um novo `t3sm plan` mostra essas sessões em `already-in-t3`, e o `t3sm doctor` não tem nenhum `fail`. O `t3sm runs`
+- Um novo `t3sm plan` mostra essas sessões em `already-in-t3`, e o `t3sm doctor` não tem nenhuma falha (✗). O `t3sm runs`
   lista o que foi feito:
 
 ```text
@@ -127,7 +147,7 @@ pertence cada projeto.
 
 O t3sm encontra todas as sessões da máquina, decide a que conta pertence cada uma, cria o que falta no T3 Code e põe o
 T3 Code a importar tudo, seja qual for a idade, em lotes revistos. Depois, mantém o T3 Code a par do trabalho que fazes
-no terminal.
+no terminal, e pode arrumar o aspeto do histórico importado lá dentro.
 
 ## Como funciona
 
@@ -210,7 +230,24 @@ t3sm schedule status           # o que está instalado, último ciclo
 O `sync` foi feito para correr sem ninguém a ver, por isso é cauteloso: nunca cria instâncias nem move ficheiros,
 espera pelos projetos com uma sessão em uso e não importa nada quando há mais de
 [`sync.maxUnattendedImports`](docs/configuration.md#sync) (200) sessões pendentes, por isso a primeira importação
-grande é sempre um `apply` revisto.
+grande é sempre um `apply` revisto. Nunca faz perguntas: as sessões de um tipo sobre o qual ainda não decidiste
+esperam, e o `t3sm status` di-lo. O que faz sozinho, cada mudança registada no journal da execução do ciclo (o
+`t3sm rollback --run <id>` desfá-la):
+
+- arruma as conversas que acabou de importar (arquiva as automáticas, dá-lhes títulos legíveis);
+- aplica a [regra do histórico](#a-regra-do-histórico) logo a seguir a uma importação e uma vez por dia, no máximo 200
+  mudanças por ciclo, sem nunca mexer numa conversa que mudaste à mão;
+- traz o que acrescentares ao original de uma [conversa copiada](#conversas-de-pastas-que-o-t3-code-recusa) fora do
+  T3 Code;
+- como vigilante, reinicia-se numa versão mais recente do t3sm depois do ciclo seguinte e procura
+  [atualizações](#atualizações-automáticas) uma vez por dia.
+
+**O vigilante em segundo plano.** O `t3sm schedule install --watch` arranca-o no início de sessão e, no Windows e no
+Linux, confirma a cada 15 minutos que continua a correr (um que já esteja a correr fica como está; no macOS é o
+launchd que o mantém vivo). O `t3sm schedule restart` para-o e volta a arrancá-lo; o `install` e o `remove` também o
+param primeiro. O t3sm para um vigilante pedindo-lho pelo seu próprio canal autenticado e, só se isso falhar, pelo id
+do processo, depois de confirmar que esse processo é um vigilante do t3sm arrancado à hora que o seu heartbeat indica.
+Nunca pelo nome.
 
 **Trabalho continuado no terminal.** Se retomares uma sessão importada com `claude --resume`, o T3 Code não vê os
 turnos novos: continua a partir da última mensagem que conhece. O `sync` e o `doctor` avisam dessas sessões, e o
@@ -218,6 +255,152 @@ turnos novos: continua a partir da última mensagem que conhece. O `sync` e o `d
 completo, importa-o como thread nova e arquiva a thread antiga. O ficheiro original nunca é editado, e o
 `t3sm rollback` desfaz tudo. As sessões compactadas não são integradas, e o trabalho do terminal num ramo lateral (não
 o que o `claude --resume` continua) é listado com uma indicação, nunca integrado.
+
+## Atualizações automáticas
+
+Uma vez por dia o vigilante em segundo plano procura a versão mais recente da origem de onde o t3sm foi instalado: as
+etiquetas `vX.Y.Z` do GitHub, ou as etiquetas `vX.Y.Z` no `main` de um clone neste computador
+(`t3sm update --from <pasta>`). Uma versão de **correção ou menor** mais recente (incluindo as menores 0.x) é instalada
+sozinha, num processo separado e escondido, e o vigilante reinicia-se nela. Uma versão **maior** só é anunciada
+(`t3sm status`, uma notificação): o `t3sm update` instala-a depois de dizeres que sim.
+
+- **Verificação e reposição.** Depois de uma instalação, o vigilante novo tem de escrever um heartbeat saudável em 2
+  minutos. Se não escrever, o t3sm reinstala a versão anterior e reinicia-a: o t3sm recuperou sozinho, por isso o
+  `t3sm status` mostra-o em "Bom saber", não como algo que precisa de ti. A procura automática passa a saltar essa
+  versão; o `t3sm update` ainda a pode instalar de propósito.
+- **Nunca volta atrás.** Só se instala uma versão estritamente mais recente do que a instalada.
+- **No journal.** Cada atualização é uma entrada no journal (de, para, resultado). O `t3sm status` mostra uma
+  atualização recente ("Updated to 0.3.1 yesterday", ou em português) e o `t3sm changelog` o que há de novo.
+- **Desligar.** `t3sm update --auto off` (e `on`). Um clone git ou o `npx` nunca são atualizados sozinhos.
+
+**A única ligação à rede.** Fora o T3 Code na tua própria máquina (só loopback), o t3sm contacta uma coisa: a procura
+de versões (`git ls-remote` no repositório do GitHub, ou `npm view` quando o git não consegue), uma vez por dia pelo
+vigilante e quando corres `t3sm update` ou `t3sm update --check`. Instalar uma versão corre o npm (e o git), que a
+descarregam. A única outra vez em que algo vai à rede é a instalação opcional do plugin `/t3sm` no `t3sm start`,
+depois do teu sim (comandos `claude plugin`). Nada sobre as tuas sessões é alguma vez enviado.
+
+```bash
+t3sm update --check            # instalada, mais recente, correção/menor/maior, origem, atualizações automáticas
+t3sm update                    # o que há de novo, e depois pergunta
+t3sm changelog                 # as notas da versão instalada
+```
+
+## Organizar o histórico
+
+<picture>
+  <source media="(max-width: 600px) and (prefers-color-scheme: dark)" srcset="docs/assets/organize-narrow-dark.svg">
+  <source media="(max-width: 600px)" srcset="docs/assets/organize-narrow-light.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/organize-dark.svg">
+  <img alt="Duas barras laterais do T3 Code com dados sintéticos. Hoje: os projetos billing-api, mobile-app e docs-site não mostram threads, e 3267 conversas importadas estão em Settled. Depois do t3sm organize: os três projetos ficam fixados, com os títulos das conversas por baixo de cada um, as execuções automáticas ficam arquivadas (Arquivadas · 2 614, fora de vista) e o Settled guarda só as 41 conversas que o próprio T3 Code lá pôs. Legenda: Optional. Defaults shown; you choose each part (opcional; os valores por omissão estão à vista; escolhes cada parte)." src="docs/assets/organize-light.svg" width="100%">
+</picture>
+
+Importar não é o fim da história. O T3 Code só mostra dentro de um projeto as threads que não estão em Settled,
+e as conversas importadas chegam em Settled, por isso ficam numa lista comprida, o **Settled**, e os teus
+projetos parecem vazios. Num histórico real, cerca de 80% das sessões eram execuções de scripts (Agent SDK) e não
+conversas. E o T3 Code não consegue importar conversas começadas na tua pasta pessoal nem em algumas outras pastas
+(Downloads, `Documents/Codex`, a pasta temporária). As pastas temporárias e do sistema são ignoradas por omissão, não copiadas.
+
+O `t3sm organize` arruma isto, depois de te mostrar o que faria. O t3sm é uma ferramenta pequena: usa só os comandos
+que o T3 Code oferece para isto, e cada parte é opcional.
+
+| Parte | O que faz | Por omissão |
+| :-- | :-- | :-: |
+| Sessões automáticas | Arquiva as começadas por scripts (Agent SDK), e as de um projeto que o t3sm criou numa pasta temporária ou do sistema | ligado |
+| Títulos | Troca um título que é uma primeira mensagem técnica (`<command-name>`, `<ide_…>`) por um legível, com no máximo 80 carateres | ligado |
+| Histórico nos projetos | A [regra do histórico](#a-regra-do-histórico): os últimos 90 dias à vista dentro de cada projeto, pelo menos 10 por projeto, o resto em Settled. A passagem automática para Settled do T3 Code **não** muda, a não ser que peças | 90 dias, pelo menos 10 |
+| Fixar | Fixa os 5 projetos com atividade mais recente, e deixa de fixar os que o t3sm fixou e já não estão entre eles | ligado |
+| Projetos vazios | Apaga os projetos vazios que o t3sm criou | ligado |
+
+```bash
+t3sm organize --dry-run        # o que mudaria; não escreve nada
+t3sm organize                  # a mesma lista, e depois pergunta
+t3sm organize --undo           # repõe o que mudou (pergunta primeiro)
+```
+
+Cada tipo de mudança traz quantas são, porquê e como desfazer. Num terminal, o `d` na pergunta abre as mudanças como
+uma lista onde podes desmarcar uma a uma. Opções: `--only "<pasta>"` (um projeto; sem fixar nem apagar), `--plain` (só
+texto, sem ecrã interativo), `--no-pin <ids>`, `--no-delete`, `--no-archive-folders` (não arquiva as conversas dos
+projetos que o t3sm criou em pastas temporárias ou de sistema), `--history <dias|all|off>` e `--min <n>` (a regra do
+histórico só para esta execução) e `--auto-settle <1..90|off>`, se também quiseres que a opção do próprio T3 Code para
+as conversas que lá começares fique nesse número de dias, ou desligada (fica registado, e o `--undo` desfaz). Os valores por omissão e
+as chaves do `config.json` estão em [docs/configuration.md](docs/configuration.md#organize) (em inglês). O assistente
+guiado (`t3sm start`) faz as mesmas perguntas, uma de cada vez, com os teus números reais.
+
+### A regra do histórico
+
+O T3 Code só mostra dentro de um projeto as conversas que não estão em Settled; as que estão continuam ligadas ao
+projeto, na prateleira **Settled** no fundo da barra lateral. A regra, por projeto:
+
+- cada conversa com atividade nos últimos **90 dias** fica à vista;
+- se isso deixar menos de **10** à vista, as mais recentes em Settled voltam a aparecer até serem 10 (conta tudo o que
+  está à vista, incluindo as conversas que começaste no T3 Code e as fixadas);
+- tudo o resto passa para Settled, das mais antigas para as mais recentes, para a prateleira manter a ordem do teu histórico.
+
+Só as conversas importadas são mexidas (as threads `import:`, trazidas pelo t3sm ou pela importação do próprio T3
+Code; as que começaste no T3 Code só a opção do T3 Code as move), e uma que passaste para Settled, mostraste, fixaste ou
+arquivaste à mão nunca mais é tocada. A data de atividade é a do próprio T3 Code: a mensagem ou execução mais recente, senão quando a conversa
+foi criada. O `organize.history` no `config.json` guarda os números (`{ "days": 1-3650 ou "all", "minPerProject":
+0-1000 }`), o `t3sm organize --history <dias|all|off> --min <n>` usa outros numa execução, e o `t3sm sync` aplica a
+regra uma vez por dia. Para as conversas que começas no T3 Code, o T3 Code tem a sua própria opção (passar para Settled ao fim de
+1 a 90 dias sem uso): o assistente guiado oferece-se para a pôr nos mesmos dias, e o
+`t3sm organize --auto-settle <1..90|off>` muda-a (fica no journal, e o `--undo` desfaz). O `t3sm help history`
+explica-a em português.
+
+**O que nunca toca:** conversas que começaste no T3 Code, projetos que criaste (a não ser para os fixar, e para deixar de fixar o que o t3sm fixou), as definições
+do T3 Code (exceto `--auto-settle`, se pedires) e tudo o que mudaste à mão depois: uma conversa que
+desarquivaste, renomeaste ou reabriste, um projeto que deixaste de fixar. Essa escolha fica tua para sempre. O
+`t3sm rollback --run <id>` também desfaz uma execução do organize, exatamente como o `--undo`. Como desfazer muda o T3
+Code, o `--undo --yes` exige o id da execução (`t3sm organize --undo <run> --yes`), como o `rollback`.
+
+### Conversas de pastas que o T3 Code recusa
+
+Por omissão, o t3sm copia-as, inteiras e sem alterações, para o projeto em que trabalharam. Lê os caminhos que a
+conversa tocou: "63 de 80 caminhos estão em `~/code/billing-api`" chega (pelo menos 60% dos caminhos e pelo menos 5
+ocorrências). Sem um projeto claro, vão para um projeto chamado **Geral** (`~/T3 Geral`; `~/T3 General` no assistente em
+inglês), cuja pasta o `t3sm apply` cria quando falta (nunca o `sync`; o `rollback` volta a removê-la enquanto estiver
+vazia). Uma pasta que o T3 Code recusa, ou uma pasta temporária ou de sistema, nunca é usada. O original nunca é
+modificado, e o `rollback` remove a cópia. Se continuares a conversar no original **fora do T3 Code depois da
+importação** (no VS Code, a partir da pasta pessoal), o `t3sm sync` faz a cópia seguir o original: quando o original e a
+cópia estiverem parados há 10 minutos, escreve uma cópia nova com as mensagens novas, importa-a como thread nova com o
+título e o estado da thread antiga, e só depois arquiva a thread antiga. Uma cópia que também continuaste no T3 Code
+nunca é substituída: o `t3sm status` nomeia as duas, e és tu que escolhes. As pastas temporárias e do sistema, e as
+sessões automáticas, são ignoradas por omissão. As regras podem mudar por pasta (`organize.overrides`), mas um override
+nunca importa uma sessão automática (Agent SDK): essas são decididas por `organize.sessions.automated`.
+
+**Conversas começadas no T3 Code** são reconhecidas e nunca voltam a ser importadas. Se apagaste a thread de uma delas
+no T3 Code, o T3 Code recusa-se a importá-la outra vez: depois de uma pergunta (por omissão sim) o t3sm trá-la de volta
+como cópia fiel com um id de sessão novo (`organize.sessions.orphaned`). Uma cuja thread o t3sm não consegue
+identificar fica de fora e nunca é copiada, para uma conversa viva nunca ser duplicada.
+
+### Saber o que precisa de ti
+
+```bash
+t3sm status                    # "All good", "Needs you (N)" com o comando de cada item, ou "Working"
+```
+
+<picture>
+  <source media="(max-width: 600px) and (prefers-color-scheme: dark)" srcset="docs/assets/screen-status-narrow-dark.svg">
+  <source media="(max-width: 600px)" srcset="docs/assets/screen-status-narrow-light.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screen-status-dark.svg">
+  <img alt="O t3sm status com dados sintéticos, em inglês: 'Needs you (2)' (precisa de ti) e depois cada item com o comando que o resolve: 3 conversas esperam pela tua decisão (t3sm start) e o vigilante em segundo plano não está a correr (t3sm schedule restart); bom saber: um projeto espera porque uma conversa está em uso, e o t3sm 0.3.1 está disponível (t3sm update); depois o último e o próximo sync, o vigilante, a versão, o último organize, o plugin por conta e o T3 Code." src="docs/assets/screen-status-light.svg" width="75%">
+</picture>
+
+O `t3sm status` só lê: não liga ao T3 Code e não escreve nada. Primeiro o que precisa de ti, cada item com o seu
+comando: o vigilante que não corre, corre um t3sm antigo ou falha; uma atualização que falhou ou foi interrompida;
+conversas à espera da tua decisão; conversas que continuam a falhar na importação; cópias continuadas em dois sítios;
+mudanças do organize que não puderam ser feitas. Depois, em "Bom saber": os projetos **retidos** porque uma conversa
+neles está em uso (são importados quando ela estiver parada há 10 minutos), uma atualização recente, uma atualização
+desfeita (a versão anterior voltou a correr) ou uma versão nova, e o último e o próximo sync. Em português num sistema em português. O `--json` imprime o mesmo (em inglês) para scripts, e o código de saída é 10 quando algo precisa de ti (senão 0). Quando um `sync` agendado precisa de ti, pode mostrar uma notificação do
+sistema (`notify` no `config.json`: `attention` por omissão, `all` ou `off`) só com nomes de projetos e contagens.
+
+**Dentro do T3 Code.** O plugin `t3sm` junta `/t3sm:status`, `/t3sm:sync`, `/t3sm:organize` e `/t3sm:import` ao menu "/"
+do T3 Code. Cada um mostra primeiro uma pré-visualização e só escreve depois de dizeres que sim. O `t3sm start` oferece
+instalá-lo, por conta do Claude, depois de um `y`; ou corre tu `claude plugin install t3sm@t3code-session-manager` para
+essa conta. A conversa que corre `/t3sm:sync` ou `/t3sm:import` conta como "em uso", por isso o seu projeto espera pelo
+ciclo seguinte; o `/t3sm:organize` não espera por ela e pode dar-lhe um título novo ou mostrá-la dentro do projeto.
+
+O t3sm não recusa uma versão do T3 Code que não testou: avisa uma vez e segue. Cada mudança fica no journal e pode ser
+desfeita.
 
 ## Outros comandos
 
@@ -228,12 +411,20 @@ o que o `claude --resume` continua) é listado com uma indicação, nunca integr
 | `t3sm rollback --run <id>` | Desfaz uma execução; `--dry-run` lista o que desfaria. O `--yes` exige `--run` |
 | `t3sm doctor --repair` | Repõe as datas dos ficheiros que uma execução interrompida deixou mudadas; é a única escrita do `doctor` |
 | `t3sm accounts` | Contas encontradas e as respetivas instâncias no T3 Code |
-| `t3sm projects` | Cada pasta de projeto com a sua conta e porquê; `projects set "<pasta>" <conta>` muda-a (uma rota, e a conta por omissão do projeto no T3 Code, reversível); `projects unset` remove a rota |
-| `t3sm start` | O assistente guiado (também `t3sm` sozinho num terminal); só ele está traduzido (`--lang pt`), os outros comandos escrevem em inglês |
-| `t3sm update` | Instala a versão mais recente sobre uma instalação npm (pergunta primeiro; `--dry-run` mostra o comando npm). Num clone git ou com npx só dá instruções |
+| `t3sm projects` | Cada pasta de projeto com a sua conta e porquê; `projects set "<pasta>" <conta>` muda-a (uma rota, e a conta por omissão do projeto no T3 Code, reversível); `projects unset` remove a rota; `projects rename --suggest` propõe nomes limpos para os projetos que o t3sm criou (antes -> depois, pergunta primeiro, desfeito pelo `organize --undo`) |
+| `t3sm organize` | Arruma o histórico importado no T3 Code ([acima](#organizar-o-histórico)); `--dry-run`, `--undo`, `--only`, `--plain` |
+| `t3sm status` | Diz se o t3sm precisa de ti, e o que correr. Só lê; sai com 10 quando precisa de ti; `--json` |
+| `t3sm start` | O assistente guiado (também `t3sm` sozinho num terminal) |
+| `t3sm schedule` | `install [--watch]`, `remove`, `restart` (para e volta a arrancar o vigilante em segurança), `status`; os que escrevem perguntam, ou aceitam `--yes`, e têm `--dry-run` |
+| `t3sm update` | Instala a versão mais recente, mostra o que há de novo e pergunta primeiro; `--check` só consulta, `--dry-run` mostra o que seria instalado, `--from <pasta>` instala a partir de um clone (fica lembrado), `--source github` volta ao GitHub, `--auto on` / `--auto off` liga ou desliga a atualização automática diária. Num clone git ou com npx só dá instruções |
+| `t3sm changelog` | O que há de novo na versão instalada (`--since <versão>` para várias versões). Só lê |
+| `t3sm help [<tópico>]` | O que uma mensagem quer dizer, porque acontece e o que fazer (`not-imported`, `held`, `decisions`, `history`, `updates`, `watcher`, ...). Só lê |
 
-Todos os comandos têm `--help`. O significado de cada razão para ignorar uma sessão está escrito ao lado dela no `plan.md` e em
-[docs/troubleshooting.md](docs/troubleshooting.md) (em inglês).
+Todos os comandos têm `--help` e aceitam `--lang en|pt` e `--no-color`. Sem `--lang`, o t3sm segue o `T3SM_LANG`,
+depois o `"language"` do `config.json`, depois a língua do sistema, senão inglês. O `--json`, o `plan.md`, o journal e
+o `logs/sync.log` ficam sempre em inglês. O significado de cada razão para ignorar uma sessão está escrito ao lado dela
+no `plan.md`; cada ecrã que mostra um problema indica o tópico do `t3sm help` que o explica
+([docs/troubleshooting.md](docs/troubleshooting.md), em inglês, é o índice).
 
 ## Segurança
 
@@ -242,7 +433,7 @@ das tuas transcrições, regista cada mudança antes de a fazer e consegue desfa
 fixada por testes que podes ler e correr (`npm test`):
 
 - **Rever antes de escrever.** O `plan` só escreve o seu relatório (e, na primeira vez, o `config.json` e uma cache de
-  descoberta) na pasta do t3sm. O `apply`, o `dedupe`, o `quarantine`, o `merge` e o `rollback` perguntam primeiro, e
+  descoberta) na pasta do t3sm. O `apply`, o `dedupe`, o `quarantine`, o `merge`, o `organize` e o `rollback` perguntam primeiro, e
   recusam com o código 2 fora de um terminal sem `--yes`. O `apply --dry-run` faz todas as verificações e lista o que
   faria, sem escrever nada.
   [test/apply/apply.test.ts](test/apply/apply.test.ts),
@@ -272,6 +463,19 @@ fixada por testes que podes ler e correr (`npm test`):
   devolve as pastas da quarentena com as datas originais, repõe as contas por omissão dos projetos, nunca deixa uma
   sessão sem uma thread ativa, e corrê-lo duas vezes não muda nada.
   [test/ops/rollback.test.ts](test/ops/rollback.test.ts)
+- **O organize mexe pouco, e só no que consegue desfazer.** Muda apenas conversas importadas e projetos que o t3sm
+  criou (fixar e deixar de fixar à parte: fixa projetos recentes de qualquer origem e só deixa de fixar os que fixou), pelos comandos que o T3 Code oferece para isso, e nunca na sua base de dados. Cada mudança fica
+  no journal, com o que substituiu. O que mudaste no T3 Code depois é ignorado para sempre, e o `--undo` repõe só o que o
+  T3 Code ainda mostra como o t3sm o deixou. Uma conversa nativa do T3 Code nunca é tocada.
+  [test/organize/apply.test.ts](test/organize/apply.test.ts),
+  [test/organize/plan.test.ts](test/organize/plan.test.ts),
+  [test/organize/sessions.test.ts](test/organize/sessions.test.ts)
+- **Nunca mata processos pelo nome.** O vigilante é parado pelo seu próprio canal autenticado e, só se for preciso,
+  pelo id do processo, depois de a linha de comando e a hora de arranque provarem que é um vigilante do t3sm.
+  [test/ops/watcherControl.test.ts](test/ops/watcherControl.test.ts)
+- **Atualizações de confiança.** Nunca volta a uma versão anterior, verifica a saúde depois de cada instalação, repõe a
+  versão anterior quando a nova não arranca, e cada atualização fica no journal.
+  [test/ops/updater.test.ts](test/ops/updater.test.ts)
 - **Uma execução de cada vez.** Um lock impede que um sync agendado se cruze com um apply manual. Um lock deixado por
   uma execução que morreu, ou por uma de antes do último reinício, é retomado.
   [test/core/lock.test.ts](test/core/lock.test.ts), [test/cli/sync.test.ts](test/cli/sync.test.ts)
@@ -288,9 +492,9 @@ O que o t3sm lê e escreve, e onde: [SECURITY.md](SECURITY.md) (em inglês).
 | **Pi** | 🟡 verificado com fixtures | importador do T3 Code | Mais a descoberta em ficheiros reais; só é importado quando o T3 Code tem uma instância Pi (ativa o Pi nas definições do T3 Code, nos fornecedores; vê a [documentação do T3 Code](https://github.com/pingdotgg/t3code/tree/main/docs/user)); não corrido ao vivo |
 | Gemini CLI, Cursor, Copilot CLI, Cline, Crush, goose, Amp, Grok Build, Qwen Code, Kilo, Antigravity | ⏳ planeado | conversão | [Ajuda a acrescentar um](docs/adding-a-harness.md) |
 
-Testado ao vivo: T3 Code `0.1.9-nightly.20261110` e `.20261111` no Windows 11; a `0.1.8` é suportada a partir da
-leitura do código-fonte; as versões estáveis ainda não foram testadas. Outras builds de uma versão menor suportada
-correm com um aviso; qualquer outra precisa de `--allow-untested`. O macOS e o Linux estão cobertos apenas pelos
+Testado ao vivo: T3 Code `0.1.9-nightly.20261110`, `.20261111` e `0.1.10-nightly.20261113` no Windows 11; a `0.1.8` é suportada a partir da
+leitura do código-fonte; as versões estáveis ainda não foram testadas. Qualquer outra build
+corre com um aviso (`--allow-untested` esconde-o); uma resposta com formato alterado pára com o código 4. O macOS e o Linux estão cobertos apenas pelos
 testes unitários da CI. Versões, formatos de armazenamento e ressalvas por agente:
 [docs/harnesses.md](docs/harnesses.md) (em inglês).
 
@@ -311,11 +515,12 @@ Vêm do próprio T3 Code; o t3sm indica-os em vez de os contornar.
 | Código | Significado |
 | :-: | :-- |
 | 0 | Feito, nada a fazer, ou respondeste não. Também quando outra execução do t3sm tem o lock: um `sync` agendado que encontra um `apply` manual a correr deve ficar calado, não dar alarme |
-| 1 | Erro inesperado, ou uma verificação do `doctor` falhou |
+| 1 | Erro inesperado, uma verificação do `doctor` falhou, uma atualização falhou ou foi desfeita, ou o `schedule install --watch`, o `restart` ou o `remove` não conseguiu parar o vigilante em execução |
 | 2 | Erro de utilização ou do `config.json`; um comando que escreve fora de um terminal sem `--yes`; um plano recusado por estar desatualizado (mais de 24 h ou feito para outra versão do T3 Code); a instância por omissão do T3 Code a ler outra pasta de conta (`instance-home-drift`) |
 | 3 | O T3 Code não está a correr, ou deixou de responder durante a execução |
-| 4 | Versão do T3 Code não testada (usa `--allow-untested`), ou uma resposta inesperada dele |
+| 4 | O T3 Code fala outro protocolo, ou deu uma resposta inesperada |
 | 5 | Terminou, mas algumas sessões não foram importadas (listadas; a execução seguinte volta a tentar) |
+| 10 | Só no `t3sm status`: algo precisa de ti (não é um erro) |
 | 130 | Interrompido com Ctrl+C (datas dos ficheiros repostas) |
 
 ## Perguntas frequentes
@@ -338,6 +543,25 @@ duas contas demorou 24 segundos (uma ilustração, não um benchmark). O `apply`
 projetos e 50 sessões por projeto; ainda não foi cronometrada nenhuma execução completa (os primeiros números vão para
 o CHANGELOG depois do piloto). Começa por `t3sm apply --only <pasta do projeto>`.
 
+**Porque estão as minhas conversas antigas em Settled?** O T3 Code põe as conversas importadas em Settled e só mostra
+dentro de um projeto as que não estão lá. Não se perderam: abre o **Settled**, ou corre `t3sm organize` para aplicar a
+[regra do histórico](#a-regra-do-histórico) (os últimos 90 dias, pelo menos 10 por projeto, à vista dentro do projeto)
+e para arquivar as automáticas que enchem a lista. Com a sincronização em segundo plano a correr, a regra mantém-se
+sozinha.
+
+**Para onde foram as conversas da minha pasta pessoal?** O T3 Code não as consegue importar, por isso o t3sm copia cada
+uma para o projeto em que trabalhou, ou para o **Geral**. O `plan.md` lista-as. O trabalho que continuares no original,
+fora do T3 Code, é trazido pelo `t3sm sync`.
+
+**O t3sm vai à internet?** Só para procurar a sua própria versão mais recente, uma vez por dia e quando corres
+`t3sm update` ([detalhes](#atualizações-automáticas)); instalar uma versão descarrega-a com o npm, e a instalação
+opcional do plugin `/t3sm` no `t3sm start` passa pelo `claude plugin`, depois do teu sim. Nada sobre as tuas sessões
+sai da tua máquina. O `t3sm update --auto off` desliga a procura diária.
+
+**O t3sm muda as definições do T3 Code?** Por omissão, não. O `organize` deixa o auto-settle como está, a não ser que
+passes `--auto-settle <1..90|off>` (fica no journal, e o `--undo` desfaz). Fixar é a única coisa que faz a projetos que criaste
+tu (só deixa de fixar o que fixou), e um projeto que deixes de fixar fica por fixar.
+
 **Posso usar o T3 Code ou o VS Code enquanto o `apply` corre?** Sim. Um projeto com uma sessão escrita nos últimos 10
 minutos fica retido e é importado numa execução seguinte, por isso o teu trabalho nunca é tocado. Não abras a mesma
 sessão em dois sítios ao mesmo tempo. Mantém a máquina acordada: um lote interrompido por uma suspensão para e é
@@ -355,7 +579,7 @@ ao T3 Code, à Ping ou à Anthropic, nem aprovação destes.
 ## Desinstalar
 
 ```bash
-t3sm schedule remove        # se instalaste a sincronização em segundo plano
+t3sm schedule remove        # se instalaste a sincronização em segundo plano (também para o vigilante)
 t3sm rollback --run <id>    # opcional: desfaz execuções que já não queres (vê t3sm runs)
 ```
 
@@ -367,7 +591,8 @@ delas, as pastas de quarentena `~/.claude*/session-manager-quarantine/`. As thre
 
 Issues e pull requests são bem-vindos; começa pelo [CONTRIBUTING.md](CONTRIBUTING.md). Acrescentar um agente é uma
 tarefa autónoma: [docs/adding-a-harness.md](docs/adding-a-harness.md). Problemas de segurança:
-[SECURITY.md](SECURITY.md).
+[SECURITY.md](SECURITY.md). Para confirmares uma versão ao vivo na tua máquina, passo a passo:
+[docs/testing-0.3.pt.md](docs/testing-0.3.pt.md).
 O que vem a seguir, e onde a ajuda é bem-vinda: [ROADMAP.md](ROADMAP.md) (em inglês).
 
 ## Licença

@@ -1,0 +1,15 @@
+> Reverteria 2 alterações da execução de
+  organize 20261115-090000-a1b2.
+
+Vai reverter (2)
+  - Desarquivar 'Fix the login form'
+    (demo)
+  - Repor o título de 'Plan the API'
+    (demo) em
+    '<command-name>/clear</command-name>
+    '
+
+Ficam como estão, porque mudaram no T3
+  Code depois de o t3sm as fazer (1)
+  - projeto 'demo': mudou no T3 Code
+    depois da alteração do t3sm

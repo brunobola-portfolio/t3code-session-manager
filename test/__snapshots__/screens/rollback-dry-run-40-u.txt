@@ -1,0 +1,20 @@
+╭─ Run 20261115-093125-c3d4 ───────────╮
+│ (quarantine)                         │
+│ What a rollback would undo, and what │
+│ it would keep:                       │
+╰──────────────────────────────────────╯
+
+Move back from quarantine (2)
+  • ~/.claude/projects/C--work-demo.bak-
+    20260630-111703
+  • ~/.claude/projects/C--work-app.bak
+
+Remove converted files (1)
+  • ~/.claude/projects/C--work-demo/0001
+    .jsonl
+
+Threads this run imported; t3sm never
+  deletes them (1)
+  • import:claudeAgent:0001
+  Review them in T3 Code, or pass
+  --archive-threads to archive them.

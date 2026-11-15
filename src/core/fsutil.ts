@@ -9,6 +9,11 @@ import { pidAlive } from "./pid.ts";
 export const RENAME_RETRIES = 24;
 const RETRYABLE = new Set(["EPERM", "EBUSY", "EACCES"]);
 
+/** A rename Windows refused because another process has a file open (antivirus, indexer, a reader): worth retrying. */
+export function renameRefused(e: unknown): boolean {
+  return RETRYABLE.has((e as NodeJS.ErrnoException | null)?.code ?? "");
+}
+
 /** Delay before rename retry `attempt` (0-based): doubles from 10 ms, capped at 250 ms. */
 export function renameRetryDelay(attempt: number): number {
   return Math.min(10 * 2 ** attempt, 250);
@@ -44,29 +49,45 @@ export async function atomicWrite(path: string, data: string, deps: AtomicWriteD
     } finally {
       await fh.close();
     }
-    for (let attempt = 0; ; attempt++) {
-      try {
-        await doRename(tmp, path);
-        return;
-      } catch (e) {
-        const code = (e as NodeJS.ErrnoException).code ?? "";
-        if (!RETRYABLE.has(code) || attempt >= RENAME_RETRIES) throw e;
-        await wait(renameRetryDelay(attempt));
-      }
-    }
+    await renameRetrying(tmp, path, { rename: doRename, sleep: wait });
   } catch (e) {
     await rm(tmp, { force: true }).catch(() => {});
     throw e;
   }
 }
 
+/**
+ * `rename(from, to)` over an existing `to`, retried like atomicWrite's (RENAME_RETRIES, renameRetryDelay) while Windows
+ * refuses it because another process has `to` open (EPERM / EBUSY / EACCES: an antivirus scan, the indexer). Any other
+ * error, or the last refusal, is thrown; the caller removes `from`.
+ */
+export async function renameRetrying(from: string, to: string, deps: AtomicWriteDeps = {}): Promise<void> {
+  const doRename = deps.rename ?? rename;
+  const wait = deps.sleep ?? sleep;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await doRename(from, to);
+      return;
+    } catch (e) {
+      if (!renameRefused(e) || attempt >= RENAME_RETRIES) throw e;
+      await wait(renameRetryDelay(attempt));
+    }
+  }
+}
+
+/**
+ * sha256 of a file's bytes. Resolves once the file is closed, not at the end of the data: Windows refuses to rename over
+ * or delete a file that is still open, and callers replace the file they just hashed (materialize's refresh).
+ */
 export function sha256File(path: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const h = createHash("sha256");
     const s = createReadStream(path);
+    let digest: string | null = null;
     s.on("error", reject);
     s.on("data", (c) => h.update(c));
-    s.on("end", () => resolve(h.digest("hex")));
+    s.on("end", () => { digest = h.digest("hex"); });
+    s.on("close", () => { if (digest !== null) resolve(digest); });
   });
 }
 

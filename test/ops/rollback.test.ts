@@ -3,12 +3,15 @@ import assert from "node:assert/strict";
 import { existsSync, link as linkCb, mkdirSync, readFileSync, renameSync, rmdirSync, statSync, writeFileSync } from "node:fs";
 import { promisify } from "node:util";
 import { join } from "node:path";
-import { dedupe, nodeMoveFs, quarantine } from "../../src/ops/quarantine.ts";
+import { JournalWriteError, dedupe, nodeMoveFs, quarantine } from "../../src/ops/quarantine.ts";
 import { latestRunId, rollbackRun } from "../../src/ops/rollback.ts";
 import { sha256File } from "../../src/core/fsutil.ts";
 import type { JournalEntry } from "../../src/core/types.ts";
 import type { ProviderInstanceInfo, T3Api, T3Project, T3Thread } from "../../src/t3/api.ts";
 import { T3NotRunning } from "../../src/t3/errors.ts";
+import { applyOrganize, undoOrganize } from "../../src/organize/apply.ts";
+import type { OrganizeAction, OrganizeKind } from "../../src/organize/types.ts";
+import { fakeT3, type FakeT3 } from "../apply/fake-t3.ts";
 import { entries, lines, put, snapshot, tempRoot, times } from "./helpers.ts";
 
 interface FakeApi { api: T3Api; calls: string[]; projects: T3Project[]; threads: T3Thread[]; instances: ProviderInstanceInfo[] }
@@ -54,7 +57,7 @@ function fakeApi(over: { projects?: T3Project[]; threads?: T3Thread[]; instances
 }
 
 const project = (id: string, instanceId: string | null): T3Project =>
-  ({ id, title: id, workspaceRoot: `C:/work/${id}`, defaultModelSelection: instanceId === null ? null : { instanceId, model: "m" }, archived: false, deleted: false }) as T3Project;
+  ({ id, title: id, workspaceRoot: `C:/work/${id}`, defaultModelSelection: instanceId === null ? null : { instanceId, model: "m" }, archived: false, deleted: false, pinned: false, createdAt: null }) as T3Project;
 const thread = (id: string, archived = false): T3Thread => ({ id, projectId: "p1", instanceId: "claudeAgent", archived, title: "t" }) as T3Thread;
 const inst = (id: string, displayName: string, accentColor: string | null): ProviderInstanceInfo =>
   ({ instanceId: id, driver: "claudeAgent", homePath: "/h", displayName, accentColor, email: null, authStatus: "authenticated", enabled: true, availability: "available" });
@@ -736,7 +739,126 @@ test("B15: runs counts only writes that happened (file-write-aborted cancels one
   assert.equal(runs[0]!.counts.merged, 1);
 });
 
+test("listRuns: update entries (t3sm update) are not rollback runs, no empty rows", async () => {
+  const { listRuns } = await import("../../src/ops/rollback.ts");
+  const source = { kind: "github" as const, repo: "demo-owner/demo-app" };
+  const runs = listRuns([
+    { t: "run-start", runId: "a1", at: "2026-11-15T10:00:00.000Z", command: "apply" },
+    { t: "update", runId: "u1", from: "0.3.0", to: "0.3.1", source, outcome: "pending" },
+    { t: "update", runId: "u1", from: "0.3.0", to: "0.3.1", source, outcome: "installed" },
+    { t: "run-end", runId: "a1", at: "2026-11-15T10:01:00.000Z", status: "ok" },
+  ]);
+  assert.deepEqual(runs.map((r) => r.runId), ["a1"]);
+});
+
 test("B15: needsReview tells what to do", async () => {
-  const src = readFileSync(new URL("../../src/cli/commands/rollback.ts", import.meta.url), "utf8");
+  const src = readFileSync(new URL("../../src/i18n/messages.en.ts", import.meta.url), "utf8");
   assert.match(src, /Left active for review in T3 Code \(archiving would leave the session without an active thread\)/);
+});
+
+// ---------- organize runs (Task 12): `t3sm rollback <organize run>` = `t3sm organize --undo <run>` ----------
+
+const ORG_VERSION = "0.1.10-nightly.20261113.4630";
+
+/** Two identical T3 worlds: one thread to archive, one to retitle, one project to pin, the auto-settle setting. */
+async function organizedWorld(): Promise<{ f: FakeT3; t: ReturnType<typeof tempRoot> }> {
+  const f = fakeT3({ version: ORG_VERSION });
+  f.projects.push(project("p1", null), project("p3", null));
+  f.threads.set("import:claudeAgent:a1", { ...thread("import:claudeAgent:a1"), settledOverride: "settled", updatedAt: 0 });
+  f.threads.set("import:claudeAgent:b1", { ...thread("import:claudeAgent:b1"), title: "<ide_opened_file>x", settledOverride: "settled", updatedAt: 0 });
+  f.autoSettleDays = 7;
+  const t = tempRoot();
+  const a = (kind: OrganizeKind, target: string, previous: unknown, next: unknown): OrganizeAction => ({ kind, target, projectId: "p1", previous, next, reason: "test" });
+  const actions = [
+    a("archive", "import:claudeAgent:a1", false, true),
+    a("title", "import:claudeAgent:b1", "<ide_opened_file>x", "Tidy the README"),
+    a("unsettle", "import:claudeAgent:b1", "settled", "active"),
+    a("pin", "p3", false, true),
+    a("auto-settle", "sidebarAutoSettleAfterDays", 7, null),
+  ];
+  const counts = Object.fromEntries(["archive", "title", "unsettle", "pin", "unpin", "project-delete", "project-title", "auto-settle"].map((k) => [k, 0])) as Record<OrganizeKind, number>;
+  await applyOrganize({ runId: "org1", actions, counts, byProject: [] }, { api: f.api, journal: t.journal, runId: "org1", now: () => Date.parse("2026-11-14T10:00:00.000Z") });
+  return { f, t };
+}
+
+const t3State = (f: FakeT3): unknown => ({
+  threads: [...f.threads.values()].map((x) => [x.id, x.archived, x.title, x.settledOverride ?? null]),
+  projects: f.projects.map((p) => [p.id, p.pinned, p.deleted]),
+  autoSettle: f.autoSettleDays,
+});
+
+test("rollback <organize run> equals organize --undo: same T3 state, same journal entries", async () => {
+  const one = await organizedWorld();
+  const two = await organizedWorld();
+  assert.deepEqual(t3State(one.f), t3State(two.f));
+  const now = () => Date.parse("2026-11-14T11:00:00.000Z");
+  const u = await undoOrganize("org1", { api: one.f.api, journal: one.t.journal, now });
+  const r = await rollbackRun("org1", { journal: two.t.journal, accountHomes: [two.t.home], connect: async () => two.f.api, now });
+  assert.equal(u.reverted, 5);
+  assert.deepEqual(r.organize.map((x) => x.status), ["reverted", "reverted", "reverted", "reverted", "reverted"]);
+  assert.deepEqual(t3State(one.f), t3State(two.f));
+  assert.equal(two.f.threads.get("import:claudeAgent:b1")!.title, "<ide_opened_file>x");
+  assert.equal(two.f.autoSettleDays, 7);
+  assert.deepEqual(one.f.calls.filter((c) => c !== "close"), two.f.calls.filter((c) => c !== "close"));
+  const strip = (es: JournalEntry[]) => es.map((e) => ({ ...e, runId: e.runId === "org1" ? "org1" : "undo" }));
+  assert.deepEqual(strip(await one.t.journal.readAll()), strip(await two.t.journal.readAll()));
+  assert.ok(r.runId !== null && u.runId !== null);
+});
+
+test("rollback dry run of an organize run lists what it would revert and writes nothing", async () => {
+  const { f, t } = await organizedWorld();
+  const n = f.calls.length;
+  const lines = (await t.journal.readAll()).length;
+  const r = await rollbackRun("org1", { journal: t.journal, accountHomes: [t.home], connect: async () => f.api, dryRun: true });
+  assert.equal(r.runId, null);
+  assert.deepEqual(r.organize.map((x) => `${x.kind}:${x.status}`), ["auto-settle:reverted", "pin:reverted", "unsettle:reverted", "title:reverted", "archive:reverted"]);
+  assert.deepEqual(f.calls.slice(n).filter((c) => c !== "close"), []);
+  assert.equal((await t.journal.readAll()).length, lines);
+});
+
+test("rollback of an organize run on an unverified T3 version warns once and proceeds", async () => {
+  const { f, t } = await organizedWorld();
+  (f.api as { version: string }).version = "0.2.0";
+  const notices: string[] = [];
+  const r = await rollbackRun("org1", { journal: t.journal, accountHomes: [t.home], connect: async () => f.api, onNotice: (l) => notices.push(l) });
+  assert.equal(notices.length, 1);
+  assert.match(notices[0]!, /has not been tested with t3sm [(]/);
+  assert.equal(r.organize.filter((x) => x.status === "reverted").length, 5);
+});
+
+test("rollback of an organize run with T3 Code not running reports the organize part as not done", async () => {
+  const { t } = await organizedWorld();
+  const r = await rollbackRun("org1", { journal: t.journal, accountHomes: [t.home], connect: async () => { throw new T3NotRunning(); } });
+  assert.equal(r.t3Unavailable, "T3 Code not running");
+  assert.equal(r.runId, null);
+  assert.ok(r.errors.some((e) => /organize changes not undone/.test(e)));
+});
+
+test("rollback of an organize run: a journal failure inside the organize step propagates (JournalWriteError) naming the reverts made so far", async () => {
+  const { f, t } = await organizedWorld();
+  const orig = t.journal.append.bind(t.journal);
+  let undone = 0;
+  t.journal.append = async (e) => {
+    if (e.t === "organize-undone" && ++undone === 2) throw new Error("disk full");
+    return orig(e);
+  };
+  await assert.rejects(rollbackRun("org1", { journal: t.journal, accountHomes: [t.home], connect: async () => f.api }),
+    (e: unknown) => e instanceof JournalWriteError && /disk full/.test(e.message) && /undo of pin p3/.test(e.message) && /reverted before it: auto-settle sidebarAutoSettleAfterDays/.test(e.message));
+  assert.equal(f.autoSettleDays, 7);
+  assert.ok(!(await t.journal.readAll()).some((e) => e.t === "rolled-back"), "no rolled-back after a failed journal write");
+  t.journal.append = orig;
+  const r = await rollbackRun("org1", { journal: t.journal, accountHomes: [t.home], connect: async () => f.api });
+  assert.deepEqual(r.organize.map((x) => `${x.kind}:${x.status}`), ["auto-settle:already", "pin:already", "unsettle:reverted", "title:reverted", "archive:reverted"]);
+});
+
+test("rollback of an organize run: T3 unreadable at the start is reported, nothing is changed or journaled", async () => {
+  const { f, t } = await organizedWorld();
+  f.api.listThreads = async () => { throw new Error("shell unavailable"); };
+  const lines = (await t.journal.readAll()).length;
+  const n = f.calls.length;
+  const r = await rollbackRun("org1", { journal: t.journal, accountHomes: [t.home], connect: async () => f.api });
+  assert.ok(r.errors.some((e) => /organize changes not undone: could not read T3 Code \(shell unavailable\)/.test(e)), r.errors.join("; "));
+  assert.equal(r.runId, null);
+  assert.deepEqual(f.calls.slice(n).filter((c) => c !== "close"), []);
+  assert.equal((await t.journal.readAll()).length, lines);
 });

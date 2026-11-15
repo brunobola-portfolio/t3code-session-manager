@@ -1,0 +1,22 @@
+Versão instalada          0.3.0
+                          (instalada com
+                          o npm)
+Mais recente              0.3.1
+                          (correção)
+Origem
+  GitHub demo-owner/demo-app
+Atualizações automáticas  ligadas
+Última procura            15/11 às 09:00
+                          (há 3 h)
+Última atualização        0.2.1 ->
+                          0.3.0,
+                          instalada
+
+! A atualização para a 0.3.1 (começada
+  em 15/11 às 11:30) foi interrompida
+  antes de terminar
+  Para voltar à 0.3.0: npm install -g
+  --install-links
+  github:demo-owner/demo-app#v0.3.0
+
+› Para a instalar: t3sm update

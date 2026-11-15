@@ -1,0 +1,15 @@
+> 2 sessões foram continuadas fora do T3 Code:
+
+Projeto  Sessão    Última atividade no terminal  Novas  Título no T3
+--------------------------------------------------------------------------
+demo     1a2b3c4d  15/11 às 11:20                  +12  Fix the login form
+app      5e6f7a8b  15/11 às 11:20                   +3  Plan the API
+  - 5e6f7a8b: 1 outro ramo do registo (não o que o claude --resume continua) não
+    é juntado
+
+  - 1 sessão não juntada: esta sessão foi compactada; juntar sessões compactadas
+    ainda não é suportado
+
+Corre t3sm merge --all para as juntar, ou t3sm merge --session <id> para uma.
+Cada uma passa a ser uma thread nova no T3 Code com o trabalho do terminal; a
+thread antiga é arquivada (desfaz com t3sm rollback). Nada foi alterado.

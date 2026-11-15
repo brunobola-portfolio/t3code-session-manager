@@ -1,0 +1,12 @@
+Scheduled sync  installed (schtasks)
+Command         cmd.exe /c start "" /min "C:/n/node.exe" "C:/t3sm/bin/t3sm.mjs"
+                sync --watch --quiet
+Watcher         running (pid 4321), last cycle Nov 15, 11:56 (done), next Nov
+                15, 12:11
+Last logged     Nov 15, 11:56 (4 min ago): done, 2 imported, run
+                20261115-115600-c3d4
+
+! The scheduled command points at files that are gone
+  It runs C:/old/t3sm/bin/t3sm.mjs, which no longer exists. Install it again
+  from the current t3sm:
+  > t3sm schedule install --watch

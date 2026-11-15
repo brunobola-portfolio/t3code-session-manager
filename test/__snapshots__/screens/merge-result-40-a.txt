@@ -1,0 +1,29 @@
+v Merged 1 session. Run
+  20261115-120000-a1b2; undo with t3sm
+  rollback --run 20261115-120000-a1b2.
+
+demo - 1a2b3c4d
+  - New thread thread-9f8e (+12
+    messages); the old thread is
+    archived.
+  - In a terminal: claude --resume
+    9f8e7d6c-0000-4000-8000-000000000003
+  - T3 Code titles the new thread from
+    its transcript; the old thread was
+    titled "Fix the login form" (rename
+    the new one in T3 Code if you like).
+
+The revision is a new session file next
+to the original; the original session
+file is never changed. Continue on the
+new thread in T3 Code, or in a terminal
+with claude --resume <revision id>. The
+original session id stays resumable in
+the terminal but is now a stale branch,
+and the picker of claude --resume lists
+both. Never have the same session open
+in T3 Code and a terminal at the same
+time.
+! 5e6f7a8b: not merged: another session
+  of its project is in use; run again
+  when it is idle

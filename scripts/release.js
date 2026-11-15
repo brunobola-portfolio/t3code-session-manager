@@ -64,6 +64,41 @@ function manifestVersions(rel) {
   return found;
 }
 
+/** The /t3sm:* commands the plugin ships, at the plugin root (`.claude-plugin/marketplace.json` has `"source": "./"`). */
+export const COMMAND_FILES = ["status", "sync", "organize", "import"].map((n) => `commands/${n}.md`);
+
+/** Problems with the command files under `root`: each must exist, carry a front-matter `description` and say it writes only after a yes. */
+export function commandFileProblems(root = ROOT) {
+  const problems = [];
+  for (const rel of COMMAND_FILES) {
+    const file = join(root, rel);
+    if (!existsSync(file)) { problems.push(`${rel} is missing (the plugin ships it as a /t3sm command)`); continue; }
+    const text = readFileSync(file, "utf8").replace(/\r\n/g, "\n");
+    const fm = /^---\n([\s\S]*?)\n---\n/.exec(text);
+    if (!fm || !/^description:\s*\S/m.test(fm[1])) problems.push(`${rel} has no front-matter description`);
+    if (!/only after the user says yes/i.test(text)) problems.push(`${rel} does not say it writes only after the user says yes`);
+  }
+  return problems;
+}
+
+/**
+ * Problems with the help topics under `root`/docs/help (`t3sm help <topic>`, copied into dist/help by the build): the
+ * folder must exist, and every topic needs its English file and its Portuguese twin.
+ */
+export function helpTopicProblems(root = ROOT) {
+  const dir = join(root, "docs", "help");
+  if (!existsSync(dir)) return ["docs/help is missing (the help topics ship in dist/help)"];
+  const files = new Set(readdirSync(dir).filter((f) => f.endsWith(".md")));
+  const topics = new Set([...files].map((f) => f.replace(/(\.pt)?\.md$/, "")));
+  if (topics.size === 0) return ["docs/help has no topics"];
+  const problems = [];
+  for (const t of topics) {
+    if (!files.has(`${t}.md`)) problems.push(`docs/help/${t}.md is missing (the English topic)`);
+    if (!files.has(`${t}.pt.md`)) problems.push(`docs/help/${t}.pt.md is missing (the Portuguese twin)`);
+  }
+  return problems;
+}
+
 const LOCK = "package-lock.json";
 /** Folders never scanned for repository URLs (build output, dependencies, local scratch, history). */
 const URL_SKIP_DIRS = new Set([".git", "node_modules", "dist", ".spike", ".superpowers", "superpowers", "spikes"]);
@@ -143,6 +178,9 @@ export function check() {
     if (rootPkg && rootPkg.version !== version) problems.push(`${LOCK} packages[""].version is ${rootPkg.version}, expected ${version}`);
   }
   problems.push(...repoUrlProblems());
+  problems.push(...commandFileProblems());
+  problems.push(...helpTopicProblems());
+  if (Array.isArray(pkg.files) && !pkg.files.includes("commands/")) problems.push('package.json "files" does not include "commands/" (the plugin commands would not ship)');
   let pins = 0;
   for (const rel of pinnedDocs()) {
     for (const m of read(rel).matchAll(PIN_RE)) {

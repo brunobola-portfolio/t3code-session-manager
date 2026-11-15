@@ -1,0 +1,60 @@
+* * * * * * @ o o o o  Passo 7 de 11 - Piloto
+Primeiro, experimenta um projeto. Um pequeno que conheças bem, para o
+confirmares no T3 Code.
+
+Sugestões (pequenos, sem uso agora):
+#  Projeto      Conversas  Conta
+------------------------------------------
+1  ~/code/demo          2  Claude Personal
+2  ~/code/big          20  Claude Org
+Projeto a experimentar: 1-2 (Enter = 1), o caminho de uma pasta, ou n para
+saltar o piloto: 
+O que a importação de ~/code/demo faria (ainda não se escreve nada):
+ok
+
++- Isto é o que vou fazer -----------------------------+
+| Projeto   ~/code/demo                                |
+| Importar  2 conversas                                |
+| Conta     Claude Personal                            |
+| Desfazer  t3sm rollback --run <id> --archive-threads |
++------------------------------------------------------+
+Importar ~/code/demo agora? Isto escreve no T3 Code; depois podes
+desfazê-lo. [s/N/?/v/q] s
+3 de 3 tratadas em 4 s - 1 importada
+
++- ! 1 importada, 2 não foram importadas ------------------+
+| Importadas      1                                        |
+| Não importadas  2                                        |
+| Execução        R1                                       |
+| Desfazer        t3sm rollback --run R1 --archive-threads |
++----------------------------------------------------------+
+
+x 2 conversas não puderam ser importadas
+Projeto  Conversa            Porquê                    O que fazer
+---------------------------------------------------------------------------------
+demo     Fix the login form  o T3 Code não a importou  corre t3sm apply outra vez
+api      Plan the API        pasta ilegível            retoma-a num terminal
+> Mais ajuda: t3sm help not-imported, cwd-unreadable
+
+Algumas conversas do piloto não foram importadas: a lista acima diz porquê.
+Agora confirma no T3 Code:
+1. Procura ~/code/demo na barra lateral.
+2. As sessões antigas estão lá como threads.
+3. As threads novas começam em Claude Personal.
+4. Abre uma: o histórico aparece.
+Enviar uma mensagem continua essa sessão a sério, nessa conta.
+Parece-te bem? [S/n/?/q] n
+Desfazer o piloto (execução R1)? As threads são arquivadas no T3 Code, não
+apagadas. [s/N/?/q] s
+ok
+Parado aqui. Muda a conta de um projeto com t3sm projects set "<pasta>" <conta>
+(ou no passo 4) e corre t3sm outra vez.
+
++- O que esta sessão fez ----------------------------------------------+
+| ! Projeto piloto ~/code/demo importado (execução R1)                 |
+|   Desfazer: t3sm rollback --run R1 --archive-threads                 |
+| v Piloto desfeito (execução R2)                                      |
+|                                                                      |
+| t3sm runs lista todas as execuções; as threads são arquivadas, nunca |
+| apagadas.                                                            |
++----------------------------------------------------------------------+

@@ -45,7 +45,7 @@ test("environment: accepts the fixture, rejects removed or retyped fields", asyn
 test("projects: accepts the fixture (extra fields allowed), rejects missing/retyped required fields", async () => {
   const body = await fx("http-projects.json");
   const ps = decodeProjects(body);
-  assert.deepEqual(ps, [{ id: "00000000-0000-4000-8000-000000000002", title: "Demo project demo-1", workspaceRoot: "D:\\work\\demo-1", defaultModelSelection: null, archived: false, deleted: false }]);
+  assert.deepEqual(ps, [{ id: "00000000-0000-4000-8000-000000000002", title: "Demo project demo-1", workspaceRoot: "D:\\work\\demo-1", defaultModelSelection: null, archived: false, deleted: false, pinned: false, createdAt: "2026-04-21T09:00:38.013Z" }]);
   const flagged = decodeProjects(mutate(mutate(body, ["projects", 0, "archivedAt"], { set: "2026-11-01T00:00:00.000Z" }), ["projects", 0, "deletedAt"], { set: "2026-11-02T00:00:00.000Z" }))[0]!;
   assert.deepEqual([flagged.archived, flagged.deleted], [true, true]);
   const ep = "GET /api/projects";
@@ -77,6 +77,8 @@ test("shell: accepts both fixtures; archived threads come from archivedThreads o
   assert.deepEqual(decodeShell(body), [{
     id: "00000000-0000-4000-8000-000000000003", projectId: "00000000-0000-4000-8000-000000000002",
     instanceId: "claudeAgent", archived: false, title: "Demo thread title", nativeSessionId: null, latestUserMessageAt: "2026-04-21T09:06:52.292Z",
+    settledOverride: "settled", settledAt: "2026-04-21T09:06:52.292Z", unsettledAt: null, pinnedAt: null,
+    latestRunRequestedAt: null, latestRunStartedAt: null, latestRunCompletedAt: null, createdAt: "2026-04-21T09:00:38.042Z",
   }]);
   const imported = decodeShell(await fx("http-orchestration-shell-imported.json"));
   assert.equal(imported.length, 3);
@@ -214,5 +216,99 @@ test("ShapeError message never carries the offending value", async () => {
   } catch (e) {
     assert.ok(e instanceof ShapeError);
     assert.ok(!e.message.includes("super-secret"));
+  }
+});
+
+test("project: pinned/createdAt come from pinnedAt/createdAt; absent -> false/null; wrong type -> ShapeError", async () => {
+  const body = await fx("http-projects-pinned.json");
+  const ps = decodeProjects(body);
+  assert.deepEqual(ps.map((p) => [p.title, p.pinned, p.createdAt]), [
+    ["Demo A", true, "2026-10-01T09:00:00.000Z"], ["Demo B", false, "2026-10-02T09:00:00.000Z"], ["Demo C", false, "2026-10-03T09:00:00.000Z"],
+  ]);
+  const old = mutate(mutate(body, ["projects", 0, "pinnedAt"], { remove: true }), ["projects", 0, "createdAt"], { remove: true });
+  assert.deepEqual([decodeProjects(old)[0]!.pinned, decodeProjects(old)[0]!.createdAt], [false, null]);
+  const ep = "GET /api/projects";
+  expectShape(() => decodeProjects(mutate(body, ["projects", 0, "pinnedAt"], { set: true })), ep, "$.projects[0].pinnedAt");
+  expectShape(() => decodeProjects(mutate(body, ["projects", 0, "createdAt"], { set: 3 })), ep, "$.projects[0].createdAt");
+  assert.equal(decodeProject(mutate(body.projects[0], ["pinnedAt"], { set: "2026-11-12T10:00:00.000Z" })).pinned, true);
+});
+
+test("thread: settle/pin fields decode from the shell; absent -> null; wrong type -> ShapeError", async () => {
+  const shell = await fx("http-orchestration-shell-imported.json");
+  const t0 = decodeShell(shell)[0]!;
+  assert.deepEqual([t0.settledOverride, t0.settledAt, t0.unsettledAt, t0.pinnedAt], ["settled", "2026-11-10T15:59:55.122Z", null, null]);
+  const active = mutate(mutate(shell, ["threads", 0, "settledOverride"], { set: "active" }), ["threads", 0, "unsettledAt"], { set: "2026-11-11T00:00:00.000Z" });
+  const a = decodeShell(active)[0]!;
+  assert.deepEqual([a.settledOverride, a.unsettledAt], ["active", "2026-11-11T00:00:00.000Z"]);
+  const none = decodeShell(mutate(mutate(mutate(shell, ["threads", 0, "settledOverride"], { remove: true }), ["threads", 0, "settledAt"], { remove: true }), ["threads", 0, "pinnedAt"], { remove: true }))[0]!;
+  assert.deepEqual([none.settledOverride, none.settledAt, none.pinnedAt], [null, null, null]);
+  const ep = "GET /api/orchestration/shell";
+  // A newer T3 Code may add override values: decoded as "unknown" (organize leaves that thread alone), never a stop.
+  assert.equal(decodeShell(mutate(shell, ["threads", 0, "settledOverride"], { set: "snoozed-forever" }))[0]!.settledOverride, "unknown");
+  assert.equal(decodeArchivedShell({ schemaVersion: 2, snapshotSequence: 1, threads: [(mutate(shell, ["threads", 0, "settledOverride"], { set: "snoozed-forever" }) as { threads: unknown[] }).threads[0]] })[0]!.settledOverride, "unknown");
+  expectShape(() => decodeShell(mutate(shell, ["threads", 0, "settledOverride"], { set: 3 })), ep, "$.threads[0].settledOverride");
+  expectShape(() => decodeShell(mutate(shell, ["threads", 0, "settledAt"], { set: 1 })), ep, "$.threads[0].settledAt");
+  expectShape(() => decodeShell(mutate(shell, ["threads", 0, "unsettledAt"], { set: false })), ep, "$.threads[0].unsettledAt");
+  expectShape(() => decodeShell(mutate(shell, ["threads", 0, "pinnedAt"], { set: 1 })), ep, "$.threads[0].pinnedAt");
+});
+
+test("sidebarAutoSettleAfterDays: read from getConfig and updateSettings; integer 1..90 or null; absent stays undefined", async () => {
+  const cfg = (await fx("ws-getconfig.exit.json")).exit.value;
+  assert.equal(decodeConfig(cfg).settings.sidebarAutoSettleAfterDays, 7);
+  assert.equal(decodeConfig(mutate(cfg, ["settings", "sidebarAutoSettleAfterDays"], { set: null })).settings.sidebarAutoSettleAfterDays, null);
+  assert.equal(decodeConfig(mutate(cfg, ["settings", "sidebarAutoSettleAfterDays"], { remove: true })).settings.sidebarAutoSettleAfterDays, undefined);
+  for (const bad of ["7", 1.5]) {
+    expectShape(() => decodeConfig(mutate(cfg, ["settings", "sidebarAutoSettleAfterDays"], { set: bad })), "server.getConfig", "$.settings.sidebarAutoSettleAfterDays");
+  }
+  // An integer outside 1..90 (a newer T3 Code's range): no value, flagged, never a stop for the other commands.
+  for (const future of [120, 0]) {
+    const s = decodeConfig(mutate(cfg, ["settings", "sidebarAutoSettleAfterDays"], { set: future })).settings;
+    assert.equal(s.sidebarAutoSettleAfterDays, undefined, String(future));
+    assert.equal(s.sidebarAutoSettleUnknown, true, String(future));
+  }
+  assert.equal(decodeConfig(cfg).settings.sidebarAutoSettleUnknown, undefined);
+  const upd = (await fx("ws-updatesettings.exit.json")).exit.value;
+  assert.equal(decodeServerSettings(upd).sidebarAutoSettleAfterDays, 7);
+  const later = decodeServerSettings(mutate(upd, ["sidebarAutoSettleAfterDays"], { set: 120 }));
+  assert.deepEqual([later.sidebarAutoSettleAfterDays, later.sidebarAutoSettleUnknown, typeof later.providerInstances], [undefined, true, "object"]);
+  expectShape(() => decodeServerSettings(mutate(upd, ["sidebarAutoSettleAfterDays"], { set: "x" })), "server.updateSettings", "$.sidebarAutoSettleAfterDays");
+});
+
+test("thread: pending:run:thread:<id>:ordinal:1 gives no nativeSessionId", async () => {
+  const shell = await fx("http-orchestration-shell-imported.json");
+  const pending = mutate(shell, ["threads", 0, "activeProviderThreadId"], { set: "pending:run:thread:x:ordinal:1" });
+  assert.equal(decodeShell(pending)[0]!.nativeSessionId, null);
+});
+
+test("thread: latestRun* timestamps and createdAt decode when present; absent fields are undefined; wrong type -> ShapeError", async () => {
+  const shell = await fx("http-orchestration-shell-imported.json");
+  const ep = "GET /api/orchestration/shell";
+  const t0 = decodeShell(shell)[0]!;
+  assert.deepEqual([t0.latestRunRequestedAt, t0.latestRunStartedAt, t0.latestRunCompletedAt, t0.createdAt], [null, null, null, "2026-09-10T15:59:29.081Z"]);
+  let m: unknown = mutate(shell, ["threads", 0, "latestRunRequestedAt"], { set: "2026-11-11T10:00:00.000Z" });
+  m = mutate(m, ["threads", 0, "latestRunStartedAt"], { set: "2026-11-11T10:00:01.000Z" });
+  m = mutate(m, ["threads", 0, "latestRunCompletedAt"], { set: "2026-11-11T10:00:09.000Z" });
+  const t = decodeShell(m)[0]!;
+  assert.deepEqual([t.latestRunRequestedAt, t.latestRunStartedAt, t.latestRunCompletedAt], ["2026-11-11T10:00:00.000Z", "2026-11-11T10:00:01.000Z", "2026-11-11T10:00:09.000Z"]);
+  let gone: unknown = shell;
+  for (const k of ["latestRunRequestedAt", "latestRunStartedAt", "latestRunCompletedAt", "createdAt"]) gone = mutate(gone, ["threads", 0, k], { remove: true });
+  const g = decodeShell(gone)[0]!;
+  assert.deepEqual([g.latestRunRequestedAt, g.latestRunStartedAt, g.latestRunCompletedAt, g.createdAt], [undefined, undefined, undefined, undefined]);
+  for (const k of ["latestRunRequestedAt", "latestRunStartedAt", "latestRunCompletedAt", "createdAt"]) {
+    expectShape(() => decodeShell(mutate(shell, ["threads", 0, k], { set: 1 })), ep, `$.threads[0].${k}`);
+  }
+});
+
+test("thread lists in pages are refused: t3sm reads them as complete (an orphan copy relies on it)", async () => {
+  const shell = await fx("http-orchestration-shell.json");
+  const snap = { schemaVersion: 2, snapshotSequence: 441, projects: shell.projects, threads: shell.threads };
+  for (const [key, value] of [["hasMore", true], ["nextCursor", "c-2"], ["nextPageToken", "p-2"], ["truncated", true], ["pageInfo", { endCursor: "c-2" }]] as const) {
+    expectShape(() => decodeShell({ ...shell, [key]: value }), "GET /api/orchestration/shell", `$.${key}`);
+    expectShape(() => decodeArchivedShell({ ...snap, [key]: value }), "orchestration.getArchivedShellSnapshot", `$.${key}`);
+  }
+  // Absent, null or false: one complete page, as today.
+  for (const value of [null, false]) {
+    assert.equal(decodeShell({ ...shell, hasMore: value, nextCursor: null }).length, 1);
+    assert.equal(decodeArchivedShell({ ...snap, truncated: value }).length, 1);
   }
 });

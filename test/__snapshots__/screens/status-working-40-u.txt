@@ -1,0 +1,14 @@
+● Working
+  a t3sm run is in progress (pid 9876,
+  started 2 min ago)
+
+Pending imports  none
+Last sync        3 min ago, ok (run
+                 20261115-115700-a1b2)
+Next sync        in 7 min (watcher)
+Watcher          running (pid 4321, t3sm
+                 0.3.0)
+t3sm             0.3.0
+t3sm plugin      Claude Personal:
+                 installed (0.3.0)
+T3 Code          running (0.1.9)

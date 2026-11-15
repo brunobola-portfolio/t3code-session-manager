@@ -1,0 +1,95 @@
+* * * * * * * * @ o o  Step 9 of 11 - Organize
+Imported conversations reach T3 Code as a pile. This step tidies only what t3sm
+imported; conversations you started in T3 Code are never touched. Each part is
+optional.
+
+What each project shows, now and with the defaults:
+Project    Shown now -> after  Settled  Retitled  Archived
+----------------------------------------------------------
+alpha-app              0 -> 2        -         1         2
+beta-api               0 -> 2        -         1         1
+History: the last 90 days, at least 10 per project
+
++- History inside projects ----------------------------------------------+
+| 4 conversations shown again, 0 settled, in 2 projects.                 |
+| The rule: each project shows its last 90 days, and at least 10 even if |
+| older. The rest stay in the project, on its Settled shelf.             |
+|                                                                        |
+| Default  yes                                                           |
+| Undo     t3sm organize --undo                                          |
++------------------------------------------------------------------------+
+Show the last 90 days, and at least 10 per project? [Y/n/?/b/q] 
+
+- Clearer titles
+  2 conversations have a technical title copied from their first message. t3sm
+  can give each a clear title from the transcript (80 characters at most).
+  Default: yes. Undo: t3sm organize --undo.
+Give these conversations clearer titles? [Y/n/?/b/q] y
+
+- Automated conversations
+  3 conversations were started by programs, not by you (the Agent SDK). t3sm can
+  archive them: hidden, not deleted. Default: yes. Undo: t3sm organize --undo.
+Archive these automated conversations? [Y/n/?/b/q] y
+
+- Pinned projects
+  T3 Code can pin projects to the top. t3sm suggests the 2 with the most recent
+  activity. Default: yes. Undo: t3sm organize --undo. A project you unpin
+  yourself is never pinned again.
+Pin these projects? [Y/n/?/b/q] y
+Projects to pin
+Unmark the ones you do not want pinned.
+
+1. [x] alpha-app
+   Among the projects with the most recent activity.
+2. [x] beta-api
+   Among the projects with the most recent activity.
+
+a = all, n = none, q = cancel
+Toggle numbers (e.g. 2 5-7), e<number> to edit, Enter to confirm: 
+
+- Empty projects
+  1 project t3sm created holds no conversation (folders an old session used
+  once, for example). t3sm can delete it from T3 Code's sidebar; the folders on
+  disk stay. Default: yes. Undo: t3sm organize --undo.
+Delete this empty project? [Y/n/?/b/q] y
+
+- T3 Code's own option
+  For conversations started in T3 Code: it puts them away after some days
+  without use. Now: after 7 days. t3sm can set it to 90 days, like the rule
+  above. Default: yes. Undo: t3sm organize --undo.
+Also let T3 Code settle conversations started in T3 Code after 90
+days? [Y/n/?/b/q] y
+
++- Here is what I will do -----------------------------------------+
+| History                the last 90 days, at least 10 per project |
+|   shown again          4                                         |
+|   settled              0                                         |
+| New titles             2                                         |
+| Archive automated      3                                         |
+| Pin projects           2                                         |
+| Delete empty projects  1                                         |
+| T3 Code's option       90 days (now after 7 days)                |
+| Undo                   t3sm organize --undo                      |
++------------------------------------------------------------------+
+Apply these changes to T3 Code now? Undo: t3sm organize --undo. [y/N/?/b/q] y
+ran organize
+v Done. Open T3 Code: your projects now show their history.
+
+* * * * * * * * * @ o  Step 10 of 11 - Keep in sync
+New sessions keep appearing as you work. The background watcher imports them for
+you, carefully: it waits for sessions in use, and never moves files or creates
+instances.
+Install the background watcher now? This adds a task to your system's
+scheduler. Undo: t3sm schedule remove. [y/N/?/b/q] q
+
++- What this session did -----------------------------------------+
+| v Imported everything (run R1)                                  |
+|   Undo: t3sm rollback --run R1 --archive-threads                |
+| v Saved your organize choices                                   |
+|   Undo: edit "organize" in config.json                          |
+| v Organized the imported history in T3 Code (run R2)            |
+|   Undo: t3sm organize --undo R2                                 |
+|                                                                 |
+| t3sm runs lists every run; threads are archived, never deleted. |
++-----------------------------------------------------------------+
+Stopped. Nothing is left half done; run t3sm again to continue.

@@ -1,0 +1,20 @@
+t3sm 0.3.0 · Traga as suas sessoes para o T3 Code
+────────────────────────────────────────────────────────────────────────────────
+
+● ● ◉ ○ ○ ○ ○ ○ ○ ○ ○  Passo 3 de 11 · Contas
+
+╭─ Isto e o que vou fazer ─────────────────────────────────────────────────────╮
+│ Importar 5 conversas para 4 projetos.                                        │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+Contas   2
+Caminho  C:/work/demo/packages/app/src/index.ts
+
+Projeto  Caminho                                 Sessoes  Nota
+─────────────────────────────────────────────────────────────────
+app      C:/work/demo/packages/app/src/index.ts     1234  ready
+api      ~/code/api/services/orders/create.ts         56  waiting
+
+✗ Precisa de si
+  3 conversas por decidir.
+  › t3sm start --resume

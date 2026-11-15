@@ -1,0 +1,22 @@
+t3sm 0.3.0 - Traga as suas sessoes pa...
+----------------------------------------
+
+3/11 - Contas
+
++- Isto e o que vou fazer -------------+
+| Importar 5 conversas para 4          |
+| projetos.                            |
++--------------------------------------+
+
+Contas   2
+Caminho
+  C:/work/demo/packages/app/src/index.ts
+
+Projeto  Caminho                 Sessoes
+----------------------------------------
+app      C:/work/de.../index.ts     1234
+api      ~/code/api...create.ts       56
+
+x Precisa de si
+  3 conversas por decidir.
+  > t3sm start --resume

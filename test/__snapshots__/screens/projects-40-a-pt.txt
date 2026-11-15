@@ -1,0 +1,29 @@
+~/code/app
+  Conta         Claude Personal
+  Porquê        sessão mais recente
+  Por importar  12
+  No T3 Code    sim
+  Em uso        não
+
+C:/work/demo/packages/billing-service
+  Conta         Claude Work
+  Porquê        a tua regra
+  Por importar  0
+  No T3 Code    arquivado
+  Em uso        sim
+
+C:/work/new
+  Conta         Claude Work
+  Porquê        conta por omissão
+  Por importar  3
+  No T3 Code    não
+  Em uso        não
+
+Porquê: a tua regra (uma regra no
+config.json), definição do VS Code
+(.vscode/settings.json), sessão mais
+recente (a conta da sessão mais
+recente), conta por omissão
+(defaultAccount no config.json).
+> Muda uma com
+  t3sm projects set "<pasta>" <conta>.

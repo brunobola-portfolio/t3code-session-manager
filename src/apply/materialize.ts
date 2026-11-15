@@ -22,27 +22,44 @@
 //
 // Deferrals (next run, not failures): the source was busy (SourceBusyError) or the session is in use
 // (SessionActiveError) when read.
+//
+// Faithful copies (`copy: "faithful"`, spec §4.3): a Claude transcript from a folder T3 Code refuses, copied record by
+// record by copyTranscript.faithfulCopy (no adapter: the transcript itself is read, never changed) and written,
+// journaled and refreshed exactly like a conversion above. Differences: the source file is checked here (written within
+// ACTIVE_WINDOW_MS -> deferred `active`; changed while read -> deferred `source-busy`); its activity is measured from
+// the copy's text with discovery's own scanner (only cwd / sessionId differ), so the journaled `source` equals what
+// discovery reports for the original until it grows; `file-written` also carries `rehomeOf` (the original as copied);
+// and the copy is ours only if it still holds this source's provenance record (appended last, not first).
 
 import { link, mkdir, open, rename, rm, unlink, utimes, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { createHash } from "node:crypto";
-import type { AccountConfig, HarnessId, PlanItem } from "../core/types.ts";
+import { setTimeout as delay } from "node:timers/promises";
+import type { AccountConfig, DiscoveredSession, HarnessId, JournalEntry, PlanItem } from "../core/types.ts";
 import type { Journal } from "../core/journal.ts";
 import { effectiveWrites, near } from "../core/journal.ts";
-import { MoveRefused, publishNoClobber, sha256File, statSafe, sweepWriteTemps, writeTempPath, type LinkFs } from "../core/fsutil.ts";
+import { MoveRefused, RENAME_RETRIES, publishNoClobber, renameRefused, renameRetryDelay, sha256File, statSafe, sweepWriteTemps, writeTempPath, type LinkFs } from "../core/fsutil.ts";
 import { encodeClaudeProjectDir, expandHome, normalizeCwd, pathKey } from "../core/paths.ts";
 import { SessionActiveError, SourceBusyError, type SourceAdapter } from "../sources/types.ts";
+import { scanJsonl } from "../sources/jsonl.ts";
 import { isActive } from "../core/activity.ts";
 import { toClaudeJsonl } from "./claudeWriter.ts";
+import { PROVENANCE_TYPE, readFaithfulCopy, WRITTEN_BY } from "./copyTranscript.ts";
+
+type RehomeOf = NonNullable<Extract<JournalEntry, { t: "file-written" }>["rehomeOf"]>;
+type Activity = { updatedAt: string; messageCount: number };
 
 /**
  * Why an item was not materialized:
- * - `no-reader`: no adapter with `read()` for its harness (the map holds every adapter that converts sessions).
+ * - `no-reader`: no adapter with `read()` for its harness (the map holds every adapter that converts sessions), or a
+ *   faithful copy of a session that is not a Claude transcript.
  * - `target-outside-accounts`: the target is not `<account home>/projects/<encoded root>/<uuid>.jsonl`.
  * - `target-exists`: a file t3sm did not write already sits at the target (or appeared there while writing).
  * - `read-failed: <message>` / `write-failed: <message>`.
  */
-export type ConvertFailReason = "no-reader" | "target-outside-accounts" | "target-exists" | `read-failed: ${string}` | `write-failed: ${string}`;
+export type ConvertFailReason = "no-reader" | "target-outside-accounts" | "target-exists" | `read-failed: ${string}` | `write-failed: ${string}`
+  // apply: the destination folder of a rehome copy cannot be used or created (src/apply/apply.ts, prepareRehomeFolders).
+  | `target-folder: ${string}`;
 /** Not attempted this run, retried next run: the source kept changing, or the session is in use. */
 export type ConvertDeferReason = "source-busy" | "active";
 
@@ -74,6 +91,8 @@ export interface MaterializeResult {
 /** Filesystem calls of the publish step; injected by tests to race it. */
 export interface MaterializeFs extends LinkFs {
   rename(from: string, to: string): Promise<void>;
+  /** The wait between attempts of a refused refresh rename (default: a real timer). */
+  sleep?(ms: number): Promise<void>;
   /** Called right before a target is published or re-checked for a refresh (tests: a writer appears). */
   beforePublish?(target: string): Promise<void>;
 }
@@ -141,15 +160,25 @@ export async function materializeConversions(
       && p.basename(parent) === encodeClaudeProjectDir(normalizeCwd(a.projectRoot, platform))
       && projectsDirs.has(key(p.dirname(parent)));
     if (!valid) { fail("target-outside-accounts"); continue; }
+    const faithful = a.copy === "faithful";
     const adapter = adapters.get(s.harness);
-    if (!adapter?.read) { fail("no-reader"); continue; }
+    // A faithful copy needs no reader, but only a Claude transcript can be copied as it is.
+    if (faithful ? s.harness !== "claude" : !adapter?.read) { fail("no-reader"); continue; }
 
+    const cwd = platform === "win32" ? path.win32.normalize(a.projectRoot) : a.projectRoot;
     let text: string;
-    let activity: { updatedAt: string; messageCount: number };
+    let activity: Activity;
+    let rehomeOf: RehomeOf | undefined;
     try {
-      const t = await adapter.read(s);
-      activity = t.activity ?? { updatedAt: s.updatedAt, messageCount: s.messageCount };
-      text = toClaudeJsonl(t, { uuid: a.uuid, cwd: platform === "win32" ? path.win32.normalize(a.projectRoot) : a.projectRoot }).text;
+      if (faithful) {
+        const c = await readFaithful(s, { cwd, sessionId: a.uuid, fromCwd: s.cwd ?? a.rehomeFrom ?? "" }, now());
+        if ("defer" in c) { res.deferred.push({ item, reason: c.defer }); continue; }
+        ({ text, activity, rehomeOf } = c);
+      } else {
+        const t = await adapter!.read!(s);
+        activity = t.activity ?? { updatedAt: s.updatedAt, messageCount: s.messageCount };
+        text = toClaudeJsonl(t, { uuid: a.uuid, cwd }).text;
+      }
     } catch (e) {
       if (e instanceof SourceBusyError) res.deferred.push({ item, reason: "source-busy" });
       else if (e instanceof SessionActiveError) res.deferred.push({ item, reason: "active" });
@@ -159,8 +188,13 @@ export async function materializeConversions(
     const sha = createHash("sha256").update(text, "utf8").digest("hex");
     const mtimeMs = writtenMtime(Date.parse(activity.updatedAt), now());
     const provenance = text.slice(0, text.indexOf("\n"));
-    /** Ours = the journal says t3sm wrote it AND it still starts with this session's provenance record. */
-    const isOurs = async (): Promise<boolean> => ours.has(key(target)) && (await firstLine(target)) === provenance;
+    /**
+     * Ours = the journal says t3sm wrote it AND it still holds this session's provenance record: a conversion's is its
+     * first line; a faithful copy's is appended last (resumes append after it), so it is looked for in the whole file.
+     */
+    const isOurs = async (): Promise<boolean> => ours.has(key(target))
+      && (faithful ? await holdsProvenance(target, s.nativeId) : (await firstLine(target)) === provenance);
+    const ready = (): Promise<void> => readyItem(item, target, faithful ? null : text, res);
 
     try {
       const existing = await statSafe(target);
@@ -175,7 +209,7 @@ export async function materializeConversions(
           const mine = ours.get(key(target)) === sha && !near(existing.mtimeMs, mtimeMs);
           if (mine && (existing.mtimeMs > mtimeMs || existing.mtimeMs < now() - WRITTEN_MAX_AGE_MS)) await utimes(target, mtimeMs / 1000, mtimeMs / 1000);
           res.unchanged.push(target);
-          await ready(item, target, text, res);
+          await ready();
           continue;
         }
         if (!(await isOurs())) { fail("target-exists"); continue; }
@@ -183,7 +217,7 @@ export async function materializeConversions(
           // Written by t3sm, changed since (resumed) or being written now: it is the user's transcript now.
           res.unchanged.push(target);
           res.resumed.push(target);
-          await ready(item, target, text, res);
+          await ready();
           continue;
         }
         refreshFrom = have; // ours, untouched since, but the source has moved on
@@ -200,6 +234,7 @@ export async function materializeConversions(
         await j.append({
           t: "file-written", runId, path: target, sha256: sha, mtimeMs,
           source: { harness: s.harness, nativeId: s.nativeId, updatedAt: activity.updatedAt, messageCount: activity.messageCount },
+          ...(rehomeOf ? { rehomeOf } : {}),
         });
         journaled = true;
         ours.set(key(target), sha);
@@ -214,15 +249,27 @@ export async function materializeConversions(
           }
         } else {
           // Re-check right before replacing: still exactly the file we checked (our earlier write), and not in use.
-          const st = await statSafe(target);
-          const still = st !== null && (await sha256File(target)) === refreshFrom;
-          if (st === null || !still || isActive(st.mtimeMs, now())) {
+          // Windows refuses to rename over a file another process has open (an antivirus scan of the file just hashed):
+          // that refusal is retried like atomicWrite's (about 5 s), and the re-check runs again before every attempt.
+          let inUse = false;
+          for (let attempt = 0; ; attempt++) {
+            const st = await statSafe(target);
+            const still = st !== null && (await sha256File(target)) === refreshFrom;
+            if (st === null || !still || isActive(st.mtimeMs, now())) { inUse = true; break; }
+            try {
+              await fs.rename(tmp, target);
+              break;
+            } catch (e) {
+              if (!renameRefused(e) || attempt >= RENAME_RETRIES) throw e;
+              await (fs.sleep ?? delay)(renameRetryDelay(attempt));
+            }
+          }
+          if (inUse) {
             res.unchanged.push(target);
             res.resumed.push(target);
-            await ready(item, target, text, res);
+            await ready();
             continue;
           }
-          await fs.rename(tmp, target);
           published = true;
         }
       } finally {
@@ -234,7 +281,7 @@ export async function materializeConversions(
         await rm(tmp, { force: true }).catch(() => {});
       }
       res.written.push(target);
-      await ready(item, target, text, res);
+      await ready();
     } catch (e) {
       fail(`write-failed: ${errText(e)}`);
     }
@@ -242,10 +289,47 @@ export async function materializeConversions(
   return res;
 }
 
-/** The item as the importer sees it: its file is the converted transcript. */
-async function ready(item: PlanItem, target: string, text: string, res: MaterializeResult): Promise<void> {
+/**
+ * The item as the importer sees it: its file is the written transcript. cwdOffsetBytes: a conversion's first record
+ * carries cwd (`text` given); a faithful copy's first cwd record is found in the file as it is now (`text` null).
+ */
+async function readyItem(item: PlanItem, target: string, text: string | null, res: MaterializeResult): Promise<void> {
   const st = await statSafe(target);
   if (st === null) throw new Error(`${target} vanished after it was written`);
-  const nl = text.indexOf("\n");
-  res.ready.push({ ...item, session: { ...item.session, file: st, cwdOffsetBytes: Buffer.byteLength(text.slice(0, nl + 1), "utf8") } });
+  const cwdOffsetBytes = text !== null ? Buffer.byteLength(text.slice(0, text.indexOf("\n") + 1), "utf8") : await cwdOffsetOf(target);
+  res.ready.push({ ...item, session: { ...item.session, file: st, cwdOffsetBytes } });
+}
+
+/** Bytes read up to and including the first record that carries cwd (the whole file when none does), as discovery counts. */
+async function cwdOffsetOf(file: string): Promise<number> {
+  let at: number | null = null;
+  const totals = await scanJsonl(file, {}, (o, info) => {
+    if (typeof o.cwd === "string" && o.cwd !== "") { at = info.offset; return "stop"; }
+  });
+  return at ?? totals.totalBytes;
+}
+
+/** Whether a file holds the provenance record of a faithful copy of session `nativeId`; false when it cannot be read. */
+async function holdsProvenance(file: string, nativeId: string): Promise<boolean> {
+  let found = false;
+  try {
+    await scanJsonl(file, {}, (o) => {
+      if (o.type === PROVENANCE_TYPE && o.writtenBy === WRITTEN_BY && o.fromSessionId === nativeId) { found = true; return "stop"; }
+    });
+  } catch {
+    return false;
+  }
+  return found;
+}
+
+/**
+ * The faithful copy of a Claude session, or why it waits (copyTranscript.readFaithfulCopy: written within
+ * ACTIVE_WINDOW_MS -> `active`; changed while it was read -> `source-busy`). Throws when the source cannot be read.
+ */
+async function readFaithful(
+  s: DiscoveredSession, o: { cwd: string; sessionId: string; fromCwd: string }, now: number,
+): Promise<{ defer: ConvertDeferReason } | { text: string; activity: Activity; rehomeOf: RehomeOf }> {
+  const c = await readFaithfulCopy({ path: s.file.path, nativeId: s.nativeId }, o, now);
+  if ("defer" in c) return c;
+  return { text: c.text, activity: c.activity, rehomeOf: c.rehomeOf };
 }

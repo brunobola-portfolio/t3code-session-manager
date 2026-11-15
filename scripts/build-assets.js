@@ -5,11 +5,13 @@
  *
  *   node scripts/build-assets.js
  *
- * Light, dark and narrow (phone) variants of the hero, the flow and the accounts art, a social card, an icon, and a
+ * Light, dark and narrow (phone) variants of the hero, the flow, the accounts and the organize (before and after) art, a social card, an icon, and a
  * terminal demo: an animated SVG (CSS keyframes, which GitHub renders through <img>) of a scripted `t3sm plan` and
- * `t3sm apply` on synthetic data, plus a static frame for `prefers-reduced-motion`. The demo's plan summary and wave
- * lines come from t3sm's own formatters (src/plan/report.ts, src/apply/apply.ts), so a change to the CLI's output
- * shows up here as drift. Text is SVG text in system font stacks; there are no scripts, web fonts or external refs.
+ * `t3sm apply` on synthetic data, plus a static frame for `prefers-reduced-motion`, and three real screens (wide and
+ * narrow): `t3sm status` needing you, step 5 of `t3sm start`, and an import's progress bar and result. The demo and the
+ * screens come from t3sm's own renderers (src/plan/report.ts, src/cli/applyScreen.ts, src/cli/commands/status.ts, the
+ * assistant, src/ui/progress.ts) over the screen tests' synthetic fixtures, so a change to the CLI's output shows up
+ * here as drift. Text is SVG text in system font stacks; there are no scripts, web fonts or external refs.
  * The palette is defined once, right below, so a branding pass only has to swap it.
  */
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -27,7 +29,7 @@ const THEMES = {
     accent: "#3451D1", accentSoft: "#E9EDFD", accentInk: "#FFFFFF",
     personal: "#B8641A", personalSoft: "#FBEEDF", work: "#6A42C9", workSoft: "#EFE8FC",
     src3: "#1B8796", src4: "#B23A62", src5: "#3D6FD9",
-    ok: "#23875A", warn: "#A87300",
+    ok: "#23875A", warn: "#A87300", err: "#C23B3B",
     term: "#FFFFFF", termBar: "#EEF0F4", termInk: "#1D2433", termDim: "#6A7285", termPrompt: "#3451D1", termGood: "#23875A",
   },
   dark: {
@@ -35,7 +37,7 @@ const THEMES = {
     accent: "#7D94FF", accentSoft: "#202A47", accentInk: "#0E1220",
     personal: "#EFA25A", personalSoft: "#3A2918", work: "#AC8BF5", workSoft: "#2C2347",
     src3: "#4CC3D1", src4: "#E7799D", src5: "#7FA5F5",
-    ok: "#5CCB8F", warn: "#F0C25A",
+    ok: "#5CCB8F", warn: "#F0C25A", err: "#F07B7B",
     term: "#0C1016", termBar: "#161C26", termInk: "#E3E7EE", termDim: "#8B94A7", termPrompt: "#8EA2FF", termGood: "#6BD69B",
   },
 };
@@ -360,6 +362,119 @@ function accountsNarrow(t) {
   return svg(NW, y + 24, t, out, "Choosing the subscription: the session's account folder is the truth; a project opens with routes, then the VS Code pin, then the most recent session, then defaultAccount.");
 }
 
+// ------------------------------------------------------------------ organize (before / after)
+const ORGANIZE_CAPTION = "Optional. Defaults shown; you choose each part.";
+const ORGANIZE_PROJECTS = [
+  { name: "billing-api", acct: "work", rows: ["Fix the duplicate invoice bug", "Add retry to the payment webhook", "Migrate invoices to UTC"] },
+  { name: "mobile-app", acct: "personal", rows: ["Offline mode for the cart", "Crash on login with an expired token", "Dark theme for the settings screen"] },
+  { name: "docs-site", acct: "personal", rows: ["Rewrite the install guide", "Fix broken links in the API docs", "Add a search box"] },
+];
+const ORGANIZE_NOISE = ["Reply with OK", "Write a commit message for this diff", "Summarize this file in one line", "Generate a title for this chat", "Is this branch name valid?"];
+
+function pinIcon(t, x, y, color) {
+  return `<path d="M${x},${y + 9} v-5 M${x - 3},${y + 4} h6 l-1,-6 h-4 z" fill="none" stroke="${color}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>`;
+}
+
+/** A T3-like sidebar: projects with their visible threads, then the collapsed Settled group. */
+function organizeSidebar(t, x, y, w, { after, size = 14, rowH = 24, headH = 30, noiseRows = 5 }) {
+  let cy = y + 36 + 12;
+  let body = "";
+  for (const p of ORGANIZE_PROJECTS) {
+    cy += headH / 2;
+    body += `
+  <path d="M${x + 18},${cy - 6} h6 l2,2 h8 v9 h-16 z" fill="none" stroke="${t.dim}" stroke-width="1.4" stroke-linejoin="round"/>
+  ${text(x + 42, cy + 5, p.name, { size: size + 1, fill: t.ink, weight: 700 })}`;
+    if (after) body += `
+  ${pinIcon(t, x + w - 20, cy - 6, t.accent)}`;
+    else body += `
+  ${text(x + w - 16, cy + 4, "no threads shown", { size: size - 2, fill: t.faint, anchor: "end" })}`;
+    cy += headH / 2;
+    if (after) {
+      for (const title of p.rows) {
+        cy += rowH / 2;
+        const maxChars = Math.floor((w - 50 - 92) / (size * SANS_ADVANCE));
+        const shown = [...title].length > maxChars ? `${[...title].slice(0, maxChars - 1).join("")}…` : title;
+        body += `
+  ${dot(t, x + 30, cy, p.acct, 3.5)}
+  ${text(x + 42, cy + size * 0.36, shown, { size, fill: t.ink })}
+  ${accountTag(t, x + w - 14, cy, p.acct, size - 2)}`;
+        cy += rowH / 2;
+      }
+    }
+    cy += 6;
+  }
+  cy += 6;
+  body += `
+  <path d="M${x + 12},${cy} h${w - 24}" stroke="${t.line}"/>`;
+  cy += headH / 2 + 2;
+  body += `
+  <path d="M${x + 18},${cy - 4} l5,5 l5,-5" fill="none" stroke="${t.dim}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+  ${text(x + 38, cy + 5, after ? "Settled · 41" : "Settled · 3,267", { size: size + 1, fill: t.muted, weight: 700 })}
+  ${text(x + w - 16, cy + 4, after ? "settled by T3 Code itself" : "everything imported", { size: size - 2, fill: t.faint, anchor: "end" })}`;
+  cy += headH / 2;
+  if (after) {
+    cy += headH / 2;
+    body += `
+  <path d="M${x + 18},${cy - 4} l5,5 l5,-5" fill="none" stroke="${t.faint}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+  ${text(x + 38, cy + 5, "Archived · 2,614", { size: size + 1, fill: t.faint, weight: 700 })}
+  ${text(x + w - 16, cy + 4, "automated runs, kept out of sight", { size: size - 2, fill: t.faint, anchor: "end" })}`;
+    cy += headH / 2;
+  }
+  const noise = after ? [] : ORGANIZE_NOISE.slice(0, noiseRows);
+  for (const title of noise) {
+    cy += rowH / 2;
+    const maxChars = Math.floor((w - 60) / (size * SANS_ADVANCE));
+    const shown = [...title].length > maxChars ? `${[...title].slice(0, maxChars - 1).join("")}…` : title;
+    body += `
+  ${text(x + 38, cy + size * 0.36, shown, { size, fill: t.faint })}`;
+    cy += rowH / 2;
+  }
+  return { cy, body, x, y, w };
+}
+
+function organizePanel(t, x, y, w, h, s) {
+  return `
+  <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="12" fill="${t.panel}" stroke="${t.line}"/>
+  <path d="M${x},${y + 36} h${w}" stroke="${t.line}"/>
+  ${dot(t, x + 18, y + 18, "line", 5)}${dot(t, x + 34, y + 18, "line", 5)}${dot(t, x + 50, y + 18, "line", 5)}
+  ${text(x + w / 2, y + 23, "T3 Code", { size: 13, fill: t.dim, weight: 600, anchor: "middle" })}${s.body}`;
+}
+
+function organize(t) {
+  // One <text> per heading: the renderer lays the subtitle out after the title, so the gap is the same on both sides.
+  const panelTitle = (x, title, sub) => `<text x="${x}" y="46" font-family="${SANS}" font-size="20" font-weight="700" fill="${t.ink}">${esc(title)}<tspan dx="14" font-size="15" font-weight="400" fill="${t.muted}">${esc(sub)}</tspan></text>`;
+  const W = 1280; const pw = 560; const px = [48, 672]; const py = 70;
+  const before = organizeSidebar(t, px[0], py, pw, { after: false, noiseRows: 5 });
+  const after = organizeSidebar(t, px[1], py, pw, { after: true });
+  const h = Math.max(before.cy, after.cy) - py + 14;
+  const H = py + h + 52;
+  const body = `
+  ${panelTitle(px[0], "Today", "imported history lands in Settled")}
+  ${panelTitle(px[1], "After t3sm organize", "pinned, history inside each project")}${organizePanel(t, px[0], py, pw, h, before)}${organizePanel(t, px[1], py, pw, h, after)}
+  <path d="M${px[0] + pw + 14},${py + h / 2} h28 m-7,-7 l7,7 l-7,7" fill="none" stroke="${t.accent}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  ${text(W / 2, H - 20, ORGANIZE_CAPTION, { size: 15, fill: t.dim, anchor: "middle" })}`;
+  return svg(W, H, t, body, `t3sm organize, before and after. Today: projects billing-api, mobile-app and docs-site show no threads, and 3,267 imported conversations sit in Settled. After: the projects are pinned with their real conversation titles under each, and the automated runs are archived (Archived · 2,614, out of sight) while Settled keeps only the 41 conversations T3 Code settled itself. ${ORGANIZE_CAPTION}`);
+}
+
+function organizeNarrow(t) {
+  const pw = NW - 80;
+  const size = 19; const rowH = 34; const headH = 40;
+  const before = organizeSidebar(t, 40, 96, pw, { after: false, size, rowH, headH, noiseRows: 3 });
+  const bh = before.cy - 96 + 14;
+  const ay = 96 + bh + 132;
+  const after = organizeSidebar(t, 40, ay, pw, { after: true, size, rowH, headH });
+  const ah = after.cy - ay + 14;
+  const H = ay + ah + 64;
+  const body = `
+  ${text(40, 58, "Today", { size: 26, fill: t.ink, weight: 700 })}
+  ${text(40, 86, "imported history lands in Settled", { size: 19, fill: t.muted })}${organizePanel(t, 40, 96, pw, bh, before)}
+  <path d="M${NW / 2},${96 + bh + 18} v34 m-9,-10 l9,10 l9,-10" fill="none" stroke="${t.accent}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  ${text(40, 96 + bh + 92, "After t3sm organize", { size: 26, fill: t.ink, weight: 700 })}
+  ${text(40, 96 + bh + 120, "pinned, history inside each project", { size: 19, fill: t.muted })}${organizePanel(t, 40, ay, pw, ah, after)}
+  ${text(NW / 2, H - 22, ORGANIZE_CAPTION, { size: 18, fill: t.dim, anchor: "middle" })}`;
+  return svg(NW, H, t, body, `t3sm organize, before and after. Today the projects billing-api, mobile-app and docs-site show no threads and 3,267 conversations sit in Settled. After, the projects are pinned with their conversation titles and the automated runs are archived (Archived · 2,614, out of sight) while Settled keeps only the 41 T3 Code settled itself. ${ORGANIZE_CAPTION}`);
+}
+
 // ------------------------------------------------------------------ social card + icon
 const STATUS = [
   ["Claude Code", "verified live", "ok"],
@@ -404,7 +519,8 @@ function icon() {
 
 // ------------------------------------------------------------------ terminal demo (synthetic)
 const { renderTerminalSummary } = await import(new URL("../src/plan/report.ts", import.meta.url).href);
-const { progressLine } = await import(new URL("../src/apply/apply.ts", import.meta.url).href);
+const { importLabel, renderApplyResult } = await import(new URL("../src/cli/applyScreen.ts", import.meta.url).href);
+const { makeCliUi } = await import(new URL("../src/cli/ui.ts", import.meta.url).href);
 
 /** A synthetic plan with the counts the demo shows. Nothing here comes from a real machine. */
 function demoPlan() {
@@ -427,18 +543,25 @@ function demoPlan() {
 
 const PLAN_PATH = "~/.t3code-session-manager/runs/20261111-093012-a1b2/plan.md";
 const NAMES = { claudeAgent: "Claude · Personal", "claude-work": "Claude · Work" };
-const WAVES = [[5, 171], [5, 148], [3, 71], [1, 22]];
-const RESULT = "Imported 412, failed 0, converted 6. Run 20261111-093125-c3d4.";
+/** The screens as an 80-column terminal draws them in English (colour comes from the line kinds below). */
+const UI = makeCliUi({ color: 0, unicode: true, isTTY: false, columns: 80 }, "en", () => Date.parse("2026-11-11T09:31:30Z"));
+const RUN = "20261111-093125-c3d4";
 
-/** Terminal lines of the two screens: [kind, text]; kinds: cmd (typed), out, dim, bold, ask (typed answer), good. */
+/** Terminal lines of the two screens: [kind, text]; kinds: cmd (typed), out, dim, bold, ask (typed answer), good, bar. */
 function demoScript() {
-  const summary = renderTerminalSummary(demoPlan(), { color: false, planPath: PLAN_PATH, names: NAMES }).trimEnd().split("\n");
-  const styled = summary.map((l) => [/^Plan /.test(l) ? "bold" : /^\s+(Imports by account|Top skips)/.test(l) ? "dim" : "out", l]);
-  const waves = WAVES.map(([p, s], i) => ["out", progressLine({ wave: i + 1, totalWaves: WAVES.length, projects: p, sessions: s, imported: s, retry: 0, failed: 0, deferred: 0 })]);
+  const summary = renderTerminalSummary(demoPlan(), { planPath: PLAN_PATH, names: NAMES, ui: UI }).trimEnd().split("\n");
+  const styled = summary.map((l) => [/^╭─ Plan /.test(l) ? "bold" : /^(Imports by account|Top skips)|^─+$/.test(l) ? "dim" : "out", l]);
+  // One progress bar for the whole import (here, finished), then the result panel.
+  const s = UI.s.sym;
+  const bar = `${s.barL}${s.barFull.repeat(20)}${s.barR} 412/412 ${s.sep} ${importLabel(UI, { sessions: 406, projects: 14 }).replace("406", "412")}`;
+  const result = renderApplyResult(UI, {
+    status: "ok", runId: RUN, imported: 412, failed: 0, failures: [], converted: 6, deferred: 0, deferredInUse: 0,
+    heldRoots: [], held: [], alreadyInT3: 0, restoreErrors: [], unverified: 0, parked: 0, recovered: null,
+  });
   return {
     one: [["cmd", "t3sm plan"], ...styled],
     // `--yes` skips the confirmation (which would print the same summary again), so the apply screen stays short.
-    two: [["cmd", "t3sm apply --yes"], ...waves, ["good", RESULT], ["prompt", ""]],
+    two: [["cmd", "t3sm apply --yes"], ["bar", bar], ["out", "Imported 412 of 412 in 1 min 05 s"], ...result.map((l, i) => [i === 0 ? "good" : "out", l]), ["prompt", ""]],
   };
 }
 
@@ -501,11 +624,11 @@ function demo(t, { animated }) {
   <g${cls ? ` class="${cls}"` : ""}${base}><text x="${x}" y="${y}" font-family="${MONO}" font-size="${TERM.size}" fill="${t.termInk}">${esc(q)}<tspan font-weight="700">${esc(a)}</tspan></text>${cover}</g>`;
         return;
       }
-      const fill = kind === "dim" ? t.termDim : kind === "good" ? t.termGood : t.termInk;
+      const fill = kind === "dim" ? t.termDim : kind === "good" || kind === "bar" ? t.termGood : t.termInk;
       const weight = kind === "bold" || kind === "good" ? ' font-weight="700"' : "";
-      const isWave = /^Wave /.test(s);
+      const isWave = kind === "bar";
       const cls = animated ? show(at, tEnd) : null;
-      at += isWave ? 0.7 : 0.03;
+      at += isWave ? 2.2 : 0.03;
       out += `
   <text${cls ? ` class="${cls}"` : ""} x="${x}" y="${y}" font-family="${MONO}" font-size="${TERM.size}" fill="${fill}"${weight}${base} xml:space="preserve">${esc(s)}</text>`;
     });
@@ -525,13 +648,143 @@ function demo(t, { animated }) {
   ${dot(t, 22, 20, "faint", 6)}${dot(t, 42, 20, "faint", 6)}${dot(t, 62, 20, "faint", 6)}
   ${text(TERM.W / 2, 25, "t3sm · synthetic demo data", { size: 13, fill: t.termDim, weight: 600, anchor: "middle" })}${s1}${s2}`;
   const title = animated
-    ? "Terminal demo on synthetic data: t3sm plan prints a summary (406 sessions to import as they are, 6 to convert from OpenCode, 58 skipped, imports split between two accounts); then t3sm apply --yes imports them in 4 waves and reports Imported 412, failed 0, converted 6."
-    : "t3sm plan summary on synthetic data: 406 sessions to import as they are, 6 to convert from OpenCode, 58 skipped, 1 new instance, 12 new projects, imports split between Claude · Work and Claude · Personal, and the path of plan.md.";
+    ? "Terminal demo on synthetic data: t3sm plan prints a summary panel (406 sessions to import as they are, 6 to convert from OpenCode, 58 skipped, imports split between two accounts); then t3sm apply --yes imports them behind one progress bar and shows a result panel: 412 conversations imported, 6 converted, the run and how to undo it."
+    : "t3sm plan summary panel on synthetic data: 406 sessions to import as they are, 6 to convert from OpenCode, 58 skipped, 1 new account, 12 new projects, imports split between Claude · Work and Claude · Personal, the top skip reasons in words, and the path of plan.md.";
   return svg(TERM.W, H, t, body, title, { frame: false });
 }
 
+// ------------------------------------------------------------------ real screens (synthetic data)
+// `t3sm status` needing you, one step of `t3sm start` and an import's progress bar and result, drawn by t3sm's own
+// renderers in colour (16 colours, the level every terminal has), from the same synthetic fixtures the screen snapshot
+// tests use (test/ui/screens.*.ts). The ANSI colours map onto the palette above; nothing is drawn by hand.
+const { STATUS_NEEDS_YOU, FAILURES, NOW: SCREEN_NOW } = await import(new URL("../test/ui/screens.commands.ts", import.meta.url).href);
+const { renderScenario } = await import(new URL("../test/ui/screens.assistant.ts", import.meta.url).href);
+const { renderStatus } = await import(new URL("../src/cli/commands/status.ts", import.meta.url).href);
+const { progressBar } = await import(new URL("../src/ui/progress.ts", import.meta.url).href);
+
+const SCREEN_COLS = { wide: 80, narrow: 46 };
+const screenCaps = (columns) => ({ color: 1, unicode: true, isTTY: true, cursor: true, columns });
+/** SGR foreground codes (util.styleText's basic colours) to palette keys. */
+const SGR_FG = { 31: "err", 32: "termGood", 33: "warn", 34: "src5", 35: "work", 36: "src3", 90: "termDim" };
+
+/** One line of ANSI-styled text as runs: [{ text, fg, bold }]; codes other than colour and bold are ignored. */
+function ansiRuns(line) {
+  const runs = [];
+  let fg = null;
+  let bold = false;
+  for (const part of line.split(/(\x1b\[[0-9;]*m)/)) {
+    const m = /^\x1b\[([0-9;]*)m$/.exec(part);
+    if (!m) { if (part) runs.push({ text: part, fg, bold }); continue; }
+    for (const c of (m[1] || "0").split(";").map(Number)) {
+      if (c === 0) { fg = null; bold = false; } else if (c === 1) bold = true; else if (c === 22) bold = false;
+      else if (c === 39) fg = null; else if (SGR_FG[c]) fg = SGR_FG[c];
+    }
+  }
+  return runs;
+}
+
+/**
+ * A terminal window with t3sm's output: the command typed, then the lines as the renderer drew them. Every character
+ * is placed at its own column (an `x` list), so a font whose advance is not exactly MONO_ADVANCE, or one that draws a
+ * box-drawing glyph wider, cannot shift the rest of the line.
+ */
+function termScreen(t, { cmd, lines, cols, title }) {
+  const size = 14, lh = 19, padX = 22, top = 58;
+  const cw = size * MONO_ADVANCE;
+  const W = Math.round(padX * 2 + cols * cw);
+  const body = [];
+  const all = [null, ...lines];
+  all.forEach((line, i) => {
+    const y = top + i * lh + size;
+    if (line === null) {
+      body.push(`<text x="${padX}" y="${y}" font-family="${MONO}" font-size="${size}" fill="${t.termInk}"><tspan fill="${t.termPrompt}" font-weight="700">$ </tspan>${esc(cmd)}</text>`);
+      return;
+    }
+    let col = 0;
+    const spans = [];
+    for (const r of ansiRuns(line)) {
+      const chars = [...r.text];
+      if (r.text.trim() !== "") {
+        const fill = r.fg ? t[r.fg] : t.termInk;
+        const xs = chars.map((_, k) => (padX + (col + k) * cw).toFixed(1)).join(" ");
+        spans.push(`<tspan x="${xs}" fill="${fill}"${r.bold ? ' font-weight="700"' : ""}>${esc(r.text)}</tspan>`);
+      }
+      col += chars.length;
+    }
+    if (spans.length > 0) body.push(`<text y="${y}" font-family="${MONO}" font-size="${size}" xml:space="preserve">${spans.join("")}</text>`);
+  });
+  const H = top + all.length * lh + 16;
+  return svg(W, H, t, `
+  <rect width="${W}" height="${H}" rx="12" fill="${t.term}"/>
+  <rect x="0.5" y="0.5" width="${W - 1}" height="${H - 1}" rx="12" fill="none" stroke="${t.line}"/>
+  <path d="M0.5,40 V12.5 a12,12 0 0 1 12,-12 H${W - 12.5} a12,12 0 0 1 12,12 V40 Z" fill="${t.termBar}"/>
+  ${dot(t, 22, 20, "faint", 6)}${dot(t, 42, 20, "faint", 6)}${dot(t, 62, 20, "faint", 6)}
+  ${text(W / 2, 25, "t3sm · synthetic data", { size: 13, fill: t.termDim, weight: 600, anchor: "middle" })}
+  ${body.join("\n  ")}`, title, { frame: false });
+}
+
+const screenUi = (cols) => makeCliUi(screenCaps(cols), "en", () => SCREEN_NOW);
+
+function statusLines(cols) {
+  return renderStatus(STATUS_NEEDS_YOU("en"), { ui: screenUi(cols), now: SCREEN_NOW, version: "0.3.0" }).replace(/\n+$/, "").split("\n");
+}
+
+/** Step 5 of `t3sm start` (Decisions) up to the first answer: the rail, the intro and the first question's panel. */
+async function startLines(cols) {
+  const all = await renderScenario("start-decisions", screenCaps(cols), "en");
+  const end = all.findIndex((l) => /\[Y\/n\/\?\/b\/q\] y$/.test(l.replace(/\x1b\[[0-9;]*m/g, "")));
+  return end < 0 ? all : all.slice(0, end + 1);
+}
+
+/**
+ * `t3sm apply`: a frame of the live progress bar (t3sm's own bar on a cursor terminal, 260 of 412 after 40 s), then
+ * what the terminal shows once it ends: the bar's last line, the result panel and the two conversations that failed.
+ */
+function importLines(cols) {
+  const ui = screenUi(cols);
+  const frames = [];
+  let now = 0;
+  const term = { isTTY: true, columns: cols, rows: 30, color: true, unicode: true, caps: screenCaps(cols), write: (s) => frames.push(s) };
+  const quietProc = { once() {}, off() {} };
+  const bar = progressBar(term, ui.s, ui.f, () => now, { words: { left: ui.t("progress.left") }, showTotal: false, proc: quietProc });
+  bar.start(412, importLabel(ui, { sessions: 412, projects: 14 }));
+  now = 40_000;
+  bar.tick(260);
+  const live = frames.at(-1).replace(/^\r/, "").replace(/\x1b\[K$/, "");
+  frames.length = 0;
+  now = 65_000;
+  // 2 failed, so the bar's last line says what was processed and how many were imported (importProgress's rule).
+  bar.end(ui.t("apply.importDoneMixed", { done: 412, total: 412, dur: ui.f.dur(now), n: 410, sep: ui.s.sym.sep }));
+  bar.dispose();
+  const ended = frames.join("").replace(/\r\x1b\[K/, "").replace(/\x1b\[\?25[hl]/g, "").replace(/\n+$/, "").split("\n");
+  const result = renderApplyResult(ui, {
+    status: "partial", runId: RUN, imported: 410, failed: 2, failures: FAILURES.slice(0, 2), converted: 6, deferred: 0, deferredInUse: 0,
+    heldRoots: [], held: [], alreadyInT3: 0, restoreErrors: [], unverified: 0, parked: 0, recovered: null,
+  });
+  return { live, after: [...ended, ...result] };
+}
+
+async function screens(t, variant) {
+  const cols = SCREEN_COLS[variant];
+  const imp = importLines(cols);
+  return {
+    status: termScreen(t, {
+      cmd: "t3sm status", lines: statusLines(cols), cols,
+      title: "t3sm status on synthetic data: 'Needs you (2)', then each item with the command that settles it: 3 conversations wait for your decision (t3sm start), the background watcher is not running (t3sm schedule restart); worth knowing: a project waits while a conversation is in use, t3sm 0.3.1 is available (t3sm update); then the last and next sync, the watcher, the version, the last organize run, the plugin per account and T3 Code. Exit code 10.",
+    }),
+    start: termScreen(t, {
+      cmd: "t3sm start", lines: await startLines(cols), cols,
+      title: "t3sm start, step 5 of 11 (Decisions), on synthetic data: a rail of the 11 steps, then the first of 3 questions as a panel: 5 conversations were started in the home folder, which T3 Code does not accept; t3sm can copy each into the project it worked in most. Default yes; change later with organize.folders.home. Answered y.",
+    }),
+    import: termScreen(t, {
+      cmd: "t3sm apply --yes", lines: ["", imp.live, "", ...imp.after], cols,
+      title: "t3sm apply on synthetic data: one progress bar redrawn in place (260 of 412, rate and time left), then the result panel: 410 imported, 2 failed, 6 converted, the run and the command that undoes it, then the two conversations that failed, each with its project, title and why in words, and the t3sm help topic that explains it.",
+    }),
+  };
+}
+
 // ------------------------------------------------------------------ write
-function main() {
+async function main() {
   mkdirSync(OUT, { recursive: true });
   const files = {};
   for (const [name, t] of Object.entries(THEMES)) {
@@ -541,9 +794,16 @@ function main() {
     files[`flow-narrow-${name}.svg`] = flowNarrow(t);
     files[`accounts-${name}.svg`] = accounts(t);
     files[`accounts-narrow-${name}.svg`] = accountsNarrow(t);
+    files[`organize-${name}.svg`] = organize(t);
+    files[`organize-narrow-${name}.svg`] = organizeNarrow(t);
     files[`social-${name}.svg`] = social(t);
     files[`demo-${name}.svg`] = demo(t, { animated: true });
     files[`demo-static-${name}.svg`] = demo(t, { animated: false });
+    for (const variant of ["wide", "narrow"]) {
+      const shots = await screens(t, variant);
+      const tag = variant === "narrow" ? "-narrow" : "";
+      for (const [screen, content] of Object.entries(shots)) files[`screen-${screen}${tag}-${name}.svg`] = content;
+    }
   }
   files["icon.svg"] = icon();
   for (const [name, content] of Object.entries(files)) {
@@ -553,4 +813,4 @@ function main() {
   }
 }
 
-main();
+await main();

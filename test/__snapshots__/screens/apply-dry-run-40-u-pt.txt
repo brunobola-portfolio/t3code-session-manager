@@ -1,0 +1,68 @@
+╭─ Plano 20261115-093012-a1b2 ─────────╮
+│ T3 Code 0.1.9                        │
+│ Importar tal como está   406         │
+│ Converter e importar       6         │
+│ Ignorar                   55         │
+│ Contas novas no T3 Code    1         │
+│ Projetos novos            12         │
+│ Cópias-espelho             0         │
+│ Avisos                     1         │
+╰──────────────────────────────────────╯
+
+✗ Decisões por tomar: 3 sessões (sessões
+  automáticas 2, pasta pessoal 1)
+  › t3sm start
+
+Importações por conta  Total
+────────────────────────────
+Claude Work              251
+Claude Personal          161
+
+Mais ignoradas            Total
+───────────────────────────────
+numa pasta de cópia .bak     41
+a pasta já não existe         9
+em uso neste momento          5
+
+Relatório completo:
+~/.t3code-session-manager/runs/20261115-
+093012-a1b2/plan.md
+A seguir: t3sm apply.
+
+╭─ Faria isto ─────────────────────────╮
+│ Contas novas no T3 Code              │
+│   1 (Claude Work)                    │
+│ Conta principal fixada em            │
+│   Claude Personal › ~/.claude        │
+│ Pastas a criar                       │
+│   1                                  │
+│   will create folder C:/work/General │
+│ Projetos a criar                     │
+│   2 (p0, p1)                         │
+│ Contas por omissão a definir         │
+│   0                                  │
+│ Conversões a escrever                │
+│   6                                  │
+│ Vagas de importação                  │
+│   4 (406 conversas)                  │
+│ Já no T3 Code                        │
+│   3                                  │
+│ Retidos (em uso)                     │
+│   1 projeto, 2 conversas (demo;      │
+│   ficam fora desta execução)         │
+│   demo waits                         │
+│ Falhariam logo                       │
+│   1                                  │
+╰──────────────────────────────────────╯
+
+✗ 1 conversa falharia na importação
+demo · Long setup
+  pasta ilegível · retoma-a num terminal
+› Mais ajuda: t3sm help cwd-unreadable
+
+! 1 data de transcrição ficou alterada
+  por uma execução interrompida; uma
+  execução a sério repõe-na primeiro.
+
+Ensaio: nada foi escrito. Corre t3sm
+apply para o fazer.

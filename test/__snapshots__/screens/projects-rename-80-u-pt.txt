@@ -1,0 +1,4 @@
+› Mudar o nome a 2 projetos criados pelo t3sm (o título ainda é o que o t3sm
+  deu):
+  • 'src' -> 'demo/src'
+  • 'C:/work/app-with-a-long-folder-name' -> 'app-with-a-long-folder-name'

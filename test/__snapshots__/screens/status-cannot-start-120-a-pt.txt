@@ -1,0 +1,16 @@
+! Precisa de ti (2)
+
+x O vigilante em segundo plano não consegue arrancar: a última tentativa (há 40 min) parou no arranque (Error)
+  > t3sm doctor
+
+x O config.json do t3sm não pode ser usado, por isso a sincronização e o vigilante em segundo plano param no arranque:
+  ~/.t3code-session-manager/config.json: schedule.everyMinutes must be an integer 1..1440 (got 0).
+  > t3sm doctor
+
+Importações pendentes  nenhuma
+Última sincronização   há 3 min, ok (execução 20261115-115700-a1b2)
+Próxima sincronização  daqui a 7 min (vigilante)
+Vigilante              não está a correr
+t3sm                   0.3.0
+Plugin do t3sm         Claude Personal: instalado (0.3.0)
+T3 Code                a correr (0.1.9)

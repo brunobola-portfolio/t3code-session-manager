@@ -1,0 +1,2 @@
+! A correr como Administrador: a configuração guiada instala a sincronização agendada e os comandos /t3sm só para este
+  utilizador. Corre o t3sm a partir da tua própria conta, a menos que seja isso que queres.

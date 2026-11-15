@@ -1,0 +1,7 @@
+╭─ ✓ 412 conversas importadas ──────────────────────────────────────────────╮
+│ Importadas     412                                                        │
+│ Convertidas      6                                                        │
+│ Já no T3 Code    3                                                        │
+│ Execução       20261115-093125-c3d4                                       │
+│ Desfazer       t3sm rollback --run 20261115-093125-c3d4 --archive-threads │
+╰───────────────────────────────────────────────────────────────────────────╯

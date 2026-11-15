@@ -1,0 +1,17 @@
+Tópicos de ajuda: o que uma mensagem quer dizer e o que fazer
+
+  not-imported          Não importada: o T3 Code não aceitou uma conversa
+  t3-native             Começadas no T3 Code: conversas que o t3sm deixa de fora
+  orphaned              Apagadas no T3 Code: conversas que voltam como cópias
+  held                  À espera: uma conversa do projeto está em uso
+  decisions             Decisões: conversas à espera da tua resposta
+  history               Histórico: que conversas ficam à vista em cada projeto
+  updates               Atualizações: como o t3sm se atualiza, e quando falha
+  watcher               O vigilante: a sincronização em segundo plano parada ou atrasada
+  cwd-unreadable        Pasta ilegível: o T3 Code não sabe onde a conversa correu
+  instance-unavailable  Conta desligada: a conta da conversa não está utilizável no T3 Code
+  project-mismatch      Projeto diferente: o T3 Code pôs uma conversa noutro sítio
+  convert               Conversão: sessões que o t3sm converte antes de importar
+  errors                Erros: quando um comando do t3sm para
+
+Abre um com t3sm help <tópico>. Cada comando explica-se com t3sm <comando> --help.

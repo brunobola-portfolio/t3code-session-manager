@@ -1,0 +1,93 @@
+t3sm brings your Claude Code, Codex, Pi
+and OpenCode sessions into T3 Code.
+
+Usage: t3sm [command] [options]
+
+Start here
+  t3sm start
+    Guided set-up, step by step (also
+    plain t3sm; --lang pt in Portuguese)
+
+Import
+  t3sm doctor
+    Check this machine, T3 Code and the
+    accounts (read-only)
+  t3sm plan
+    Build the import plan in plan.md
+    (changes no session)
+  t3sm apply
+    Import the planned sessions
+    (--dry-run, --only "<folder>")
+
+Accounts and projects
+  t3sm accounts
+    Your Claude subscriptions and their
+    T3 Code instances
+  t3sm projects
+    The account each project uses (set
+    "<folder>" <account>, rename
+    --suggest)
+
+Keep in sync
+  t3sm status
+    Does t3sm need you? All good, needs
+    you or working (read-only; exit 10:
+    needs you)
+  t3sm sync
+    Import what is new since the last
+    run (--watch keeps going)
+  t3sm schedule
+    Run sync in the background: install
+    [--watch], remove, restart, status
+  t3sm merge
+    Bring sessions continued in a
+    terminal into T3 Code
+
+Tidy T3 Code
+  t3sm organize
+    Tidy the imported history: archive,
+    retitle, show, pin (--undo)
+
+Clean up and undo
+  t3sm quarantine
+    Move backup folders to a reversible
+    quarantine
+  t3sm dedupe
+    Move the plan's mirror copies to a
+    reversible quarantine
+  t3sm runs
+    List what each run did
+  t3sm rollback
+    Undo a run (--run <id>)
+
+Help and maintenance
+  t3sm help
+    What a message means and what to do
+    (t3sm help <topic>)
+  t3sm scan
+    Count sessions per agent and account
+    (no T3 Code needed)
+  t3sm update
+    Update t3sm to the newest release
+    (--check only looks)
+  t3sm changelog
+    What is new in this version (--since
+    <version>)
+  t3sm --version
+    Show the version
+
+Every command explains itself:
+t3sm <command> --help. Commands that
+write ask first; --dry-run shows what
+they would do.
+
+Global options (every command):
+  --lang en|pt
+    The language of what t3sm prints.
+    Default: env T3SM_LANG, then
+    "language" in config.json, then your
+    system's language, else English.
+    --json, plan.md and the logs are
+    always English.
+  --no-color
+    No colour (NO_COLOR is honoured too)

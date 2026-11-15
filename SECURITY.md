@@ -3,7 +3,7 @@
 ## Supported versions
 
 Only the latest release receives fixes. Update with `t3sm update` (an `npm install -g` of the newest release tag), or
-run the pinned command with the newer tag (`npx -y github:brunobola-portfolio/t3code-session-manager#v0.2.1 …`).
+run the pinned command with the newer tag (`npx -y github:brunobola-portfolio/t3code-session-manager#v0.3.0 …`).
 
 ## Reporting a vulnerability
 
@@ -13,10 +13,14 @@ You will get an answer within seven days.
 
 ## What t3sm does on your machine
 
-t3sm runs locally, as you, and sends nothing anywhere except to T3 Code on your own machine. There is no telemetry, no
-network call to any other host, no model call, and no runtime dependency. The one exception is one you start
-yourself: `t3sm update`, after you confirm, runs `npm install -g --install-links github:<repository>#semver:*`, and npm downloads the
-release from GitHub. No other command starts npm, and t3sm never checks for updates on its own.
+t3sm runs locally, as you, and sends nothing about your sessions anywhere: it talks to T3 Code on your own machine
+(loopback only). There is no telemetry, no model call, and no runtime dependency. Its only network call is the release
+lookup for updates: `git ls-remote --tags` on its GitHub repository (or `npm view` when git cannot), once a day from
+the background watcher (`update.auto`, on by default; `t3sm update --auto off` turns it off) and when you run
+`t3sm update` or `t3sm update --check`. Installing a release runs `npm install -g --install-links` of that `vX.Y.Z` tag
+(from GitHub, or `git clone` of a local checkout first), so npm downloads it: by hand after you confirm, or by itself
+for a patch or minor release when automatic updates are on. Only `t3sm update` and its automatic child start npm.
+The optional `/t3sm` plugin install in `t3sm start` runs `claude plugin` commands, after your yes.
 
 ### T3 Code
 
@@ -44,6 +48,7 @@ release from GitHub. No other command starts npm, and t3sm never checks for upda
 | `<account home>/projects/<folder>/<uuid>.jsonl` | Only converted sessions (OpenCode, compressed Codex sessions) and `t3sm merge` revisions: new files, journaled with their hash, never over an existing file |
 | `<account home>/session-manager-quarantine/` | What `t3sm dedupe` and `t3sm quarantine` moved there, when you ran them |
 | File times of transcripts | Moved for the length of an import wave, journaled first, restored afterwards |
+| T3 Code, through its own API | What `t3sm organize` changes: archived or reopened conversations, titles, pinned projects, deleted empty projects that t3sm created, and (only with `--auto-settle off`) one T3 Code setting. Only imported conversations and projects t3sm created, pinning aside; each change journaled |
 | Your scheduler | A task (Windows), a LaunchAgent (macOS) or a tagged crontab line, only with `t3sm schedule install` |
 
 Native transcripts (Claude Code, Codex, Pi) are never edited, and nothing is written into another agent's folder.
@@ -62,5 +67,9 @@ when needed. `doctor` and `sync --dry-run` use a temporary folder removed at exi
 
 `plan.md` and `plan.json` contain folder paths, project names (including the titles of existing T3 Code projects),
 session ids, file sizes and times, and counts; `journal.jsonl` holds paths, ids, hashes and file times; the sync log
-holds only counts and run ids. None of these holds message text (the OpenCode copy above does). They stay on your
-machine. Review `t3sm doctor --json` before pasting it into an issue.
+holds only counts and run ids. `sync-status.json` also stores the titles of the conversations a project is held for
+(because one is in use) and project names, never folder or transcript paths (the watcher's heartbeat in it
+included). The journal of an organize run holds the titles and
+project names t3sm replaced, so that `--undo` can put them back. System notifications (`notify`) carry only project
+names and counts, never conversation text. None of these holds message text (the OpenCode copy above does). They stay
+on your machine. Review `t3sm doctor --json` before pasting it into an issue.

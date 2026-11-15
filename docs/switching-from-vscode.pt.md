@@ -11,7 +11,7 @@ Conta com cerca de meia hora, quase toda a ler. Instala o comando `t3sm` uma vez
 as alternativas estão no [install.md](install.md), em inglês):
 
 ```bash
-npm install -g --install-links github:brunobola-portfolio/t3code-session-manager#v0.2.1
+npm install -g --install-links github:brunobola-portfolio/t3code-session-manager#v0.3.0
 ```
 
 Preferes ser guiado? O `t3sm start --lang pt` faz estes mesmos passos por ti, uma pergunta de cada vez, e pergunta
@@ -65,7 +65,13 @@ Abre o `plan.md` indicado. Lê três coisas:
   ([configuration.md](configuration.md#send-one-project-to-another-account)) e corre `t3sm plan` outra vez.
 - **Warnings**: cópias-espelho, pastas de backup, ficheiros grandes, sessões continuadas fora do T3 Code.
 - **Skipped by reason**: `cwd-missing` quer dizer que a pasta do projeto já não existe; `active` quer dizer que a
-  sessão foi escrita nos últimos 10 minutos (fecha-a e planeia mais tarde).
+  sessão foi escrita nos últimos 10 minutos (fecha-a e planeia mais tarde); `already-in-t3` com a nota `started-in-t3`
+  quer dizer que a conversa começou no T3 Code e já lá está.
+- **Decisions pending**: conversas que o t3sm não importa até responderes a uma pergunta (da tua pasta pessoal ou de
+  outra pasta que o T3 Code recusa, pastas temporárias e do sistema, sessões automáticas, conversas cuja thread
+  apagaste no T3 Code). O `t3sm start` faz exatamente estas perguntas, uma de cada vez, e depois podes continuar aqui à
+  mão; ou define-as no `config.json` (`organize.folders`, `organize.sessions`, `organize.decided`:
+  [configuration.md](configuration.md#organize), em inglês).
 
 ## 5. Arruma as cópias
 
@@ -116,7 +122,35 @@ acorda (datas repostas) e a execução seguinte retoma-o. Podes continuar a trab
 sessão escrita nos últimos 10 minutos fica retido e é importado numa execução seguinte. Ainda não foi cronometrada nenhuma execução
 completa; cada vaga tem no máximo 5 projetos e 50 sessões por projeto.
 
-## 8. Mantém tudo sincronizado
+## 8. Organiza
+
+As conversas importadas chegam em Settled, por isso o T3 Code lista-as na prateleira **Settled** e os teus projetos
+parecem vazios. O `t3sm organize` resolve isso. É opcional, e mostra primeiro o que faria:
+
+```bash
+t3sm organize --dry-run
+t3sm organize
+```
+
+O ensaio lista cada tipo de mudança (arquivar sessões automáticas, títulos legíveis, a regra do histórico, fixar os
+projetos recentes, apagar projetos vazios que o t3sm criou), quantas são e porquê, e depois as conversas que cada
+projeto mostra agora e depois. O `t3sm organize` mostra o mesmo e pergunta. Responde `d` para uma lista onde podes
+desmarcar mudanças uma a uma. Nunca toca em conversas que começaste no T3 Code nem em nada que tenhas mudado à mão.
+Para voltar atrás: `t3sm organize --undo`. No assistente guiado, este é o passo Arrumar. Mais no
+[README](../README.pt.md#organizar-o-histórico).
+
+A regra do histórico mostra os últimos 90 dias de cada projeto, e pelo menos 10 conversas por projeto; as mais antigas
+ficam no projeto, na prateleira Settled. Outros números só para uma execução:
+`t3sm organize --history 180 --min 20 --dry-run`. Para o T3 Code passar para Settled as conversas que lá começares ao fim dos
+mesmos 90 dias, junta `--auto-settle 90` (o T3 Code aceita de 1 a 90 dias). A sincronização em segundo plano (passo 9)
+mantém a regra uma vez por dia.
+
+Se o `plan.md` listar conversas da tua pasta pessoal ou de Downloads, o T3 Code não as consegue importar, por isso o
+t3sm copia-as para o projeto em que trabalharam (ou para o **Geral**). Se continuares a trabalhar no original no VS
+Code, a partir da pasta pessoal, a sincronização em segundo plano traz as mensagens novas como uma thread nova com o
+mesmo título.
+
+## 9. Mantém tudo sincronizado
 
 Só depois de o passo 7 ter importado tudo (o `sync` não importa nada enquanto houver mais de 200 sessões pendentes):
 
@@ -124,9 +158,18 @@ Só depois de o passo 7 ter importado tudo (o `sync` não importa nada enquanto 
 t3sm schedule install --watch
 ```
 
-Fica um vigilante a correr desde o início de sessão, que importa as sessões novas pouco depois de pararem. Preferes um
-temporizador simples? Usa `t3sm schedule install` (a cada 15 minutos). `t3sm schedule status` mostra o que está
-instalado.
+Fica um vigilante a correr desde o início de sessão, que importa as sessões novas pouco depois de pararem; no Windows e
+no Linux o agendador também confirma a cada 15 minutos que continua a correr. Preferes um temporizador simples? Usa
+`t3sm schedule install` (a cada 15 minutos). `t3sm schedule status` mostra o que está instalado, e o
+`t3sm schedule restart` reinicia o vigilante em segurança. O `t3sm status` diz-te a qualquer momento se o t3sm precisa
+de ti (código de saída 10 quando precisa).
+
+O vigilante também mantém o t3sm atualizado: uma vez por dia instala sozinho uma versão de correção ou menor mais
+recente e reinicia-se nela; uma versão maior só é anunciada. O `t3sm update --check` mostra onde estás e o
+`t3sm update --auto off` desliga isto. Essa procura de versões é a única ligação à rede do próprio t3sm; instalar
+descarrega a versão com o npm, e a instalação opcional do plugin `/t3sm` no `t3sm start` passa pelo `claude plugin`,
+depois do teu sim
+([README](../README.pt.md#atualizações-automáticas)).
 
 ## No dia a dia
 

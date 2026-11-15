@@ -1,0 +1,32 @@
+--- unicode on
+╭─ Here is what I will do ─────────────╮
+│ Import 5 conversations into 4        │
+│ projects.                            │
+│ A long line that needs wrapping      │
+│ inside the box because it is longer  │
+│ than forty columns.                  │
+╰──────────────────────────────────────╯
+╭─ ✓ ──────────────────────────────────╮
+│ no title                             │
+╰──────────────────────────────────────╯
+╭─ ! Careful ──────────────────────────╮
+│ x                                    │
+╰──────────────────────────────────────╯
+╭─ ✗ Failed ───────────────────────────╮
+╰──────────────────────────────────────╯
+--- unicode off
++- Here is what I will do -------------+
+| Import 5 conversations into 4        |
+| projects.                            |
+| A long line that needs wrapping      |
+| inside the box because it is longer  |
+| than forty columns.                  |
++--------------------------------------+
++- v ----------------------------------+
+| no title                             |
++--------------------------------------+
++- ! Careful --------------------------+
+| x                                    |
++--------------------------------------+
++- x Failed ---------------------------+
++--------------------------------------+

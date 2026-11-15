@@ -1,0 +1,38 @@
+À espera: uma conversa do projeto está
+em uso
+
+O que quer dizer
+
+Uma conversa deste projeto foi escrita
+nos últimos 10 minutos, por isso o t3sm
+deixa o projeto inteiro para a execução
+seguinte. O T3 Code importa de uma vez
+todas as conversas recentes de um
+projeto, e mudar as datas dos ficheiros
+de uma conversa que está a ser escrita
+podia perturbá-la.
+
+Porque acontece
+
+  - Tu (ou um agente) estás a trabalhar
+    nesse projeto agora, num terminal ou
+    no T3 Code.
+  - A conversa que corre o /t3sm:sync
+    dentro do T3 Code também está em
+    uso, por isso o projeto dela espera.
+  - Um ficheiro do projeto ficou
+    bloqueado por outro programa (um
+    antivírus, o OneDrive).
+
+O que fazer
+
+  - Nada: o projeto é importado quando
+    as conversas dele estiverem paradas
+    há 10 minutos. O t3sm sync (e o
+    vigilante em segundo plano) volta a
+    tentar sozinho.
+  - Para o importar já, fecha ou pausa
+    essa conversa, espera 10 minutos e
+    corre t3sm apply.
+  - O t3sm status mostra cada projeto à
+    espera e desde quando.

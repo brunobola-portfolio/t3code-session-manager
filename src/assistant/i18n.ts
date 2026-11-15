@@ -1,35 +1,16 @@
-// Language of the guided assistant, and the text helpers every step uses. Only the assistant is translated; every
-// other command prints English.
+// The guided assistant's catalogue and the text helpers every step uses. The language itself (Lang, resolveLang, fmt)
+// lives in src/i18n/lang.ts, shared with the commands' catalogues (src/i18n/cli.ts); re-exported here.
 
 import { en } from "./messages.en.ts";
 import { pt } from "./messages.pt.ts";
 
-export type Lang = "en" | "pt";
+export { fmt, isLang, resolveLang, type Lang } from "../i18n/lang.ts";
+import type { Lang } from "../i18n/lang.ts";
+
 export type Key = keyof typeof en;
 export type Catalogue = Record<Key, string>;
 
 export const CATALOGUES: Record<Lang, Catalogue> = { en, pt };
-
-export function isLang(v: unknown): v is Lang {
-  return v === "en" || v === "pt";
-}
-
-/**
- * English unless Portuguese was asked for explicitly: `--lang` > env T3SM_LANG > config.json "language" > "en". The OS
- * locale is never read (decided 2026-11-11). An unknown env value is ignored.
- */
-export function resolveLang(flag: Lang | null, env: NodeJS.ProcessEnv, configLang: unknown): Lang {
-  if (flag) return flag;
-  const e = env["T3SM_LANG"]?.trim().toLowerCase();
-  if (isLang(e)) return e;
-  if (isLang(configLang)) return configLang;
-  return "en";
-}
-
-/** `{name}` placeholders replaced by `vars` (unknown placeholders are left as they are). */
-export function fmt(template: string, vars: Record<string, string | number> = {}): string {
-  return template.replace(/\{([a-zA-Z0-9_-]+)\}/g, (m, k: string) => (Object.hasOwn(vars, k) ? String(vars[k]) : m));
-}
 
 export const WIDTH = 80;
 

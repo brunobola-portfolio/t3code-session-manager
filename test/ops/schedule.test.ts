@@ -76,11 +76,24 @@ test("taskXml --watch: logon trigger for the current user only, no time limit, s
   const s = scheduleSpec("win32", WIN_NODE, WIN_BIN, 15, { ...WIN, watch: true });
   assert.deepEqual(s.install, [[SCHTASKS, "/Create", "/XML", XML_PATH, "/TN", TASK_NAME, "/F"], [SCHTASKS, "/Run", "/TN", TASK_NAME]]);
   const x = s.files![0]!.content;
-  assert.match(x, /<Triggers>\s*<LogonTrigger>\s*<Enabled>true<\/Enabled>\s*<UserId>DEMO\\demo<\/UserId>\s*<\/LogonTrigger>\s*<\/Triggers>/);
+  assert.match(x, /<Triggers>\s*<LogonTrigger>\s*<Enabled>true<\/Enabled>\s*<UserId>DEMO\\demo<\/UserId>\s*<\/LogonTrigger>\s*<TimeTrigger>/);
   assert.match(x, /<ExecutionTimeLimit>PT0S<\/ExecutionTimeLimit>/);
   assert.doesNotMatch(x, /<Hidden>/, "Hidden would hide the task from the Task Scheduler library, not the window");
   assert.match(x, /<Arguments>--headless &quot;.*&quot; sync --watch --quiet<\/Arguments>/);
-  assert.doesNotMatch(x, /TimeTrigger/);
+});
+
+test("task XML has LogonTrigger plus a PT15M repetition trigger (keep-alive; IgnoreNew while the watcher runs)", () => {
+  const x = scheduleSpec("win32", WIN_NODE, WIN_BIN, 30, { ...WIN, watch: true }).files![0]!.content;
+  const triggers = /<Triggers>([\s\S]*?)<\/Triggers>/.exec(x)![1]!;
+  assert.equal(triggers.match(/<LogonTrigger>/g)?.length, 1);
+  assert.equal(triggers.match(/<TimeTrigger>/g)?.length, 1);
+  assert.match(triggers, /<\/LogonTrigger>\s*<TimeTrigger>\s*<Repetition>\s*<Interval>PT15M<\/Interval>\s*<StopAtDurationEnd>false<\/StopAtDurationEnd>\s*<\/Repetition>\s*<StartBoundary>2026-01-01T00:00:00<\/StartBoundary>\s*<Enabled>true<\/Enabled>\s*<\/TimeTrigger>\s*$/);
+  assert.doesNotMatch(triggers, /<Duration>/, "no Duration: the repetition never ends");
+  assert.match(x, /<MultipleInstancesPolicy>IgnoreNew<\/MultipleInstancesPolicy>/);
+  assert.doesNotMatch(x, /PT30M/, "the keep-alive does not follow schedule.everyMinutes");
+  const interval = scheduleSpec("win32", WIN_NODE, WIN_BIN, 15, WIN).files![0]!.content;
+  assert.doesNotMatch(interval, /LogonTrigger/);
+  assert.equal(interval.match(/<TimeTrigger>/g)?.length, 1);
 });
 
 test("taskXml escapes every value; without conhost the action is a minimized start", () => {
@@ -133,6 +146,8 @@ test("scheduleSpec linux: tagged crontab line, quoted paths with spaces, @reboot
   assert.deepEqual(s.query, ["crontab", "-l"]);
   const w = scheduleSpec("linux", NIX_NODE, NIX_BIN, 15, { watch: true });
   assert.equal(w.cronLine, `@reboot "/usr/local/bin/node" "/home/demo user/t3sm/bin/t3sm.mjs" sync --watch --quiet # t3sm`);
+  assert.deepEqual(w.cronLines, [w.cronLine, `*/15 * * * * "/usr/local/bin/node" "/home/demo user/t3sm/bin/t3sm.mjs" sync --watch --quiet # t3sm`]);
+  assert.deepEqual(s.cronLines, [s.cronLine]);
   assert.equal(CRON_TAG, "# t3sm");
 });
 
@@ -293,4 +308,35 @@ test("a failing install command surfaces its stderr", async () => {
   const spec = scheduleSpec("win32", WIN_NODE, WIN_BIN, 15, { ...WIN, watch: true });
   const denied: CommandRunner = async () => ({ code: 1, stdout: "", stderr: "ERROR: Access is denied." });
   await assert.rejects(installSchedule(spec, denied, memScheduleFs()), /Access is denied/);
+});
+
+test("cron has the keep-alive line once after two installs (and remove takes both lines away)", async () => {
+  const f = fakeRunner();
+  f.st.crontab = `MAILTO=""\n@reboot "/old/node" "/old/t3sm.mjs" sync --watch --quiet # t3sm\n`;
+  const spec = scheduleSpec("linux", NIX_NODE, NIX_BIN, 15, { watch: true });
+  await installSchedule(spec, f.run);
+  await installSchedule(spec, f.run);
+  const keepAlive = `*/15 * * * * "/usr/local/bin/node" "/home/demo user/t3sm/bin/t3sm.mjs" sync --watch --quiet # t3sm`;
+  assert.equal(f.st.crontab, `MAILTO=""\n${spec.cronLine}\n${keepAlive}\n`);
+  assert.equal(f.st.crontab!.split("\n").filter((l) => l === keepAlive).length, 1);
+  const s = await scheduleStatus(spec, f.run, { exists: () => true });
+  assert.equal(s.detail, spec.cronLine);
+  assert.deepEqual(await removeSchedule(spec, f.run), { removed: true });
+  assert.equal(f.st.crontab, `MAILTO=""\n`);
+});
+
+test("realRunner: the child never gets CLAUDE_CONFIG_DIR, and a call past its time limit is killed and reported as exit 124", async () => {
+  const { realRunner } = await import("../../src/ops/schedule.ts");
+  const was = process.env["CLAUDE_CONFIG_DIR"];
+  process.env["CLAUDE_CONFIG_DIR"] = "C:/elsewhere/.claude-demo";
+  let r;
+  try { r = await realRunner(process.execPath, ["-e", "process.stdout.write(String(process.env.CLAUDE_CONFIG_DIR))"]); } finally {
+    if (was === undefined) delete process.env["CLAUDE_CONFIG_DIR"]; else process.env["CLAUDE_CONFIG_DIR"] = was;
+  }
+  assert.equal(r.code, 0);
+  assert.equal(r.stdout, "undefined");
+  // A hung scheduler call (here: a child that never ends) cannot hold the state lock forever.
+  const hung = await realRunner(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { timeoutMs: 300 });
+  assert.equal(hung.code, 124);
+  assert.match(hung.stderr, /timed out/);
 });

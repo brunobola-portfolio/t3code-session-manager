@@ -1,0 +1,14 @@
++- Execução 20261115-093125-c3d4 (quarantine) --------+
+| O que um rollback desfaria, e o que deixaria ficar: |
++-----------------------------------------------------+
+
+Voltam da quarentena (2)
+  - ~/.claude/projects/C--work-demo.bak-20260630-111703
+  - ~/.claude/projects/C--work-app.bak
+
+Ficheiros convertidos a apagar (1)
+  - ~/.claude/projects/C--work-demo/0001.jsonl
+
+Threads que esta execução importou; o t3sm nunca as apaga (1)
+  - import:claudeAgent:0001
+  Revê-as no T3 Code, ou passa --archive-threads para as arquivar.

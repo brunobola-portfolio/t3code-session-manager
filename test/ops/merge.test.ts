@@ -296,7 +296,7 @@ function env(): Env {
   const t = tempHome();
   const claudeHome = join(t.home, ".claude");
   const f = fakeT3({ instances: [inst("claudeAgent", claudeHome)] });
-  f.projects.push({ id: "p1", title: "demo", workspaceRoot: ROOT, defaultModelSelection: null, archived: false, deleted: false } as never);
+  f.projects.push({ id: "p1", title: "demo", workspaceRoot: ROOT, defaultModelSelection: null, archived: false, deleted: false, pinned: false, createdAt: null } as never);
   // T3's scan sees every transcript of the folder (the revision included, once it exists).
   f.opts.onScan = () => {
     for (const n of readdirSync(t.dir)) {
@@ -548,7 +548,7 @@ test("mergeSessions: the provenance text carries the source's mtime and the file
   assert.deepEqual(fw.revisionOf, { harness: "claude", nativeId: s });
 });
 
-test("mergeSessions: a revision written before a crash (journaled, published, not imported) is reused, not rewritten", async () => {
+test("mergeSessions: a revision written before a crash (journaled, published, not imported) is reused, not rewritten; the run that merges it journals it again, so rolling back the crashed run keeps it", async () => {
   const e = env();
   const s = sid(1);
   const { item } = await seeded(e, s);
@@ -563,7 +563,16 @@ test("mergeSessions: a revision written before a crash (journaled, published, no
   assert.equal(r.merged.length, 1, JSON.stringify(r));
   assert.equal(sha(revFile), prep.sha256);
   const mine = (await e.journal.readAll()).filter((x) => x.runId === "20261111-120000-merg");
-  assert.deepEqual(kinds(mine), ["imported", "thread-archived", "merged"], "no second file-written");
+  assert.deepEqual(kinds(mine), ["file-written", "imported", "thread-archived", "merged"], "journaled again, never rewritten");
+  const fw = mine[0] as Extract<JournalEntry, { t: "file-written" }>;
+  assert.deepEqual([fw.path, fw.sha256, fw.revisionOf], [revFile, prep.sha256, { harness: "claude", nativeId: s }]);
+
+  // Rolling back the crashed run keeps the revision: it is the transcript of the session's only active thread.
+  const rb = await rollbackRun("20261111-110000-cras", { journal: e.journal, accountHomes: [e.claudeHome], connect: async () => e.f.api });
+  assert.deepEqual(rb.filesRemoved, []);
+  assert.deepEqual(rb.filesKeptRewritten, [revFile]);
+  assert.equal(sha(revFile), prep.sha256);
+  assert.equal(e.f.threads.get(`import:claudeAgent:${rev}`)!.archived, false);
 });
 
 test("mergeSessions: a reused revision that aged past now - 20 days while unmerged is re-clamped before its import (never left in Claude Code's cleanup zone)", async () => {
@@ -898,6 +907,18 @@ function sideBranch(s: string): Rec[] {
     { type: "last-prompt", leafUuid: u(5), sessionId: s },
   ];
 }
+
+test("R11: a conversation copied from a refused folder (continued-after-rehome) is never a merge candidate; the skip is explicit", async () => {
+  const e = env();
+  const s = sid(1);
+  const { item } = await seeded(e, s);
+  const rehomed = { ...item, notes: ["continued-after-rehome" as const] };
+  const f = await findMergeCandidates([rehomed], deps(e, { stateDir: e.state }));
+  assert.deepEqual(f.candidates, []);
+  assert.deepEqual(f.skipped, [{ nativeId: s, reason: "rehomed-copy" }]);
+  // The same session without that note is a candidate (terminal turns after the import).
+  assert.equal((await findMergeCandidates([item], deps(e, { stateDir: e.state }))).candidates.length, 1);
+});
 
 test("O1: terminal work on a side branch is not merged but surfaced: findMergeCandidates, `t3sm merge`, sync's notice, the pending cache", async () => {
   const e = env();

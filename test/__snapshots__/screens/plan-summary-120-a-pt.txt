@@ -1,0 +1,26 @@
++- Plano 20261115-093012-a1b2 - T3 Code 0.1.9 ---+
+| Importar tal como está   406                   |
+| Converter e importar       6                   |
+| Ignorar                   55                   |
+| Contas novas no T3 Code    1                   |
+| Projetos novos            12                   |
+| Cópias-espelho             0                   |
+| Avisos                     1                   |
++------------------------------------------------+
+
+x Decisões por tomar: 3 sessões (sessões automáticas 2, pasta pessoal 1)
+  > t3sm start
+
+Importações por conta  Total
+----------------------------
+Claude Work              251
+Claude Personal          161
+
+Mais ignoradas            Total
+-------------------------------
+numa pasta de cópia .bak     41
+a pasta já não existe         9
+em uso neste momento          5
+
+Relatório completo: ~/.t3code-session-manager/runs/20261115-093012-a1b2/plan.md
+A seguir: t3sm apply.

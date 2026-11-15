@@ -1,0 +1,18 @@
+
+t3sm 0.3.0 · 2 Claude accounts
+────────────────────────────────────────
+
+1/11 · Welcome
+Welcome back. Here is where you are:
+  ✓ Accounts  ✓ Plan  ✓ Decisions
+  ✓ Clean-up  ✓ Pilot  ◉ Full import
+  ○ Organize  ○ Keep in sync  ○ Done
+Last time: the full import finished with
+3 failures.
+Next: a quick check, then step 8 · Full
+import.
+In Portuguese: t3sm start --lang pt
+Continue at step 8? [Y/n/?/q] q
+
+Stopped. Nothing is left half done; run
+t3sm again to continue.

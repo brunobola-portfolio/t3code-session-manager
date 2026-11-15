@@ -1,0 +1,40 @@
+6/11 · Clean-up
+The plan found copies that should not
+reach T3 Code.
+
+╭─ Copies found ───────────────────────╮
+│ Backup folders  1 whole project      │
+│                 folder copied (.bak) │
+│ Mirror copies   1 the same session   │
+│                 in a second account  │
+│                                      │
+│ Moving them is reversible: they go   │
+│ to a quarantine folder in the same   │
+│ account. Nothing is deleted.         │
+╰──────────────────────────────────────╯
+Move the backup folders to the
+quarantine? Undo: t3sm rollback
+--run <id>. [y/N/?/b/q] n
+Move the mirror copies to the
+quarantine? Undo: t3sm rollback
+--run <id>. [y/N/?/b/q] n
+That is fine. During the import t3sm
+hides these copies from T3 Code for a
+moment, so they are not imported by
+mistake.
+
+7/11 · Pilot
+First, try one project. A small one you
+know well, so you can check it in T3
+Code.
+
+Suggestions (small, not in use now):
+#  Project      Conversations  Account
+────────────────────────────────────────
+1  ~/code/demo              2  Claude P…
+2  ~/code/big              20  Claude O…
+Project to try: 1-2 (Enter = 1), a
+folder path, or n to skip the pilot: q
+
+Stopped. Nothing is left half done; run
+t3sm again to continue.

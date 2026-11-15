@@ -1,0 +1,6 @@
+╭─ ✗ Erro inesperado ──────────────────────────────────────────────────────────╮
+│ EACCES: permission denied, open 'C:/work/demo/state.json'                    │
+│                                                                              │
+│ O que fazer: Corre t3sm doctor: verifica tudo o que o t3sm precisa.          │
+│ › t3sm doctor                                                                │
+╰──────────────────────────────────────────────────────────────────────────────╯

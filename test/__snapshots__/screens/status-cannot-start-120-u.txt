@@ -1,0 +1,16 @@
+! Needs you (2)
+
+✗ The background watcher cannot start: its last try (40 min ago) stopped at start-up (Error)
+  › t3sm doctor
+
+✗ t3sm's config.json cannot be used, so sync and the background watcher stop at start-up:
+  ~/.t3code-session-manager/config.json: schedule.everyMinutes must be an integer 1..1440 (got 0).
+  › t3sm doctor
+
+Pending imports  none
+Last sync        3 min ago, ok (run 20261115-115700-a1b2)
+Next sync        in 7 min (watcher)
+Watcher          not running
+t3sm             0.3.0
+t3sm plugin      Claude Personal: installed (0.3.0)
+T3 Code          running (0.1.9)

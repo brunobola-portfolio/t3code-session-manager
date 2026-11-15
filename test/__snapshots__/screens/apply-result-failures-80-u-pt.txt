@@ -1,0 +1,29 @@
+╭─ ! 6 importadas, 6 não foram importadas ───────────────────────────────────╮
+│ Importadas      6                                                          │
+│ Não importadas  6                                                          │
+│ Próxima vez     1 (em uso, alteradas ou bloqueadas)                        │
+│ Retidas         2                                                          │
+│ Execução        20261115-093125-c3d4                                       │
+│ Desfazer        t3sm rollback --run 20261115-093125-c3d4 --archive-threads │
+╰────────────────────────────────────────────────────────────────────────────╯
+
+! demo à espera: 'Fix the build' está em uso (escrita há 3 min); é importada
+  após 10 minutos parada
+! locked à espera: uma conversa do projeto está em uso; é importada após 10
+  minutos parada
+
+✗ 6 conversas não puderam ser importadas
+demo · Fix the login form
+  o T3 Code não a importou · corre t3sm apply outra vez
+api · Plan the API
+  pasta ilegível · retoma-a num terminal
+app · conversa sem título
+  conta desligada no T3 · liga-a no T3 Code
+billing-service · Refactor the billing module and add tests for it
+  ficou noutro projeto · vê-a no T3 Code
+demo · Notes
+  sessão ilegível · tenta mais tarde
+demo · conversa sem título
+  destino inutilizável · escolhe no t3sm start
+› Mais ajuda: t3sm help not-imported, cwd-unreadable, instance-unavailable,
+  project-mismatch, convert

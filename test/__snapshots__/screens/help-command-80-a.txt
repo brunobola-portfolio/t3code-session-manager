@@ -1,0 +1,41 @@
+Usage: t3sm rollback [--run <id>] [--yes | --dry-run] [--instances]
+         [--archive-threads] [--allow-untested]
+
+Undo one run. Without --run it shows the latest run that is not itself a
+rollback (possibly an unattended sync) and asks; --yes needs --run <id>:
+  - converted files it wrote are deleted, unless edited since (then kept and
+    listed);
+  - what it quarantined moves back (an original path that exists again is left
+    in quarantine and reported);
+  - per-project default accounts it set are restored (needs T3 Code running;
+    otherwise the file part still runs and the rest is reported);
+  - a merge (t3sm merge): its revision is deleted, its old thread unarchived and
+    its revision thread archived; a revision continued since is kept and both
+    threads stay as they are (reported);
+  - an organize run (t3sm organize, t3sm projects rename --suggest): its changes
+    are reverted where T3 Code still shows what t3sm set, exactly as
+    t3sm organize --undo <run> does; what you changed since stays.
+Imported threads, created instances and projects are listed, never deleted.
+Running it twice changes nothing the second time.
+
+Options:
+  --run <id>          The run to undo (see t3sm runs)
+  --yes               Skip the confirmation (needs --run; required when not on a
+                      terminal)
+  --dry-run           Only list what would be undone
+  --instances         Also restore instance names, colours and homes the run
+                      changed
+  --archive-threads   Archive (not delete) the threads the run imported
+  --allow-untested    No warning on a T3 Code version t3sm was not tested with
+                      (it never blocks)
+
+Examples:
+  t3sm runs
+  t3sm rollback --run 20261114-120000-abcd --dry-run
+  t3sm rollback --run 20261114-120000-abcd --yes
+
+Global options (every command):
+  --lang en|pt   The language of what t3sm prints. Default: env T3SM_LANG, then
+                 "language" in config.json, then your system's language, else
+                 English. --json, plan.md and the logs are always English.
+  --no-color     No colour (NO_COLOR is honoured too)

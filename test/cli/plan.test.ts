@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { commands, main, type Io } from "../../src/cli/main.ts";
@@ -19,7 +19,7 @@ function setup() {
   mkdirSync(join(home, "work", "demo"), { recursive: true });
   const out: string[] = [];
   const err: string[] = [];
-  const io: Io = { stdout: (s) => void out.push(s), stderr: (s) => void err.push(s), isTTY: false, prompt: async () => "", env: { T3SM_HOME: state } };
+  const io: Io = { stdout: (s) => void out.push(s), stderr: (s) => void err.push(s), isTTY: false, prompt: async () => "", env: { T3SM_HOME: state, LANG: "en_US.UTF-8" } };
   return { home, state, io, out: () => out.join(""), err: () => err.join("") };
 }
 
@@ -46,9 +46,10 @@ test("scan prints a table per harness and account and the error count", async ()
   const code = await scanCommand([], s.io, { home: s.home, adapters: [adapter([sess(), sess({ flags: ["backup-copy"] }), sess({ accountId: "claude-org" })], 2)] });
   assert.equal(code, 0);
   const o = s.out();
-  assert.match(o, /Harness\s+Account\s+Sessions\s+Flagged/);
-  assert.match(o, /claude\s+claudeAgent\s+2\s+1/);
-  assert.match(o, /claude\s+claude-org\s+1\s+0/);
+  assert.match(o, /Agent\s+Account\s+Sessions\s+Flagged/);
+  assert.match(o, /Claude Code\s+Claude\s+2\s+1/, "an account by its display name (here the detected default's)");
+  assert.doesNotMatch(o, /claudeAgent/, "never the raw account id when the account has a name");
+  assert.match(o, /Claude Code\s+claude-org\s+1\s+0/, "an account config.json does not know keeps its id");
   assert.match(o, /2 read errors/);
   assert.ok(!existsSync(s.state), "scan writes nothing");
 });
@@ -76,7 +77,8 @@ test("plan writes plan.json and plan.md, prints the path, closes the api and sav
   assert.equal(plan.version, 1);
   assert.equal(plan.items.length, 1);
   assert.match(readFileSync(join(dir, "plan.md"), "utf8"), /^# t3sm plan /);
-  assert.ok(s.out().includes(join(dir, "plan.md")));
+  // A path longer than the window stands on its own lines, never indented (Task 21), so the pieces join back to it.
+  assert.ok(s.out().replace(/\r?\n/g, "").includes(join(dir, "plan.md")), s.out());
   assert.match(s.err(), /No config found/);
   assert.match(s.err(), /\n  claudeAgent  ~\/\.claude  \(found via [a-z, -]+\)/, "each saved account with its home and where it was found");
   assert.ok(existsSync(join(s.state, "config.json")));
@@ -102,7 +104,10 @@ test("plan with T3 not running exits 3 through main and writes no files", async 
   const s = setup();
   const code = await withPlan({ home: s.home, adapters: [adapter([])], connect: async () => { throw new T3NotRunning(); } }, () => main(["plan"], s.io));
   assert.equal(code, 3);
-  assert.match(s.err(), /T3 Code is not running\. Open it from the Start menu and try again\./);
+  // The error panel: what happened, what to do, the command that helps.
+  assert.match(s.err(), /T3 Code is not running/);
+  assert.match(s.err(), /What to do: Open (it from the Start menu|T3 Code) and try again\./);
+  assert.match(s.err(), /[›>] t3sm doctor/);
   assert.ok(!existsSync(s.state), "nothing written");
 });
 
@@ -118,20 +123,22 @@ test("close() runs when discovery or planning throws after connect", async () =>
 });
 
 test("main maps T3 errors to friendly messages and exit codes", async () => {
-  const cases: [Error, number, RegExp][] = [
-    [new T3Incompatible("9.9.9", "too new"), 4, /too new/],
-    [new T3AuthError("no token", { hint: "run t3 auth login" }), 1, /no token\nrun t3 auth login/],
-    [new RpcClosed(), 3, /Lost contact with T3 Code \(connection to T3 Code closed\)\. Is it still running\? Try again\./],
-    [new RpcTimeout("orchestration.x", 5000), 3, /Lost contact with T3 Code \(.*\)\. Is it still running\?/],
-    [new T3HttpError("GET /x", 500), 1, /T3 Code rejected the request: GET \/x returned HTTP 500/],
-    [new RpcError("orchestration.x", { _tag: "Bad" }), 1, /T3 Code rejected the request: /],
-    [new Error("boom"), 1, /Unexpected error: boom/],
+  // Task 21: an error panel (title = what happened, the error's own detail, what to do, a command); exit codes unchanged.
+  const cases: [Error, number, RegExp[]][] = [
+    [new T3Incompatible("9.9.9", "too new"), 4, [/T3 Code answered in a way t3sm does not know/, /too new/]],
+    [new T3AuthError("no token", { hint: "run t3 auth login" }), 1, [/T3 Code refused t3sm's sign-in/, /no token run t3 auth login/]],
+    [new RpcClosed(), 3, [/Lost contact with T3 Code/, /connection to T3 Code closed/, /[›>] t3sm doctor/]],
+    [new RpcTimeout("orchestration.x", 5000), 3, [/Lost contact with T3 Code/]],
+    [new T3HttpError("GET /x", 500), 1, [/T3 Code rejected the request/, /GET \/x returned HTTP 500/]],
+    [new RpcError("orchestration.x", { _tag: "Bad" }), 1, [/T3 Code rejected the request/]],
+    [new Error("boom"), 1, [/Unexpected error/, /boom/, /[›>] t3sm doctor/]],
   ];
-  for (const [err, exp, msg] of cases) {
+  for (const [err, exp, msgs] of cases) {
     const s = setup();
     const code = await withPlan({ connect: async () => { throw err; } }, () => main(["plan"], s.io));
     assert.equal(code, exp, err.name);
-    assert.match(s.err(), msg, err.name);
+    for (const msg of msgs) assert.match(s.err().replace(/\s*[|│]\s*\n\s*[|│]\s*/g, " "), msg, err.name);
+    assert.match(s.err(), /What to do: /, err.name);
   }
 });
 
@@ -166,10 +173,12 @@ test("scan and plan read a config whose account home is written with ~ (expanded
   writeFileSync(f, JSON.stringify({ parentUuid: null, type: "user", message: { role: "user", content: "hi" }, uuid: "a", timestamp: "2026-01-01T00:00:00Z", cwd: work, sessionId: id }) + "\n");
   const old = (Date.now() - 40 * 86400000) / 1000;
   utimesSync(f, old, old);
-  const cfgText = JSON.stringify({ version: 1, accounts: [{ id: "claudeAgent", home: "~/.claude", displayName: "Claude", accentColor: null }], defaultAccount: "claudeAgent" });
+  // The test home lives under os.tmpdir(): its folders are temp ones, imported once that question is answered.
+  const cfgText = JSON.stringify({ version: 1, accounts: [{ id: "claudeAgent", home: "~/.claude", displayName: "Claude", accentColor: null }], defaultAccount: "claudeAgent",
+    organize: { decided: ["temp"], folders: { temp: "import" } } });
   writeFileSync(join(s.state, "config.json"), cfgText);
   assert.equal(await scanCommand([], s.io, { home: s.home }), 0);
-  assert.match(s.out(), /claude\s+claudeAgent\s+1\s+0/, "the session under ~/.claude is found");
+  assert.match(s.out(), /Claude Code\s+Claude\s+1\s+0/, "the session under ~/.claude is found (its account by display name)");
   const closed = { n: 0 };
   assert.equal(await planCommand(["--json"], s.io, { home: s.home, connect: async () => fakeApi(closed), now: () => Date.now() }), 0, s.err());
   const plan = JSON.parse(s.out().slice(s.out().indexOf("{")));
@@ -225,4 +234,38 @@ test("scan and plan help say what they write", async () => {
   assert.match(s.out(), /discovery cache/);
   assert.match(s.out(), /config\.json/);
   assert.doesNotMatch(s.out(), /writes nothing/);
+});
+
+test("plan: the General folder follows the language (the assistant's or --lang, else config.json's, else the system's)", async () => {
+  const run = async (language: string | null, lang?: "en" | "pt", env: NodeJS.ProcessEnv = { LANG: "en_US.UTF-8" }, ioLang?: "en" | "pt"): Promise<string[]> => {
+    const s = setup();
+    Object.assign(s.io.env, env);
+    if (ioLang) s.io.lang = ioLang;
+    mkdirSync(s.state, { recursive: true });
+    writeFileSync(join(s.state, "config.json"), JSON.stringify({
+      version: 1, accounts: [{ id: "claudeAgent", home: "~/.claude", displayName: "Claude", accentColor: null }], defaultAccount: "claudeAgent",
+      routes: [], ...(language ? { language } : {}), organize: { decided: ["home"] },
+    }));
+    const home = s.home.replaceAll("\\", "/");
+    const deps: PlanDeps = { home: s.home, adapters: [adapter([sess({ cwd: home })])], connect: async () => fakeApi({ n: 0 }), now: () => Date.now(), ...(lang ? { lang } : {}) };
+    assert.equal(await planCommand(["--json"], s.io, deps), 0, s.err());
+    const plan = JSON.parse(s.out());
+    return plan.projectsToCreate.map((p: { title: string }) => p.title);
+  };
+  assert.deepEqual(await run(null, "pt"), ["Geral"], "the assistant's language");
+  assert.deepEqual(await run("pt"), ["Geral"], "config.json's language");
+  assert.deepEqual(await run(null), ["General"], "an English system");
+  assert.deepEqual(await run(null, undefined, { LANG: "pt_PT.UTF-8" }), ["Geral"], "a Portuguese system (no language in config.json)");
+  assert.deepEqual(await run("en", undefined, { LANG: "pt_PT.UTF-8" }), ["General"], "config.json beats the system");
+  assert.deepEqual(await run("en", undefined, {}, "pt"), ["Geral"], "main's language (--lang) beats config.json");
+  assert.deepEqual(await run("pt", "en"), ["General"], "the explicit language wins");
+});
+
+test("plan --json masks an email-shaped display name of an instance to create (plan.json keeps the file as written)", async () => {
+  const { planForJson } = await import("../../src/cli/commands/plan.ts");
+  const plan = { instancesToCreate: [{ id: "org", driver: "claudeAgent", displayName: "demouser@example.com", accentColor: null, homePath: "C:/h/.claude-org", environment: [] }], items: [] } as never;
+  const out = JSON.stringify(planForJson(plan));
+  assert.match(out, /"displayName":"d\*\*\*@example\.com"/);
+  assert.doesNotMatch(out, /demouser/);
+  assert.equal((plan as { instancesToCreate: { displayName: string }[] }).instancesToCreate[0]!.displayName, "demouser@example.com", "a copy: the plan itself is unchanged");
 });

@@ -1,0 +1,3 @@
+› Rename 2 projects t3sm created (the title is still the one t3sm gave it):
+  • 'src' -> 'demo/src'
+  • 'C:/work/app-with-a-long-folder-name' -> 'app-with-a-long-folder-name'

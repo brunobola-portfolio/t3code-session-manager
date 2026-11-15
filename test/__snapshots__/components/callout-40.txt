@@ -1,0 +1,28 @@
+--- unicode on
+· Worth knowing
+  Pi sessions exist (3) but no Pi
+  instance was found.
+! Continued in a terminal
+  Two conversations moved on after the
+  import.
+  › t3sm merge --project app
+✗ Needs you
+  3 undecided conversations. Decide
+  where they belong, then run the
+  command below to settle them all at
+  once.
+  › t3sm start --resume
+--- unicode off
+- Worth knowing
+  Pi sessions exist (3) but no Pi
+  instance was found.
+! Continued in a terminal
+  Two conversations moved on after the
+  import.
+  > t3sm merge --project app
+x Needs you
+  3 undecided conversations. Decide
+  where they belong, then run the
+  command below to settle them all at
+  once.
+  > t3sm start --resume

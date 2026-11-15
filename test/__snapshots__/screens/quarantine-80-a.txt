@@ -1,0 +1,5 @@
+claudeAgent (~/.claude): 1 backup folder to move, 1 skipped
+  - ~/.claude/projects/C--work-demo.bak
+    -> ~/.claude/session-manager-quarantine/backups/C--work-demo.bak
+  ! skipped ~/.claude/projects/C--work-app.bak: in use (session.jsonl changed in
+    the last 10 minutes)
