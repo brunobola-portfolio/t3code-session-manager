@@ -1,0 +1,25 @@
+Held: a project waits while a conversation is in use
+
+What it means
+
+A conversation of this project was written in the last 10 minutes, so t3sm
+leaves the whole project for the next run. T3 Code imports every recent
+conversation of a project at once, and moving file times under a conversation
+that is being written could disturb it.
+
+Why it happens
+
+  - You (or an agent) are working in that project right now, in a terminal or in
+    T3 Code.
+  - The conversation that runs /t3sm:sync inside T3 Code is itself in use, so
+    its own project waits.
+  - A file of the project stayed locked by another program (an antivirus,
+    OneDrive).
+
+What to do
+
+  - Nothing: the project is imported once its conversations have been idle for
+    10 minutes. t3sm sync (and the background watcher) retries on its own.
+  - To import it now, close or pause that conversation, wait 10 minutes and run
+    t3sm apply.
+  - t3sm status shows each waiting project and since when.

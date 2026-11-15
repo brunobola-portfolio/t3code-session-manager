@@ -1,0 +1,5 @@
+╭─ ✗ T3 Code is not running ───────────╮
+│ What to do: Open it from the Start   │
+│ menu and try again.                  │
+│ › t3sm doctor                        │
+╰──────────────────────────────────────╯

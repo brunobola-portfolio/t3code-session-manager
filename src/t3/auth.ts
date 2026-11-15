@@ -1,6 +1,7 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { registerSecret, pinSecret, unregisterSecret, T3AuthError } from "./errors.ts";
 import { parseLocalOrigin } from "./runtime.ts";
+import { system32 } from "../core/sysroot.ts";
 
 export interface RunOptions { shell: boolean; timeoutMs: number; env: Record<string, string> }
 export interface RunResult { code: number | null; stdout: string; stderr: string; timedOut: boolean }
@@ -13,9 +14,22 @@ function quoteWin(s: string): string {
 }
 
 /**
+ * How long win32's `taskkill /T /F` may take before it is given up. On a loaded machine, starting taskkill.exe and
+ * walking the tree took over 8 s (16 test suites at once on 24 cores); a 5 s budget stopped taskkill first, child.kill()
+ * then ended cmd.exe alone and the grandchild was left running. Only the timeout and exit paths wait for it.
+ */
+export const TASKKILL_TIMEOUT_MS = 30_000;
+
+/**
  * Kill the child and its whole tree, synchronously (it must also work inside a process `exit` handler).
  * POSIX: the child leads its own (detached) group, so the group gets SIGKILL. win32: `taskkill /T /F` must run while
  * the child still exists, so child.kill() only follows it.
+ *
+ * Trade-off, on purpose: win32's spawnSync blocks this process's event loop until taskkill returns, up to
+ * TASKKILL_TIMEOUT_MS. That is what makes the kill work in an `exit` handler (nothing asynchronous runs there) and what
+ * keeps the tree from outliving a timeout. The cost: in the watcher, a notifier or `t3` call that times out blocks the
+ * loop for as long as taskkill takes (usually well under a second; seconds on a loaded machine), and a stop request
+ * arriving meanwhile is answered only afterwards (stopWatcher waits 30 s for it before it falls back to the verified pid).
  */
 function killTree(child: ChildProcess): void {
   if (child.exitCode !== null || child.signalCode !== null) return;
@@ -25,7 +39,7 @@ function killTree(child: ChildProcess): void {
     try { process.kill(-child.pid, "SIGKILL"); } catch { plain(); }
     return;
   }
-  try { spawnSync("taskkill", ["/pid", String(child.pid), "/T", "/F"], { stdio: "ignore", windowsHide: true, timeout: 5000 }); } catch { /* ignore */ }
+  try { spawnSync(system32(process.env, "taskkill.exe"), ["/pid", String(child.pid), "/T", "/F"], { stdio: "ignore", windowsHide: true, timeout: TASKKILL_TIMEOUT_MS }); } catch { /* ignore */ }
   plain();
 }
 

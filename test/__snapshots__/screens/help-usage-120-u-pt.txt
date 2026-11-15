@@ -1,0 +1,46 @@
+O t3sm traz as tuas sessões do Claude Code, do Codex, do Pi e do OpenCode para o T3 Code.
+
+Uso: t3sm [comando] [opções]
+
+Começar aqui
+  t3sm start             Configuração guiada, passo a passo (também só t3sm; --lang en em inglês)
+
+Importar
+  t3sm doctor            Verifica esta máquina, o T3 Code e as contas (só leitura)
+  t3sm plan              Prepara o plano de importação em plan.md (não muda nenhuma sessão)
+  t3sm apply             Importa as sessões do plano (--dry-run, --only "<pasta>")
+
+Contas e projetos
+  t3sm accounts          As tuas subscrições do Claude e as instâncias delas no T3 Code
+  t3sm projects          A conta que cada projeto usa (set "<pasta>" <conta>, rename --suggest)
+
+Manter sincronizado
+  t3sm status            O t3sm precisa de ti? Tudo bem, precisa de ti ou a trabalhar (só leitura; saída 10: precisa de
+                         ti)
+  t3sm sync              Importa o que é novo desde a última vez (--watch continua a vigiar)
+  t3sm schedule          Sincroniza em segundo plano: install [--watch], remove, restart, status
+  t3sm merge             Traz para o T3 Code as sessões continuadas num terminal
+
+Arrumar o T3 Code
+  t3sm organize          Arruma o histórico importado: arquiva, muda títulos, mostra, fixa (--undo)
+
+Limpar e desfazer
+  t3sm quarantine        Move as pastas de cópia de segurança para uma quarentena reversível
+  t3sm dedupe            Move as cópias-espelho do plano para uma quarentena reversível
+  t3sm runs              Lista o que cada execução fez
+  t3sm rollback          Desfaz uma execução (--run <id>)
+
+Ajuda e manutenção
+  t3sm help              O que uma mensagem quer dizer e o que fazer (t3sm help <tópico>)
+  t3sm scan              Conta as sessões por agente e por conta (não precisa do T3 Code)
+  t3sm update            Atualiza o t3sm para a versão mais recente (--check só vê)
+  t3sm changelog         O que há de novo nesta versão (--since <versão>)
+  t3sm --version         Mostra a versão
+
+Cada comando explica-se a si próprio: t3sm <comando> --help. Os comandos que escrevem perguntam primeiro; o --dry-run
+mostra o que fariam.
+
+Opções globais (todos os comandos):
+  --lang en|pt   A língua do que o t3sm escreve. Por omissão: a variável T3SM_LANG, depois "language" no config.json,
+                 depois a língua do sistema, senão inglês. O --json, o plan.md e os registos ficam sempre em inglês.
+  --no-color     Sem cor (o NO_COLOR também é respeitado)

@@ -1,0 +1,12 @@
+[0.3.1] - 2026-11-15
+
+Fixed
+
+  • Undo lines name the run. The result
+    of t3sm apply says
+    t3sm rollback --run <id>, which the
+    command accepts.
+  • A long line of notes that has to
+    wrap at forty columns and again at
+    eighty, so the bullet's text hangs
+    under itself.

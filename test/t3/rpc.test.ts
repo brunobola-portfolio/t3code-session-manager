@@ -203,9 +203,13 @@ test("RpcError.cause keeps ids and file names (structured redaction is narrow)",
 test("redact: UUIDs survive in free text, long digit runs do not; huge input is capped and fast", () => {
   assert.ok(redact("project 00000000-0000-4000-8000-000000000007 missing").includes("00000000-0000-4000-8000-000000000007"));
   assert.ok(!redact("x " + "a1".repeat(20) + " y").includes("a1a1a1a1"));
-  const t0 = Date.now();
+  // CPU time, not the wall clock: on a loaded machine the wall clock also counts the time this process waits for a CPU.
+  // A backtracking pattern would burn seconds of CPU on this input; the linear ones take about a millisecond.
+  const c0 = process.cpuUsage();
   const out = redact("token:" + "a".repeat(500_000) + "!");
-  assert.ok(out.length <= 8300 && Date.now() - t0 < 500);
+  const { user, system } = process.cpuUsage(c0);
+  assert.ok(out.length <= 8300);
+  assert.ok((user + system) / 1000 < 500, `took ${((user + system) / 1000).toFixed(0)} ms of CPU`);
 });
 
 test("secret registry is capped (LRU 64) and unregisterSecret removes a value", () => {
@@ -229,13 +233,19 @@ test("a registered secret straddling the 8192 cut is still removed", () => {
   assert.ok(!out2.includes("straddling"));
 });
 
+// No clock: the payload stands in for a 128 MiB string and answers only `length` and `slice`, recording each slice. Any
+// other use of the whole input (includes, split, a regex) throws, so the exact-value pass provably runs on the first
+// MAX_EXACT_SCAN characters alone, whatever the secrets. (It used to time a real 128 MiB string against 150 ms: on a
+// loaded machine the wall clock also counts the time the process waits for a CPU, and the test failed with nothing
+// wrong.)
 test("exact-value pass scans at most 1 MiB, so huge failure payloads stay cheap", () => {
   assert.equal(MAX_EXACT_SCAN, 1024 * 1024);
   for (let i = 0; i < 64; i++) registerSecret(`cost-secret-${String(i).padStart(4, "0")}-q`);
-  const big = "x".repeat(128 * 1024 * 1024) + "cost-secret-0001-q";
-  const t0 = performance.now();
-  const out = redact(big);
-  const ms = performance.now() - t0;
+  const window = "cost-secret-0001-q " + "x".repeat(MAX_EXACT_SCAN);
+  const slices: [number, number | undefined][] = [];
+  const huge = { length: 128 * 1024 * 1024, slice: (from: number, to?: number) => { slices.push([from, to]); return window.slice(from, to); } };
+  const out = redact(huge as unknown as string);
+  assert.deepEqual(slices, [[0, MAX_EXACT_SCAN]], "the input is read once, and only its first MAX_EXACT_SCAN characters");
+  assert.ok(out.startsWith("<redacted> xxx"), "the exact pass ran on that window");
   assert.ok(out.length <= 8300);
-  assert.ok(ms < 150, `took ${ms.toFixed(0)} ms`);
 });

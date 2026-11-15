@@ -3,13 +3,19 @@
 // checks (+ mirror warning) -> confirm (all BEFORE the first write) -> instances -> conversions -> projects -> defaults
 // -> waves -> run-end. A dry run (`dryRun`) stops before confirm, reports, and skips the recovery (read-only).
 //
+// Rehome destination folders (interactive runs only, `rehomeFolders`; sync never passes it, safety invariant 13): a
+// copy's destination folder that T3 Code does not have yet and that is missing on disk (the General folder, a
+// `rehome:<folder>` override) is created and journaled (`folder-created`) before the copies are written. One T3 Code
+// refuses, a temp or system folder, or one that cannot be created fails its own items ("cannot create <folder>:
+// <reason>"); the rest of the run goes on.
+//
 // Conversions (convert-import items: OpenCode, Codex compressed rollouts) are written by materializeConversions into their account's projects
 // folder before the projects are created (a root whose only sessions fail to convert gets no empty project), then go
 // through the same waves as native imports with the written transcript as their file.
 
 import path from "node:path";
 import { join } from "node:path";
-import { readdir, stat } from "node:fs/promises";
+import { mkdir, readdir, stat } from "node:fs/promises";
 import type { AccountConfig, Config, DiscoveredSession, HarnessId, JournalEntry, Plan, PlanItem } from "../core/types.ts";
 import { allAdapters, isConvertSession, otherForms, sessionIdsInT3 } from "../sources/registry.ts";
 import { CWD_SCAN_MAX_BYTES, type SourceAdapter } from "../sources/types.ts";
@@ -19,14 +25,19 @@ import { materializeConversions, type ConvertFailReason } from "./materialize.ts
 import { Journal, near, newRunId, pendingMtimePaths, recoverPendingMtimes, type RecoverResult } from "../core/journal.ts";
 import { acquireLock } from "../core/lock.ts";
 import { statSafe } from "../core/fsutil.ts";
-import { encodeClaudeProjectDir, normalizeCwd, pathKey, sameCwd } from "../core/paths.ts";
+import { encodeClaudeProjectDir, normalizeCwd, pathKey, sameCwd, tildePath } from "../core/paths.ts";
+import { classifyFolder, type FolderEnv } from "../plan/folders.ts";
 import { readClaudeNativeId } from "../sources/claude.ts";
+import { shownText } from "../plan/names.ts";
+import { cliT, type CliKey } from "../i18n/cli.ts";
+import type { Lang } from "../i18n/lang.ts";
+import { conversationTitle } from "../plan/ownership.ts";
 import { connectT3, type ProviderInstanceInfo, type T3Api, type T3Project } from "../t3/api.ts";
 import { T3HttpError, T3Incompatible } from "../t3/errors.ts";
 import { DEFAULT_ID, applyProjectDefaults, assertDefaultInstanceHome, defaultClaudeHome, driftError, ensureInstances, entryHome } from "../ops/accounts.ts";
 import { buildWaves, itemRoot, rootKey, waveItems } from "./waves.ts";
 import {
-  exposureIndex, restoreSync, runWaves, type BumpFile, type ExposedTranscript, type FailReason, type Progress, type WavesResult,
+  exposureIndex, restoreSync, runWaves, type ActiveFile, type BumpFile, type ExposedTranscript, type FailReason, type Progress, type WavesResult,
 } from "./importer.ts";
 
 export const PLAN_MAX_AGE_MS = 24 * 3_600_000;
@@ -82,13 +93,21 @@ export interface ApplyDeps {
   signals?: SignalSource;
   /**
    * Asked once, after every read-only check and before the first write, with the plan as it will run (--only
-   * applied, projects held this run removed) and the held project roots (a session of theirs is in use).
+   * applied, sessions of projects held this run removed; their projects are still created) and the held project roots (a session of theirs is in use).
    * false: nothing is written (status "declined"). Omitted: proceed (--yes).
    */
-  confirm?: (plan: Plan, held: { roots: string[]; sessions: number }) => Promise<boolean>;
-  /** One line per wave. */
+  confirm?: (plan: Plan, held: { roots: string[]; sessions: number }, extra: { foldersToCreate: string[] }) => Promise<boolean>;
+  /** One line per wave (progressLine: English, for logs and `--verbose`). */
   onProgress?: (line: string) => void;
+  /** Once, right before the first wave: how many conversations the waves will import, into how many projects. */
+  onImportStart?: (n: { sessions: number; projects: number }) => void;
+  /** After every wave, its counts (the progress bar counts imported + failed + deferred as done). */
+  onWave?: (p: Progress) => void;
+  /** How many failures get their conversation's title read (the rows the screen shows); default 0, none. */
+  failureTitles?: number;
   onNotice?: (line: string) => void;
+  /** The language of the notices (default English). */
+  lang?: Lang;
   platform?: NodeJS.Platform;
   /** Forced exit on the third SIGINT/SIGTERM (default process.exit); tests inject. */
   exit?: (code: number) => never;
@@ -107,13 +126,25 @@ export interface ApplyDeps {
    * Nothing is written: no recovery (pending file times are reported instead), no journal, no T3 write call.
    */
   dryRun?: boolean;
-  /** Called once after every check (and confirm), right before the first write, with the plan as it will run (held projects removed). */
+  /** Called once after every check (and confirm), right before the first write, with the plan as it will run (held projects' sessions removed). */
   beforeWrites?: (plan: Plan) => Promise<void>;
   /**
    * Extension point (Task 23 merge): runs while the lock is held and T3 is connected, after the waves and before
    * run-end; on a "noop" cycle it runs with runId null (it then journals its own run if it writes anything).
    */
   afterApply?: (ctx: AfterApplyContext) => Promise<void>;
+  /**
+   * Interactive runs only (`t3sm apply`, the assistant through it): create a missing destination folder of rehome copies
+   * (spec 4.3) once it is checked against `env` (never a folder T3 Code refuses, nor a temp or system one). Omitted
+   * (`sync`): no folder is ever created.
+   */
+  rehomeFolders?: RehomeFolders;
+}
+
+export interface RehomeFolders {
+  env: FolderEnv;
+  /** Creates the folder and its missing parents; returns the topmost one it created (undefined: it existed). Tests inject. */
+  mkdir?: (path: string) => Promise<string | undefined>;
 }
 
 export interface AfterApplyContext {
@@ -122,11 +153,15 @@ export interface AfterApplyContext {
   plan: Plan;
   result: ApplyResult;
   runId: string | null;
+  /** The run was asked to stop (a signal, even one that arrived during afterApply): steps after it must not start. */
+  aborted?: () => boolean;
+  /** The files a step's waves have bumped or parked right now, for the forced exit's restore (the 3rd Ctrl+C). */
+  onPendingFiles?: (files: BumpFile[] | null) => void;
 }
 
 /** What `apply --dry-run` found: the run as it would go, computed from the same checks, before any write. */
 export interface DryRunReport {
-  /** The plan as it would run (--only applied, held projects removed): what the confirmation summary shows. */
+  /** The plan as it would run (--only applied, held projects' sessions removed): what the confirmation summary shows. */
   plan: Plan;
   /** Transcript file times an interrupted run left bumped; a real run restores them first. */
   pendingRecovery: string[];
@@ -140,9 +175,42 @@ export interface DryRunReport {
   alreadyInT3: number;
   held: { roots: string[]; sessions: number };
   /** Pending items that cannot be imported whatever happens (cwd beyond T3's window, instance unavailable). */
-  failUpFront: { harness: string; nativeId: string; reason: FailReason }[];
+  failUpFront: (ImportFailure & { reason: FailReason })[];
   /** The home T3's default Claude instance would be pinned to (it is implicit now), or null. */
   pinDefault: string | null;
+  /** Destination folders of rehome copies a real run would create (`rehomeFolders` given; else none). */
+  foldersToCreate: string[];
+}
+
+/**
+ * One conversation that could not be imported, as a screen names it: its project root (where it was going) and its
+ * title (Claude transcripts: `custom-title`, else `ai-title`; null for none or another harness), with the reason code.
+ */
+export interface ImportFailure {
+  harness: string; nativeId: string; reason: FailReason | ConvertFailReason;
+  projectRoot: string;
+  title: string | null;
+}
+
+/** Each failure's transcript, beside it (never in the result itself): its title is read only for the rows shown. */
+const FILE_OF = new WeakMap<ImportFailure, string>();
+
+/** The failure entry for a plan item. Its title is filled by nameFailures, for the failures a screen shows. */
+export function failureOf(i: PlanItem, reason: FailReason | ConvertFailReason): ImportFailure {
+  const f: ImportFailure = { harness: i.session.harness, nativeId: i.session.nativeId, reason, projectRoot: itemRoot(i), title: null };
+  FILE_OF.set(f, i.session.file.path);
+  return f;
+}
+
+/**
+ * Reads the title (`custom-title`, else `ai-title`; never message content) of the first `limit` failures that are
+ * Claude transcripts: the rows a screen shows. 0 (an unattended or quiet run) reads no transcript at all.
+ */
+export async function nameFailures(failures: ImportFailure[], limit: number): Promise<void> {
+  for (const f of failures.slice(0, Math.max(0, limit))) {
+    const file = FILE_OF.get(f);
+    if (f.title === null && f.harness === "claude" && file !== undefined) f.title = await conversationTitle(file);
+  }
 }
 
 export interface ApplyResult {
@@ -151,7 +219,7 @@ export interface ApplyResult {
   runId: string | null;
   imported: number;
   failed: number;
-  failures: { harness: string; nativeId: string; reason: FailReason | ConvertFailReason }[];
+  failures: ImportFailure[];
   /** Converted transcripts written this run (convert-import items; files already in place are not counted). */
   converted: number;
   /** In use / changed / gone since planning (or, for conversions, the source busy / the session in use when read): left alone, the next run retries. */
@@ -160,6 +228,12 @@ export interface ApplyResult {
   deferredInUse: number;
   /** The plan roots held this run (a transcript of the project in use). */
   heldRoots: string[];
+  /**
+   * Why each in-use root waits: the project's name as T3 shows it (its existing title, else the plan's, else the
+   * folder), the transcript being written, its title (`custom-title`, else `ai-title`; null for none or another
+   * harness) and its file time. Held projects are still created, empty (S6: project.create imports nothing).
+   */
+  held: { project: string; root: string; file: string; title: string | null; modifiedAt: string }[];
   /** Sessions of the plan that T3 already had when this run started. */
   alreadyInT3: number;
   restoreErrors: { path: string; error: string }[];
@@ -238,8 +312,9 @@ export async function applyPlan(planSource: Plan | (() => Promise<Plan>), deps: 
   const platform = deps.platform ?? process.platform;
   const now = deps.now ?? Date.now;
   const notice = deps.onNotice ?? (() => {});
+  const tr = (k: CliKey, v: Record<string, string | number> = {}): string => cliT(deps.lang ?? "en", k, v);
   const result: ApplyResult = {
-    status: "ok", runId: null, imported: 0, failed: 0, failures: [], converted: 0, deferred: 0, deferredInUse: 0, heldRoots: [], alreadyInT3: 0, restoreErrors: [], unverified: 0, parked: 0, recovered: null,
+    status: "ok", runId: null, imported: 0, failed: 0, failures: [], converted: 0, deferred: 0, deferredInUse: 0, heldRoots: [], held: [], alreadyInT3: 0, restoreErrors: [], unverified: 0, parked: 0, recovered: null,
   };
 
   // A dry run takes the lock too (it reads a consistent state), but never creates the state folder for it.
@@ -259,10 +334,10 @@ export async function applyPlan(planSource: Plan | (() => Promise<Plan>), deps: 
     abort = true;
     signalCount++;
     if (signalCount === 2) {
-      if (pendingFiles) notice("Still restoring file times… (press Ctrl+C again to force; the journal restores the rest next run)");
+      if (pendingFiles) notice(tr("apply.notice.stillRestoring"));
     } else if (signalCount >= 3) {
       if (pendingFiles) restoreSync(pendingFiles);
-      notice("Forced exit after restoring file times.");
+      notice(tr("apply.notice.forcedExit"));
       exit(130);
     }
   };
@@ -301,7 +376,7 @@ export async function applyPlan(planSource: Plan | (() => Promise<Plan>), deps: 
         // T3's settings are read only when the default instance's home is in question (they say which advice applies).
         assertDefaultInstanceHome(providers, homes, deps.home, platform, def?.homePath != null && !sameCwd(def.homePath, defaultClaudeHome(deps.home), platform) ? await settings() : undefined);
       }
-      await warnMirrors(plan, now(), notice);
+      await warnMirrors(plan, now(), notice, tr);
       checkInstanceHomes(plan, providers, platform);
       // The pin is made only while the instance is still implicit (no settings entry) and reads that home (or none).
       let pin: { instanceId: string; homePath: string } | null = null;
@@ -320,7 +395,7 @@ export async function applyPlan(planSource: Plan | (() => Promise<Plan>), deps: 
       const exposedItems = deps.exposure?.() ?? inputPlan.items;
       const ahead = futureLeftovers(exposedItems.map((i) => i.session.file), entriesBefore, now(), platform);
       if (ahead.length > 0) {
-        notice(`Warning: ${ahead.length} transcript${ahead.length === 1 ? " has" : "s have"} a file time more than 10 minutes in the future that no interrupted t3sm run explains; T3 Code skips ${ahead.length === 1 ? "it" : "them"} until then. Run \`t3sm doctor\` to list ${ahead.length === 1 ? "it" : "them"}.`);
+        notice(tr("apply.notice.futureTimes", { n: ahead.length }));
       }
       let liveProviders: ProviderInstanceInfo[] = [...providers, ...plan.instancesToCreate
         .filter((s) => !providers.some((p) => p.instanceId === s.id))
@@ -344,15 +419,25 @@ export async function applyPlan(planSource: Plan | (() => Promise<Plan>), deps: 
       const heldAtStart = new Set<string>();
       const rootsOf = new Map<string, string>();
       for (const i of pendingImports) rootsOf.set(rootKey(itemRoot(i), platform), itemRoot(i));
-      for (const [k, root] of rootsOf) if ((await pre.scan(k, root, now, new Set(), 0)).inUse) heldAtStart.add(k);
+      // A held project's name as T3 shows it: its existing title (renamed, General, de-duplicated), else the plan's, else the folder.
+      const projectName = (root: string): string => {
+        const k = rootKey(root, platform);
+        return projects.find((p) => !p.deleted && rootKey(p.workspaceRoot, platform) === k)?.title
+          ?? plan.projectsToCreate.find((p) => rootKey(p.root, platform) === k)?.title ?? lastSegment(normalizeCwd(root, platform));
+      };
+      for (const [k, root] of rootsOf) {
+        const s = await pre.scan(k, root, now, new Set(), 0);
+        if (!s.inUse) continue;
+        heldAtStart.add(k);
+        if (s.active) result.held.push(await heldEntry(projectName(root), root, s.active));
+      }
       const isHeld = (r: string): boolean => heldAtStart.has(rootKey(r, platform));
       const heldItems = pendingImports.filter((i) => isHeld(itemRoot(i)));
+      // A held project keeps its project and default (S6: creating one imports nothing); only its imports wait.
       const runnable: Plan = heldAtStart.size === 0 ? { ...plan, pinDefault: pin } : {
         ...plan,
         pinDefault: pin,
         items: plan.items.filter((i) => !(i.action.kind !== "skip" && isHeld(i.action.projectRoot))),
-        projectsToCreate: plan.projectsToCreate.filter((p) => !isHeld(p.root)),
-        projectDefaults: plan.projectDefaults.filter((d) => !isHeld(d.root)),
       };
       const noteHeld = (): void => {
         result.deferred += heldItems.length;
@@ -360,23 +445,30 @@ export async function applyPlan(planSource: Plan | (() => Promise<Plan>), deps: 
         for (const r of rootsOf.values()) if (isHeld(r) && !result.heldRoots.includes(r)) result.heldRoots.push(r);
       };
 
-      if (deps.noopWithoutWrites && pin === null && nothingToWrite(runnable, projects, threadIds0, platform)) {
+      const heldToCreate = heldItems.some((i) => !projects.some((p) => !p.deleted && rootKey(p.workspaceRoot, platform) === rootKey(itemRoot(i), platform)));
+      if (deps.noopWithoutWrites && pin === null && !heldToCreate && nothingToWrite(runnable, projects, threadIds0, platform)) {
         const ids = threadIds0;
         const liveIds = runnable.items.flatMap((i) => (i.action.kind === "skip" ? [] : [i.action.expectedThreadId]));
         result.alreadyInT3 = liveIds.filter((id) => ids.has(id)).length;
         noteHeld();
         result.status = "noop";
-        if (deps.afterApply) await deps.afterApply({ api, journal, plan, result, runId: null });
+        if (deps.afterApply) await deps.afterApply({ api, journal, plan, result, runId: null, aborted: () => abort, onPendingFiles: (f) => { pendingFiles = f; } });
         return result;
       }
       const heldRootNames = [...rootsOf.values()].filter((r) => isHeld(r));
+      // The folders a run would create for rehome copies: shown by the dry run and the confirmation.
+      const foldersToCreate = deps.rehomeFolders
+        ? (await checkRehomeFolders(pendingImports, projects, deps.rehomeFolders, platform)).flatMap((c) => (c.state === "create" ? [c.root] : []))
+        : [];
       if (deps.dryRun) {
-        const report = dryRunReport(runnable, projects, providers, threadIds0, deps.batch ?? DEFAULT_BATCH, platform);
-        return { ...result, status: "dry-run", dryRun: { ...report, pendingRecovery, held: { roots: heldRootNames, sessions: heldItems.length }, pinDefault: pin?.homePath ?? null } };
+        const report = dryRunReport(runnable, heldItems, projects, providers, threadIds0, deps.batch ?? DEFAULT_BATCH, platform);
+        const failUpFront = report.failUpFront.map(({ item, reason }) => failureOf(item, reason) as DryRunReport["failUpFront"][number]);
+        await nameFailures(failUpFront, deps.failureTitles ?? 0);
+        return { ...result, status: "dry-run", dryRun: { ...report, failUpFront, pendingRecovery, held: { roots: heldRootNames, sessions: heldItems.length }, pinDefault: pin?.homePath ?? null, foldersToCreate } };
       }
-      if (deps.confirm && !(await deps.confirm(runnable, { roots: heldRootNames, sessions: heldItems.length }))) return { ...result, status: "declined" };
+      if (deps.confirm && !(await deps.confirm(runnable, { roots: heldRootNames, sessions: heldItems.length }, { foldersToCreate }))) return { ...result, status: "declined" };
       if (abort) return { ...result, status: "aborted" };
-      if (deps.beforeWrites) await deps.beforeWrites(runnable); // what this run does (held projects removed)
+      if (deps.beforeWrites) await deps.beforeWrites(runnable); // what this run does (held projects' sessions removed)
 
       // ---------- writes ----------
       const runId = deps.runId ?? newRunId(new Date(now()));
@@ -400,20 +492,66 @@ export async function applyPlan(planSource: Plan | (() => Promise<Plan>), deps: 
         const pending = liveItems.filter((i) => !threadIds.has((i.action as { expectedThreadId: string }).expectedThreadId));
         result.alreadyInT3 = liveItems.length - pending.length;
         const toImport = pending.filter((i) => i.action.kind === "import");
-        const toConvert = pending.filter((i) => i.action.kind === "convert-import");
+        let toConvert = pending.filter((i) => i.action.kind === "convert-import");
+        // Orphan copies (a session T3 Code started whose thread it no longer lists) rely on T3's thread lists being
+        // complete: listed once more before anything is written for them (their folder, project or copy), and one whose
+        // thread (its handoff id, or a thread of the session itself) is listed now is not copied. It waits for the next
+        // plan, which sees it in T3. A listing that fails defers every orphan copy (nothing journaled for them); the
+        // rest of the run goes on.
+        let orphanHeld = new Set<PlanItem>();
+        if ([...toConvert, ...heldItems].some(isOrphanCopy) && !abort) {
+          let fresh: Awaited<ReturnType<T3Api["listThreads"]>> | null = null;
+          try { fresh = await api.listThreads(); } catch (e) {
+            const waiting = toConvert.filter(isOrphanCopy);
+            result.deferred += waiting.length;
+            orphanHeld = new Set(heldItems.filter(isOrphanCopy));
+            const why = shownText(((e as Error)?.message ?? String(e)).split(/\r?\n/)[0] ?? "");
+            notice(tr("apply.notice.orphanCheckFailed", { n: waiting.length + orphanHeld.size, error: why }));
+            toConvert = toConvert.filter((i) => !isOrphanCopy(i));
+          }
+          if (fresh !== null) {
+            const ids = new Set(fresh.flatMap((t) => [t.id, /^import:[^:]+:(.+)$/s.exec(t.id)?.[1] ?? "", t.nativeSessionId ?? ""]).filter((x) => x !== ""));
+            const listed = (i: PlanItem): boolean => isOrphanCopy(i) && (ids.has(i.session.nativeId) || (i.session.t3ThreadId !== undefined && ids.has(i.session.t3ThreadId)));
+            const live = toConvert.filter(listed);
+            orphanHeld = new Set(heldItems.filter(listed));
+            if (live.length > 0) {
+              result.deferred += live.length;
+              notice(tr("apply.notice.orphanListed", { n: live.length }));
+              toConvert = toConvert.filter((i) => !live.includes(i));
+            }
+          }
+        }
+        // Rehome destination folders, before any copy is written; a folder that cannot be used fails its items only.
+        let heldProjects = heldItems.filter((i) => !orphanHeld.has(i)); // held items whose project is still created (empty)
+        if (deps.rehomeFolders && !abort) {
+          const blocked = await prepareRehomeFolders([...toConvert, ...heldProjects], projects, deps.rehomeFolders, journal, runId, platform, notice, tr);
+          if (blocked.size > 0) {
+            const why = (i: PlanItem): string | undefined => blocked.get(rootKey(itemRoot(i), platform));
+            for (const i of toConvert) {
+              const w = why(i);
+              if (w === undefined) continue;
+              const reason: ConvertFailReason = `target-folder: ${w}`;
+              result.failed++;
+              result.failures.push(failureOf(i, reason));
+              await journal.append({ t: "import-failed", runId, harness: i.session.harness, nativeId: i.session.nativeId, reason });
+            }
+            toConvert = toConvert.filter((i) => why(i) === undefined);
+            heldProjects = heldProjects.filter((i) => why(i) === undefined);
+          }
+        }
         if (toConvert.length > 0 && !abort) { // interrupted first: not attempted (like a wave never started)
           const m = await materializeConversions(toConvert, adapterMap(deps.adapters ?? allAdapters()), conversionAccounts(liveProviders, deps.accountHomes?.() ?? {}), journal, runId, { platform });
           result.converted = m.written.length;
           result.deferred += m.deferred.length; // source busy / session in use: next run, not a failure
           for (const { item, reason } of m.failed) {
             result.failed++;
-            result.failures.push({ harness: item.session.harness, nativeId: item.session.nativeId, reason });
+            result.failures.push(failureOf(item, reason));
             await journal.append({ t: "import-failed", runId, harness: item.session.harness, nativeId: item.session.nativeId, reason: `convert: ${reason}` });
           }
           toImport.push(...m.ready); // the converted transcript is now the item's file
         }
 
-        const projectOf = await ensureProjects(api, runnable, projects, toImport, journal, runId, platform);
+        const projectOf = await ensureProjects(api, runnable, projects, [...toImport, ...heldProjects], journal, runId, platform);
         const defaults: { projectId: string; instanceId: string }[] = [];
         for (const d of runnable.projectDefaults) {
           const p = projectOf.get(rootKey(d.root, platform));
@@ -429,34 +567,42 @@ export async function applyPlan(planSource: Plan | (() => Promise<Plan>), deps: 
           for (const [k, p] of projectOf) { projectIds.set(k, p.id); importRoots.set(k, p.workspaceRoot); }
           // From the list read after ensureInstances: a just-created instance has its real availability here.
           const providerAvail = new Map(liveProviders.map((p) => [p.instanceId, p.availability] as const));
+          const planned = buildWaves(toImport, batch, cost, { platform });
+          deps.onImportStart?.({ sessions: toImport.length, projects: new Set(toImport.map((i) => rootKey(itemRoot(i), platform))).size });
           waves = await runWaves({
             api, journal, runId, projectIds, importRoots, now, batch, cost, platform,
             instanceAvailability: providerAvail,
             exposure: exposureOf(exposedItems, liveProviders, platform), liveExposure: live,
             aborted: () => abort,
             onPendingFiles: (f) => { pendingFiles = f; },
-            onProgress: (p) => deps.onProgress?.(progressLine(p)),
+            onProgress: (p) => { deps.onWave?.(p); deps.onProgress?.(progressLine(p)); },
             onNotice: notice,
-          }, buildWaves(toImport, batch, cost, { platform }));
+          }, planned);
           result.imported = waves.imported.length;
           result.unverified = waves.unverified.length;
           result.failed += waves.failed.length;
-          result.failures.push(...waves.failed.map((f) => ({ harness: f.item.session.harness, nativeId: f.item.session.nativeId, reason: f.reason })));
+          for (const f of waves.failed) result.failures.push(failureOf(f.item, f.reason));
           result.deferred += waves.deferred.length;
           result.deferredInUse += waves.deferred.filter((d) => d.reason === "project-in-use").length;
           for (const r of waves.heldRoots) if (!result.heldRoots.some((x) => rootKey(x, platform) === rootKey(r, platform))) result.heldRoots.push(r);
+          for (const h of waves.heldActive) if (!result.held.some((x) => rootKey(x.root, platform) === rootKey(h.root, platform))) result.held.push(await heldEntry(projectName(h.root), h.root, h.file));
           result.restoreErrors = waves.restoreErrors;
           result.parked = waves.parked;
           const jumped = waves.deferred.filter((d) => d.reason === "clock-jump").length;
-          if (jumped > 0) notice(`The system clock jumped during an import (sleep or a time change): ${jumped} ${jumped === 1 ? "session waits" : "sessions wait"} for the next run. Keep the machine awake while t3sm imports.`);
+          if (jumped > 0) notice(tr("apply.notice.clockJump", { n: jumped }));
         }
         result.status = abort || waves?.aborted ? "aborted" : result.failed > 0 || result.unverified > 0 || result.restoreErrors.length > 0 ? "partial" : "ok";
-        if (deps.afterApply && !abort) await deps.afterApply({ api, journal, plan, result, runId });
+        if (deps.afterApply && !abort) await deps.afterApply({ api, journal, plan, result, runId, aborted: () => abort, onPendingFiles: (f) => { pendingFiles = f; } });
       } catch (e) {
         await journal.append({ t: "run-end", runId, at: new Date(now()).toISOString(), status: "aborted" }).catch(() => {});
         throw e;
       }
-      await journal.append({ t: "run-end", runId, at: new Date(now()).toISOString(), status: result.status as "ok" | "partial" | "aborted" });
+      // How many projects waited (in use): read back after the fact, e.g. by the guided assistant (never from the plan).
+      await journal.append({
+        t: "run-end", runId, at: new Date(now()).toISOString(), status: result.status as "ok" | "partial" | "aborted",
+        ...(result.heldRoots.length > 0 ? { held: result.heldRoots.length } : {}),
+      });
+      await nameFailures(result.failures, deps.failureTitles ?? 0);
       return result;
     } finally {
       await api.close();
@@ -465,6 +611,89 @@ export async function applyPlan(planSource: Plan | (() => Promise<Plan>), deps: 
     for (const sig of STOP_SIGNALS) signals.off(sig, onSignal);
     await lock.release();
   }
+}
+
+/** A notice in the run's language. */
+type Tr = (k: CliKey, v?: Record<string, string | number>) => string;
+
+/** A rehome destination folder as checked before a run: kept as it is, to create, or unusable (and why). */
+type FolderCheck = { root: string; key: string; native: string; shown: string } & (
+  | { state: "ok" } | { state: "create" } | { state: "blocked"; verb: "cannot create" | "cannot use"; reason: string });
+
+/** An absolute folder as normalizeCwd spells it (a drive or UNC root on Windows). */
+function isAbsoluteRoot(root: string, platform: NodeJS.Platform): boolean {
+  return platform === "win32" ? /^[A-Za-z]:\//.test(root) || root.startsWith("//") : root.startsWith("/");
+}
+
+/**
+ * Read-only: the destination folder of each rehome copy among `items` (distinct roots). A folder that exists is used
+ * as it is when T3 Code has its project, else it must be a folder T3 Code accepts (not temp / system) and a directory.
+ * A missing one, whether or not T3 Code still has its project (rolled back, deleted by hand), is to be created once it
+ * passes the same checks. A relative root is never used (it would land in the current folder).
+ */
+async function checkRehomeFolders(items: PlanItem[], projects: T3Project[], o: RehomeFolders, platform: NodeJS.Platform): Promise<FolderCheck[]> {
+  const out: FolderCheck[] = [];
+  const seen = new Set<string>();
+  const code = (e: unknown): string => (e as NodeJS.ErrnoException)?.code ?? (e as Error)?.message ?? String(e);
+  for (const i of items) {
+    if (i.action.kind !== "convert-import" || i.action.rehomeFrom === undefined) continue;
+    const root = i.action.projectRoot;
+    const key = rootKey(root, platform);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const base = { root, key, native: nativeRoot(root, platform), shown: shownText(tildePath(root, o.env.home, platform)) };
+    const blocked = (verb: "cannot create" | "cannot use", reason: string): FolderCheck => ({ ...base, state: "blocked", verb, reason });
+    if (!isAbsoluteRoot(root, platform)) { out.push(blocked("cannot create", "it is not an absolute folder")); continue; }
+    if (/[\p{Cc}\p{Cf}]/u.test(root)) { out.push(blocked("cannot create", "its name contains control or invisible characters")); continue; }
+    let st: Awaited<ReturnType<typeof stat>> | null = null;
+    try { st = await stat(base.native); } catch (e) {
+      if (code(e) !== "ENOENT") { out.push(blocked("cannot use", code(e))); continue; }
+    }
+    const inT3 = projects.some((p) => !p.deleted && rootKey(p.workspaceRoot, platform) === key);
+    if (st !== null && inT3) { out.push({ ...base, state: "ok" }); continue; } // T3 Code has it, and its folder is there
+    const verb = st === null ? "cannot create" : "cannot use";
+    const cat = classifyFolder(root, o.env);
+    if (cat === "temp" || cat === "system") { out.push(blocked(verb, "it is a temporary or system folder")); continue; }
+    if (cat !== "project") { out.push(blocked(verb, "T3 Code does not accept it as a project")); continue; }
+    if (st === null) out.push({ ...base, state: "create" });
+    else out.push(st.isDirectory() ? { ...base, state: "ok" } : blocked("cannot create", "a file with that name is in the way"));
+  }
+  return out;
+}
+
+/**
+ * The writes of checkRehomeFolders: a missing folder is created (and journaled) right before the copies; an unusable
+ * one is reported once ("cannot create <folder>: <reason>", home shown as ~). Returns root key -> why it cannot be used.
+ */
+async function prepareRehomeFolders(
+  items: PlanItem[], projects: T3Project[], o: RehomeFolders, journal: Journal, runId: string, platform: NodeJS.Platform, notice: (l: string) => void, tr: Tr,
+): Promise<Map<string, string>> {
+  const blocked = new Map<string, string>();
+  const make = o.mkdir ?? ((p: string) => mkdir(p, { recursive: true }));
+  const code = (e: unknown): string => (e as NodeJS.ErrnoException)?.code ?? (e as Error)?.message ?? String(e);
+  for (const c of await checkRehomeFolders(items, projects, o, platform)) {
+    const block = (verb: "cannot create" | "cannot use", reason: string): void => {
+      blocked.set(c.key, reason);
+      notice(tr(verb === "cannot create" ? "apply.notice.cannotCreate" : "apply.notice.cannotUse", { path: c.shown, reason: shownText(reason) }));
+    };
+    if (c.state === "blocked") { block(c.verb, c.reason); continue; }
+    if (c.state === "ok") continue;
+    let created: string | undefined;
+    try { created = await make(c.native); } catch (e) {
+      block("cannot create", code(e) === "EEXIST" || code(e) === "ENOTDIR" ? "a file with that name is in the way" : code(e));
+      continue;
+    }
+    if (created === undefined) continue; // made meanwhile by someone else: not t3sm's
+    await journal.append({ t: "folder-created", runId, path: c.native, created });
+    notice(tr("apply.notice.folderCreated", { path: c.shown }));
+  }
+  return blocked;
+}
+
+/** A held root's entry: its project's name, the active transcript, its title (Claude transcripts only; never message content), its time. */
+async function heldEntry(project: string, root: string, f: ActiveFile): Promise<ApplyResult["held"][number]> {
+  const title = f.harness === null || f.harness === "claude" ? await conversationTitle(f.path) : null;
+  return { project, root, file: f.path, title, modifiedAt: new Date(f.mtimeMs).toISOString() };
 }
 
 /**
@@ -516,18 +745,18 @@ async function backfillImported(journal: Journal, threadIds: Set<string>): Promi
 }
 
 /**
- * The writes a run of `plan` (already --only-filtered, held projects removed) would make, mirroring the write phase:
+ * The writes a run of `plan` (already --only-filtered, held projects' sessions removed; `held` adds their roots) would make, mirroring the write phase:
  * instances (ensureInstances), conversions (materializeConversions), projects (ensureProjects), defaults
  * (applyProjectDefaults: unchanged ones are skipped), up-front failures and waves (runWaves / buildWaves).
  */
 function dryRunReport(
-  plan: Plan, projects: T3Project[], providers: ProviderInstanceInfo[], threadIds: Set<string>, batch: Config["batch"], platform: NodeJS.Platform,
-): Omit<DryRunReport, "pendingRecovery" | "held" | "pinDefault"> {
+  plan: Plan, held: PlanItem[], projects: T3Project[], providers: ProviderInstanceInfo[], threadIds: Set<string>, batch: Config["batch"], platform: NodeJS.Platform,
+): Omit<DryRunReport, "pendingRecovery" | "held" | "pinDefault" | "foldersToCreate" | "failUpFront"> & { failUpFront: { item: PlanItem; reason: FailReason }[] } {
   const live = plan.items.filter((i) => i.action.kind !== "skip");
   const pending = live.filter((i) => !threadIds.has((i.action as { expectedThreadId: string }).expectedThreadId));
   const existing = (root: string): T3Project | undefined => projects.find((p) => !p.deleted && rootKey(p.workspaceRoot, platform) === rootKey(root, platform));
   const projectsToCreate: string[] = [];
-  for (const i of pending) {
+  for (const i of [...pending, ...held]) { // a held project is created too (empty)
     const r = itemRoot(i);
     if (!existing(r) && !projectsToCreate.some((x) => rootKey(x, platform) === rootKey(r, platform))) projectsToCreate.push(r);
   }
@@ -537,13 +766,13 @@ function dryRunReport(
     return projectsToCreate.some((x) => rootKey(x, platform) === rootKey(d.root, platform));
   }).map((d) => ({ root: d.root, instanceId: d.instanceId }));
   const availability = new Map(providers.map((p) => [p.instanceId, p.availability] as const));
-  const failUpFront: DryRunReport["failUpFront"] = [];
+  const failUpFront: { item: PlanItem; reason: FailReason }[] = [];
   const waveable: PlanItem[] = [];
   for (const i of pending) {
     const id = (i.action as { instanceId: string }).instanceId;
     const reason: FailReason | null = i.action.kind === "import" && i.session.cwdOffsetBytes > CWD_SCAN_MAX_BYTES ? "cwd-unreadable-in-t3"
       : availability.get(id) === "unavailable" ? "instance-unavailable" : null;
-    if (reason) failUpFront.push({ harness: i.session.harness, nativeId: i.session.nativeId, reason });
+    if (reason) failUpFront.push({ item: i, reason });
     else waveable.push(asTargetItem(i));
   }
   const waves = buildWaves(waveable, batch, (i) => i.session.cwdOffsetBytes, { platform });
@@ -592,14 +821,14 @@ function nothingToWrite(plan: Plan, projects: T3Project[], threadIds: ReadonlySe
  * A mirror copy inside the 30-day window is parked during every wave of its project (runWaves' exposure), so this run
  * never imports it under the wrong account. T3's own Welcome import could still take it: warn, recommend dedupe.
  */
-async function warnMirrors(plan: Plan, now: number, notice: (l: string) => void): Promise<void> {
+async function warnMirrors(plan: Plan, now: number, notice: (l: string) => void, tr: Tr): Promise<void> {
   let live = 0;
   for (const m of plan.mirrorCopies) {
     const st = await statSafe(m.path).catch(() => null);
     if (st && inImportWindow(st.mtimeMs, now)) live++;
   }
   if (live > 0) {
-    notice(`Warning: ${live} mirror ${live === 1 ? "copy is" : "copies are"} inside T3 Code's 30-day window. t3sm parks them while it imports, but T3 Code's own Welcome import could still take them under the wrong account: run \`t3sm dedupe\` (and \`t3sm quarantine\` for backup folders).`);
+    notice(tr("apply.notice.mirrors", { n: live }));
   }
 }
 
@@ -752,8 +981,13 @@ async function ensureProjects(
       out.set(k, again);
       continue;
     }
-    await journal.append({ t: "project-created", runId, projectId: p.id, root: p.workspaceRoot });
+    await journal.append({ t: "project-created", runId, projectId: p.id, root: p.workspaceRoot, title: p.title });
     out.set(k, p);
   }
   return out;
+}
+
+/** A faithful copy of a session T3 Code started (its thread gone from T3's lists: an "orphan", src/plan/planner.ts). */
+function isOrphanCopy(i: PlanItem): boolean {
+  return i.action.kind === "convert-import" && i.action.copy === "faithful" && i.session.harness === "claude" && i.session.startedIn === "t3";
 }

@@ -1,0 +1,10 @@
+Folder             Account          Reason           Pending  In T3 Code  In use
+--------------------------------------------------------------------------------
+~/code/app         Claude Personal  latest session        12  yes         no
+C:/work...service  Claude Work      your rule              0  archived    yes
+C:/work/new        Claude Work      default account        3  no          no
+
+Reason: your rule (a route in config.json), VS Code setting
+(.vscode/settings.json), latest session (the account of its most recent
+session), default account (defaultAccount in config.json).
+> Change one with t3sm projects set "<folder>" <account>.

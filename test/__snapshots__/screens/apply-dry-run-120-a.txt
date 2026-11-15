@@ -1,0 +1,51 @@
++- Plan 20261115-093012-a1b2 - T3 Code 0.1.9 ---+
+| Import as is             406                  |
+| Convert, then import       6                  |
+| Skip                      55                  |
+| New accounts in T3 Code    1                  |
+| New projects              12                  |
+| Mirror copies              0                  |
+| Warnings                   1                  |
++-----------------------------------------------+
+
+x Decisions pending: 3 sessions (automated sessions 2, home folder 1)
+  > t3sm start
+
+Imports by account  Count
+-------------------------
+Claude Work           251
+Claude Personal       161
+
+Top skips                 Count
+-------------------------------
+in a .bak backup folder      41
+folder no longer on disk      9
+in use right now              5
+
+Full report: ~/.t3code-session-manager/runs/20261115-093012-a1b2/plan.md
+Next: t3sm apply.
+
++- Would do -------------------------------------------------------------------------+
+| New accounts in T3 Code    1 (Claude Work)                                         |
+| Default account pinned to  Claude Personal > ~/.claude                             |
+| Folders to create          1                                                       |
+|   will create folder C:/work/General                                               |
+| Projects to create         2 (p0, p1)                                              |
+| Project defaults to set    0                                                       |
+| Conversions to write       6                                                       |
+| Import waves               4 (406 conversations)                                   |
+| Already in T3 Code         3                                                       |
+| Held (in use)              1 project, 2 conversations (demo; not part of this run) |
+|   demo waits                                                                       |
+| Would fail up front        1                                                       |
++------------------------------------------------------------------------------------+
+
+x 1 conversation would fail to import
+Project  Conversation  Why                       What to do
+------------------------------------------------------------------------
+demo     Long setup    its folder is unreadable  resume it in a terminal
+> More help: t3sm help cwd-unreadable
+
+! 1 transcript file time was left bumped by an interrupted run; a real apply restores it first.
+
+Dry run: nothing was written. Run t3sm apply to do it.

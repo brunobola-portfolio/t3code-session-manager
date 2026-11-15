@@ -1,0 +1,17 @@
+╭─ ! Imported 4, 1 could not be imported ──────────────────────────────────────╮
+│ Imported          4                                                          │
+│ Could not import  1                                                          │
+│ Held              1                                                          │
+│ Run               20261115-120000-e5f6                                       │
+│ Undo              t3sm rollback --run 20261115-120000-e5f6 --archive-threads │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+! demo waits: 'Fix the build' is in use (written 3 min ago); imported after 10 minutes idle
+· 2 sessions wait for your decision; run t3sm start.
+· Organized 3 changes (the new conversations, and each project's history; undo with t3sm rollback of the run).
+
+✗ 1 conversation could not be imported
+Project  Conversation             Why                        What to do
+─────────────────────────────────────────────────────────────────────────────────
+demo     Write the release notes  T3 Code did not import it  run t3sm apply again
+› More help: t3sm help not-imported

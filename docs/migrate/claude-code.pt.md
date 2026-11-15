@@ -14,12 +14,19 @@ várias. `t3sm` é o comando que instalas uma vez ([install.md](../install.md), 
   extensão do VS Code (`claudeCode.environmentVariables` em `.vscode/settings.json`). Mais de uma conta:
   [multiple-accounts.pt.md](multiple-accounts.pt.md).
 - As transcrições de sub-agentes aparecem dentro da sessão-mãe, não como threads.
+- Sessões da tua pasta pessoal, de Downloads ou de outra pasta que o T3 Code recusa como projeto: copiadas inteiras
+  para o projeto em que trabalharam (ou para um projeto **Geral**), depois de um sim no `t3sm start`. O trabalho que
+  continuares mais tarde no original é trazido pelo `t3sm sync`.
 
 ## O que não é
 
 - Sessões cuja pasta já não existe (`cwd-missing`), sessões com id que não é UUID ou só com registos escondidos,
   ficheiros escritos nos últimos 10 minutos (vêm na execução seguinte), cópias em pastas `.bak` e cópias-espelho de
   uma sessão guardada noutra conta. O `plan.md` lista cada uma com a razão.
+- Sessões começadas no T3 Code: já lá estão, e o t3sm nunca as volta a importar. Uma cuja thread apagaste no T3 Code
+  volta como cópia depois de um sim no `t3sm start` (`organize.sessions.orphaned`).
+- Até responderes às perguntas do `t3sm start`: as sessões em pastas temporárias e do sistema e as sessões automáticas
+  (Agent SDK), que por omissão ficam de fora.
 - A atividade de ferramentas (comandos, ficheiros editados) na timeline: o T3 Code importa o texto da conversa. Só se
   veem as últimas 200 mensagens visíveis; a retoma usa tudo.
 
@@ -38,6 +45,11 @@ t3sm apply
 
 No T3 Code, abre um projeto do plano: as sessões são threads. Envia uma mensagem numa delas; continua a sessão com o
 contexto completo. Um novo `t3sm plan` mostra-as como `already-in-t3`.
+
+O `claude --resume` numa pasta de projeto também lista as cópias que o t3sm lá fez, e retoma-as.
+
+Se a barra lateral parecer vazia porque tudo está em **Settled**, o `t3sm organize --dry-run` mostra como trazer as
+conversas de volta para os seus projetos ([README](../../README.pt.md#organizar-o-histórico)).
 
 ## Desfazer
 

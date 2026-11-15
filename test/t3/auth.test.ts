@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { createServer, type AddressInfo, type Socket } from "node:net";
 import { join } from "node:path";
 import { EventEmitter } from "node:events";
-import { defaultRunner, issueSessionToken, mintWsTicket, revokeSession, trackChild, type Runner, type RunOptions } from "../../src/t3/auth.ts";
+import { TASKKILL_TIMEOUT_MS, defaultRunner, issueSessionToken, mintWsTicket, revokeSession, trackChild, type Runner, type RunOptions } from "../../src/t3/auth.ts";
 import { T3AuthError, RpcError, redact, registerSecret } from "../../src/t3/errors.ts";
 
 const fx = async (n: string) => JSON.parse(await readFile(new URL(`../fixtures/t3-wire/${n}`, import.meta.url), "utf8"));
@@ -187,9 +187,11 @@ test("defaultRunner: .cmd in a path with & % ^ and spaces runs exactly once, no 
 // fired by hand once the grandchild is up, so a slow machine changes how long the test takes, never its result. (It used
 // to poll the process list through PowerShell against a real 4 s timeout: on a slow runner the first poll came back
 // after the timeout had already killed the grandchild.) If the tree kill regresses to child.kill() alone, the
-// connection stays open: the 20 s deadline below ends that failing run (a passing run never waits for it: taskkill has
-// already returned when the runner settles), and the `finally` lets the surviving grandchild exit.
-test("defaultRunner timeout kills the grandchild process (taskkill /T before child.kill)", { skip: !win }, async (t) => {
+// connection stays open: the deadline below ends that failing run (a passing run never waits for it: taskkill has
+// already returned when the runner settles), and the `finally` lets the surviving grandchild exit. The deadline is a
+// hang guard only, so it is longer than taskkill's own budget (TASKKILL_TIMEOUT_MS): a slow taskkill on a loaded machine
+// must never fail a run whose tree it does kill.
+test("defaultRunner timeout kills the grandchild process (taskkill /T before child.kill)", { skip: !win, timeout: TASKKILL_TIMEOUT_MS + 30_000 }, async (t) => {
   const dir = await mkdtemp(join(tmpdir(), "t3sm-slow-"));
   const server = createServer();
   let sock: Socket | undefined;
@@ -225,7 +227,7 @@ test("defaultRunner timeout kills the grandchild process (taskkill /T before chi
     assert.equal(r.code, null);
     t.mock.timers.reset(); // real timers again, for the deadline of a failing run
     let deadline: NodeJS.Timeout | undefined;
-    const gone = await Promise.race([died.then(() => true), new Promise<boolean>((ok) => { deadline = setTimeout(() => ok(false), 20_000); })]);
+    const gone = await Promise.race([died.then(() => true), new Promise<boolean>((ok) => { deadline = setTimeout(() => ok(false), TASKKILL_TIMEOUT_MS + 10_000); })]);
     clearTimeout(deadline);
     assert.ok(gone, "the grandchild is gone: the timeout killed the tree, not just cmd.exe");
   } finally {
@@ -234,6 +236,12 @@ test("defaultRunner timeout kills the grandchild process (taskkill /T before chi
     server.close();
     await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }
+});
+
+// The budget the grandchild test above depends on: under 16 concurrent suites taskkill took over 8 s, the old 5 s budget
+// killed it before it had walked the tree, and child.kill() then ended cmd.exe alone.
+test("taskkill gets a generous budget (30 s), so a loaded machine still kills the whole tree", () => {
+  assert.ok(TASKKILL_TIMEOUT_MS >= 30_000, String(TASKKILL_TIMEOUT_MS));
 });
 
 test("leak probe: noisy stdout + `denied <tok>` stderr; nothing from either stream reaches the error, registry untouched", async () => {

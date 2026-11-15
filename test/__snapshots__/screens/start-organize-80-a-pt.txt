@@ -1,0 +1,99 @@
+* * * * * * * * @ o o  Passo 9 de 11 - Arrumar
+As conversas importadas chegam ao T3 Code em monte. Este passo arruma só o que o
+t3sm importou; as conversas que começaste no T3 Code nunca são tocadas. Cada
+parte é opcional.
+
+O que cada projeto mostra, agora e com as opções por omissão:
+Projeto    Visíveis agora -> depois  Em Settled  Renomeadas  Arquivadas
+-----------------------------------------------------------------------
+alpha-app                    0 -> 2           -           1           2
+beta-api                     0 -> 2           -           1           1
+Histórico: últimos 90 dias, pelo menos 10 por projeto
+
++- Histórico dentro dos projetos --------------------------------------------+
+| 4 conversas voltam a aparecer, 0 passam para Settled, em 2 projetos.       |
+| A regra: cada projeto mostra os últimos 90 dias, e pelo menos 10 mesmo que |
+| mais antigas. As outras ficam no projeto, na prateleira Settled.           |
+|                                                                            |
+| Por omissão  sim                                                           |
+| Desfazer     t3sm organize --undo                                          |
++----------------------------------------------------------------------------+
+Mostrar os últimos 90 dias, e pelo menos 10 por projeto? [S/n/?/v/q] 
+
+- Títulos mais claros
+  2 conversas têm um título técnico copiado da primeira mensagem. O t3sm pode
+  dar a cada uma um título claro tirado do registo (no máximo 80 caracteres).
+  Por omissão: sim. Desfazer: t3sm organize --undo.
+Dar títulos mais claros a estas conversas? [S/n/?/v/q] s
+
+- Conversas automáticas
+  3 conversas foram iniciadas por programas e não por ti (o Agent SDK). O t3sm
+  pode arquivá-las: ficam escondidas, não apagadas. Por omissão: sim. Desfazer:
+  t3sm organize --undo.
+Arquivar estas conversas automáticas? [S/n/?/v/q] s
+
+- Projetos fixados
+  O T3 Code pode fixar projetos no topo. O t3sm sugere os 2 com atividade mais
+  recente. Por omissão: sim. Desfazer: t3sm organize --undo. Um projeto que tu
+  desafixes nunca volta a ser fixado.
+Fixar estes projetos? [S/n/?/v/q] s
+Projetos a fixar
+Desmarca os que não queres fixados.
+
+1. [x] alpha-app
+   Entre os projetos com atividade mais recente.
+2. [x] beta-api
+   Entre os projetos com atividade mais recente.
+
+a = tudo, n = nada, q = cancelar
+Alterna números (ex.: 2 5-7), e<número> para editar, Enter para confirmar: 
+
+- Projetos vazios
+  1 projeto criado pelo t3sm não tem nenhuma conversa (pastas que uma sessão
+  antiga usou uma vez, por exemplo). O t3sm pode apagá-lo da barra lateral do T3
+  Code; as pastas no disco ficam. Por omissão: sim. Desfazer: t3sm organize
+  --undo.
+Apagar este projeto vazio? [S/n/?/v/q] s
+
+- A opção do próprio T3 Code
+  Para as conversas começadas no T3 Code: passa-as para Settled passados alguns
+  dias sem uso. Agora: passados 7 dias. O t3sm pode pô-la em 90 dias, como a
+  regra acima. Por omissão: sim. Desfazer: t3sm organize --undo.
+Deixar também o T3 Code passar para Settled as conversas começadas no T3
+Code passados 90 dias? [S/n/?/v/q] s
+
++- Isto é o que vou fazer ----------------------------------------------+
+| Histórico               os últimos 90 dias, pelo menos 10 por projeto |
+|   voltam a aparecer     4                                             |
+|   em Settled            0                                             |
+| Títulos novos           2                                             |
+| Arquivar automáticas    3                                             |
+| Fixar projetos          2                                             |
+| Apagar projetos vazios  1                                             |
+| Opção do T3 Code        90 dias (agora passados 7 dias)               |
+| Desfazer                t3sm organize --undo                          |
++-----------------------------------------------------------------------+
+Aplicar estas alterações ao T3 Code agora? Desfazer: t3sm organize
+--undo. [s/N/?/v/q] s
+ran organize
+v Pronto. Abre o T3 Code: os projetos mostram agora o histórico.
+
+* * * * * * * * * @ o  Passo 10 de 11 - Manter sincronizado
+Vão aparecendo sessões novas enquanto trabalhas. O vigilante em segundo plano
+importa-as por ti, com cuidado: espera pelas sessões em uso e nunca move
+ficheiros nem cria instâncias.
+Instalar agora o vigilante em segundo plano? Isto acrescenta uma tarefa ao
+agendador do sistema. Desfazer: t3sm schedule remove. [s/N/?/v/q] q
+
++- O que esta sessão fez ----------------------------------------------+
+| v Tudo importado (execução R1)                                       |
+|   Desfazer: t3sm rollback --run R1 --archive-threads                 |
+| v Escolhas de organização guardadas                                  |
+|   Desfazer: edita "organize" no config.json                          |
+| v Histórico importado organizado no T3 Code (execução R2)            |
+|   Desfazer: t3sm organize --undo R2                                  |
+|                                                                      |
+| t3sm runs lista todas as execuções; as threads são arquivadas, nunca |
+| apagadas.                                                            |
++----------------------------------------------------------------------+
+Parado. Nada ficou a meio; corre t3sm outra vez para continuar.

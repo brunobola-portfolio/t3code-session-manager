@@ -1,0 +1,9 @@
+● A trabalhar · execução do t3sm em curso (processo 9876, começou há 2 min)
+
+Importações pendentes  nenhuma
+Última sincronização   há 3 min, ok (execução 20261115-115700-a1b2)
+Próxima sincronização  daqui a 7 min (vigilante)
+Vigilante              a correr (processo 4321, t3sm 0.3.0)
+t3sm                   0.3.0
+Plugin do t3sm         Claude Personal: instalado (0.3.0)
+T3 Code                a correr (0.1.9)

@@ -1,0 +1,43 @@
+5/11 - Decisões
+3 perguntas antes da importação. Até
+responderes, essas conversas ficam fora
+do T3 Code. Nada se perde.
+
++- 1 de 3 - A tua pasta pessoal -------+
+| 5 conversas começaram na tua pasta   |
+| pessoal. O T3 Code não a aceita como |
+| projeto. O t3sm pode copiar cada uma |
+| para o projeto em que trabalhou      |
+| mais, ou para um projeto "Geral". O  |
+| original fica onde está.             |
+|                                      |
+| Por omissão   sim: nada se perde, e  |
+|               continuas a trabalhar  |
+|               no T3 Code             |
+| Mudar depois  organize.folders.home  |
+|               ("rehome" | "import" | |
+|               "skip")                |
++--------------------------------------+
+Pôr cópias destas conversas nos
+projetos certos? [S/n/?/v/q] s
+
++- 2 de 3 -----------------------------+
+| Pastas que o T3 Code recusa          |
+| 1 conversa vem de 1 pasta que o T3   |
+| Code recusa como projeto. O t3sm     |
+| pode copiar essa conversa para o     |
+| projeto em que trabalhou, ou para o  |
+| projeto "Geral".                     |
+|                                      |
+| Por omissão   sim: nada se perde, e  |
+|               continuas a trabalhar  |
+|               no T3 Code             |
+| Mudar depois                         |
+|   organize.folders["t3-refused"]     |
+|   ("rehome" | "import" | "skip")     |
++--------------------------------------+
+Pôr uma cópia desta conversa no
+projeto certo? [S/n/?/v/q] q
+
+Parado. Nada ficou a meio; corre t3sm
+outra vez para continuar.

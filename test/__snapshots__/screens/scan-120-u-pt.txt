@@ -1,0 +1,8 @@
+Agente       Conta            Sessões  Assinaladas
+──────────────────────────────────────────────────
+Claude Code  Claude Personal    1 234            0
+Claude Code  Claude Work           56           56
+Codex        -                      7            0
+
+Total: 1 297 sessões, 56 assinaladas, 2 erros de leitura.
+Não instalados: Pi, OpenCode.

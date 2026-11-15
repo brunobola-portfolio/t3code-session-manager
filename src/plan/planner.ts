@@ -1,7 +1,7 @@
 // buildPlan: for every discovered session, which T3 project and which subscription (instance) it goes to, or why it is
 // skipped. Pure apart from the injected readers (existsDir, readVscodePin, compareCopies, labelRecords); never calls T3.
 
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import type {
   AccountConfig, AccountSource, Config, DiscoveredSession, HarnessId, InstanceSpec, JournalEntry, Plan, PlanItem, PlanNote, ProjectSpec,
@@ -11,6 +11,10 @@ import { encodeClaudeProjectDir, expandHome, normalizeCwd, pathKey as pathKeyOf,
 import { inImportWindow } from "../core/activity.ts";
 import { globToRegExp } from "../core/glob.ts";
 import { resolveRemap } from "../core/config.ts";
+import { projectTitle } from "./names.ts";
+import { classifyFolder, isT3Refused, type FolderEnv } from "./folders.ts";
+import { categoryRules, PENDING_KEYS, resolveGeneralFolder, routeOf, type PendingKey, type Route } from "./categories.ts";
+import { inferProjectRoot as realInferRoot, type RehomeGuess } from "./rehome.ts";
 import { effectiveWrites, importedIndex, near } from "../core/journal.ts";
 import { revisionUuid, uuidV5 } from "../core/uuid.ts";
 import type { T3Project, T3Thread } from "../t3/api.ts";
@@ -56,6 +60,12 @@ export interface PlanInput {
   isConvertedTranscript?(file: string, nativeId: string): Promise<boolean>;
   platform?: NodeJS.Platform;
   home?: string;
+  /** Folder classification inputs (default: this home and platform, os.tmpdir(), process.env, T3 Code under ~/.t3). */
+  folderEnv?: FolderEnv;
+  /** Language of the General folder's default path and title ("T3 General" / "T3 Geral"); default "en". */
+  lang?: "en" | "pt";
+  /** The project a rehomed Claude transcript worked in (default: rehome.inferProjectRoot). */
+  inferProjectRoot?(file: string, knownRoots: string[], o: { platform: NodeJS.Platform; home: string }): Promise<RehomeGuess | null>;
   /** Backoff timer for compare retries (tests inject). */
   sleep?(ms: number): Promise<void>;
 }
@@ -73,16 +83,22 @@ function memo<T>(fn: (k: string) => Promise<T>, key: (k: string) => string): (k:
   };
 }
 
-function lastSegment(root: string): string {
-  const parts = root.split("/").filter((x) => x !== "");
-  return parts.length === 0 ? root : parts[parts.length - 1]!;
-}
-
 export async function buildPlan(input: PlanInput): Promise<Plan> {
   const { config, t3, now } = input;
   const platform = input.platform ?? process.platform;
   const home = input.home ?? homedir();
   const rootKey = (p: string): string => pathKeyOf(p, platform);
+  const lang = input.lang ?? "en";
+  const pp = platform === "win32" ? path.win32 : path.posix;
+  // T3 Code's own folders (default ~/.t3): only compared with session folders, never opened.
+  const t3Base = normalizeCwd(expandHome("~/.t3", home), platform);
+  const folderEnv: FolderEnv = input.folderEnv ?? {
+    platform, home, tmpdir: tmpdir(), env: process.env, t3BaseDir: t3Base, t3WorktreesDir: `${t3Base}/worktrees`,
+  };
+  // One General folder only (R10): the configured one, else an existing T3 project at either default, else lang's.
+  const generalFolder = resolveGeneralFolder(config, lang, t3.projects.filter((p) => !p.deleted).map((p) => p.workspaceRoot), { platform, home });
+  const rules = categoryRules(config, lang, folderEnv, generalFolder);
+  const generalKey = rootKey(rules.generalFolder);
   const readPin = memo(input.readVscodePin ?? realReadPin, rootKey);
   const existsDir = memo(input.existsDir, rootKey);
   const warnings: string[] = [];
@@ -228,17 +244,47 @@ export async function buildPlan(input: PlanInput): Promise<Plan> {
   const nativeRefs = new Set(t3.threads.flatMap((t) => (t.nativeSessionId ? [`${t.instanceId}:${t.nativeSessionId}`] : [])));
   /** native session id -> the instances T3 holds a thread of it under (`import:<instance>:<id>` or its native ref). */
   const instancesOfSession = new Map<string, Set<string>>();
+  /** native session id -> the project T3 holds a thread of it in (the first one listed). */
+  const projectOfSession = new Map<string, string>();
+  /** Every thread by id (listThreads: active and archived, every instance). */
+  const threadById = new Map(t3.threads.map((t) => [t.id, t]));
+  /** native session id -> the first thread T3 holds of it (`import:<instance>:<id>` or its native ref). */
+  const threadOfSession = new Map<string, T3Thread>();
   for (const t of t3.threads) {
     const m = /^import:([^:]+):(.+)$/.exec(t.id);
     for (const [inst, id] of [...(m ? [[m[1]!, m[2]!]] : []), ...(t.nativeSessionId ? [[t.instanceId, t.nativeSessionId]] : [])]) {
       const set = instancesOfSession.get(id!) ?? new Set<string>();
       set.add(inst!);
       instancesOfSession.set(id!, set);
+      if (!projectOfSession.has(id!)) projectOfSession.set(id!, t.projectId);
+      if (!threadOfSession.has(id!)) threadOfSession.set(id!, t);
     }
   }
+  /**
+   * The thread of a session T3 Code started: the one its handoff names (T3-native thread ids are plain uuids, matched
+   * exactly), else one T3 holds of the session itself. Active or archived, any instance; undefined when none is left.
+   */
+  const t3ThreadOf = (s: DiscoveredSession): T3Thread | undefined =>
+    (s.t3ThreadId !== undefined ? threadById.get(s.t3ThreadId) : undefined) ?? threadOfSession.get(s.nativeId);
+  /** The root of the live project T3 holds a thread of session `id` in, or null. */
+  const t3RootOf = (id: string): string | null => {
+    const pid = projectOfSession.get(id);
+    const p = pid === undefined ? undefined : liveProjects.find((x) => x.id === pid);
+    return p ? canonicalRoot(p.workspaceRoot) : null;
+  };
   const imported = importedIndex(input.journal);
   const converted = new Map<string, { updatedAt: string; messageCount: number }>();
-  for (const e of effectiveWrites(input.journal)) if (e.source) converted.set(`${e.source.harness}:${e.source.nativeId}`, e.source);
+  // Faithful copies (spec §4.3): the original as copied. A record without a timestamp (a rename) changes neither
+  // updatedAt nor messageCount, so its size and time are compared too.
+  const copiedFile = new Map<string, { size: number; mtimeMs: number }>();
+  for (const e of effectiveWrites(input.journal)) {
+    if (!e.source) continue;
+    const k = `${e.source.harness}:${e.source.nativeId}`;
+    converted.set(k, e.source);
+    const r = e.rehomeOf;
+    if (r && typeof r.size === "number" && typeof r.mtimeMs === "number") copiedFile.set(k, { size: r.size, mtimeMs: r.mtimeMs });
+    else copiedFile.delete(k);
+  }
   // Revisions merged into T3 (t3sm merge): a session merged at its current size is not "continued outside" any more.
   const rolledBack = new Set(input.journal.flatMap((e) => (e.t === "rolled-back" ? [e.targetRunId] : [])));
   const standing = input.journal.filter((e): e is Extract<JournalEntry, { t: "merged" }> => e.t === "merged" && !rolledBack.has(e.runId));
@@ -257,7 +303,14 @@ export async function buildPlan(input: PlanInput): Promise<Plan> {
   // rollback, an archive that failed) is an ordinary already-in-t3 session and stays mergeable.
   const usedRevisions = new Set(standing.map((e) => pathKey(e.revisionFile)));
   const unmergedRevisions = new Set(effectiveWrites(input.journal, pathKey).flatMap((e) => (e.revisionOf && !usedRevisions.has(pathKey(e.path)) ? [pathKey(e.path)] : [])));
-  const convertedPaths = new Set(effectiveWrites(input.journal, pathKey).flatMap((e) => (e.source && converts(e.source.harness) ? [pathKey(e.path)] : [])));
+  // A file-written with a Claude source is a rehomed copy (spec §4.3): t3sm's own, like a conversion.
+  const convertedPaths = new Set(effectiveWrites(input.journal, pathKey).flatMap((e) => (e.source && (converts(e.source.harness) || e.source.harness === "claude") ? [pathKey(e.path)] : [])));
+  // Rehomed copies are named uuidV5("claude:<source id>"), copies of orphaned T3 sessions uuidV5("claude-orphan:<source
+  // id>"): one whose source is also discovered is that copy.
+  const copyIds = new Set(input.sessions.flatMap((s) => (s.harness === "claude" ? [uuidV5(`claude:${s.nativeId}`), orphanUuid(s.nativeId)] : [])));
+  const rehomeCopyPaths = new Set(effectiveWrites(input.journal, pathKey).flatMap((e) => (e.source?.harness === "claude" ? [pathKey(e.path)] : [])));
+  /** A faithful copy t3sm wrote of a conversation from a refused folder (`t3sm merge` cannot handle it: R11). */
+  const isRehomeCopy = (s: DiscoveredSession): boolean => s.harness === "claude" && (rehomeCopyPaths.has(pathKey(s.file.path)) || copyIds.has(s.nativeId));
   // Imports journaled by the file T3 read (a converted transcript was imported under its convert-mode session's id).
   const importedByPath = new Map<string, Extract<JournalEntry, { t: "imported" }>>();
   for (const e of input.journal) if (e.t === "imported" && typeof e.source?.path === "string") importedByPath.set(pathKey(e.source.path), e);
@@ -280,6 +333,38 @@ export async function buildPlan(input: PlanInput): Promise<Plan> {
     if (!vm) return normalizeCwd(c, platform);
     return [...vm].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))[0]![0];
   };
+
+  // ---------- categories (spec §4.1-§4.4) ----------
+  // Known roots for rehome inference: live T3 projects and this plan's `project` folders, never the home folder, and
+  // only folders that still exist (a missing folder is `missing`, not a project: never a rehome target).
+  // Built once, on the first inference (a plan with nothing to rehome checks no extra folders).
+  let knownRoots: Promise<string[]> | null = null;
+  const knownRootsOnce = (): Promise<string[]> => (knownRoots ??= (async () => {
+    const out = new Map<string, string>();
+    for (const r of [...liveProjects.map((p) => p.workspaceRoot), ...[...eff.values()].flatMap((e) => (e.cwd === null ? [] : [e.cwd]))]) {
+      const k = rootKey(r);
+      if (out.has(k) || classifyFolder(r, folderEnv) !== "project") continue;
+      if (await existsDir(normalizeCwd(r, platform))) out.set(k, canonicalRoot(r));
+    }
+    return [...out.values()];
+  })());
+  const inferRoot = input.inferProjectRoot ?? realInferRoot;
+  let lastShare: { hits: number; total: number } | null = null;
+  async function rehomeTarget(s: DiscoveredSession, route: Extract<Route, { kind: "rehome" }>): Promise<string> {
+    lastShare = null;
+    if (route.target !== null) return route.target;
+    if (s.harness !== "claude") return rules.generalFolder; // inference reads Claude transcripts only
+    try {
+      const g = await inferRoot(s.file.path, await knownRootsOnce(), { platform, home });
+      // Defensive: an inferred folder that does not exist is never a target.
+      if (g !== null && await existsDir(normalizeCwd(g.root, platform))) { lastShare = { hits: g.hits, total: g.total }; return g.root; }
+      return rules.generalFolder;
+    } catch (e) {
+      warnings.push(`could not read Claude transcript ${s.nativeId} to find its project (${errCode(e)}); it goes to the General folder`);
+      return rules.generalFolder;
+    }
+  }
+  const pending = new Map<PendingKey, { sessions: number; folders: Set<string> }>();
 
   // ---------- items ----------
   const items: (PlanItem & { sortRoot: string })[] = [];
@@ -323,7 +408,8 @@ export async function buildPlan(input: PlanInput): Promise<Plan> {
     const has = (f: DiscoveredSession["flags"][number]): boolean => s.flags.includes(f);
     const filePath = normalizeCwd(s.file.path, platform);
     const ncwd = cwd === null ? null : normalizeCwd(cwd, platform);
-    if (s.harness === "claude" && (convertedPaths.has(pathKey(s.file.path)) || await looksConverted(s.file.path, s.nativeId))) {
+    const ownCopy = s.harness === "claude" && (convertedPaths.has(pathKey(s.file.path)) || copyIds.has(s.nativeId) || await looksConverted(s.file.path, s.nativeId));
+    if (ownCopy) {
       // Not in T3 yet: its convert-import item imports it (never two candidates for one path). Already in T3: from now
       // on it is the Claude session it became (resumable in a terminal), so it takes the normal already-in-t3 path
       // below, where continued-outside-t3 lets `t3sm merge` see terminal work on it.
@@ -346,13 +432,75 @@ export async function buildPlan(input: PlanInput): Promise<Plan> {
     if (has("too-large")) return skip("too-large");
     if (ncwd === null || has("no-cwd")) return skip("no-cwd");
     if (has("cwd-unreadable")) return skip("cwd-unreadable");
-    if (!(await existsDir(ncwd))) return skip("cwd-missing");
+    // A session T3 Code started (before the folder category). Its thread still there (active or archived, any
+    // instance): already in T3. No thread id: t3sm cannot tell, and never copies it. Its thread deleted: T3 Code will
+    // not import it again, so after a yes (`organize.sessions.orphaned`) it comes back as a faithful copy with a new
+    // id, in its own folder (a folder T3 Code refuses: the rehome target). A copy t3sm wrote is never one of these:
+    // it keeps the original's records (entrypoint t3-code, the handoff) and is recognised as t3sm's own above. A
+    // mirror of a copy kept in another account stays a mirror copy (below), for `t3sm dedupe`.
+    const fromT3 = s.harness === "claude" && s.startedIn === "t3" && !ownCopy && !loserOf.has(s);
+    if (fromT3) {
+      const held = t3ThreadOf(s);
+      if (held !== undefined) {
+        const p = liveProjects.find((x) => x.id === held.projectId);
+        if (p) rootsUsed.set(rootKey(p.workspaceRoot), canonicalRoot(p.workspaceRoot));
+        note(s, "started-in-t3");
+        return skip("already-in-t3");
+      }
+      if (s.t3ThreadId === undefined) return skip("t3-native-unknown");
+    }
+    /** Started in T3 Code and its thread is gone (every other case returned above). */
+    const orphan = fromT3;
+    // A category skip applies last (below): only to sessions that would otherwise be imported.
+    const category = routeOf(s, ncwd, rules, s.harness === "claude" || convert || converts(s.harness));
+    // An orphan ignores the folder category, never an `organize.overrides` rule: a `rehome:<folder>` one (a route
+    // with a target) sends its copy there; a `skip` one (`excluded`, or a bad rehome target) keeps it out.
+    const overrideSkip = category.kind === "skip" && (category.reason === "excluded" || category.badTarget !== undefined);
+    const route: Route = !orphan ? category
+      : category.kind === "rehome" && category.target !== null ? category
+      : !isT3Refused(ncwd, folderEnv) ? { kind: "native" }
+      : category.kind === "rehome" ? category : { kind: "rehome", target: null };
+    /** Why an orphaned session waits or stays out (applied where a category skip would be). */
+    const orphanHold: Extract<Route, { kind: "skip" }> | null = !orphan ? null
+      : overrideSkip ? category
+      : !rules.decided("orphaned") ? { kind: "skip", reason: "undecided", pending: "orphaned" }
+      : rules.organize.sessions.orphaned === "skip" ? { kind: "skip", reason: "orphaned-in-t3" } : null;
+    // A rehomed session's own folder does not matter (and its target may not exist yet: created on apply). R9: a
+    // session from a deleted refused folder is still rehomed.
+    if (route.kind !== "rehome" && !(await existsDir(ncwd))) return skip("cwd-missing");
 
-    const root = canonicalRoot(ncwd);
+    const rehome = route.kind === "rehome";
+    const asCopy = convert || rehome || orphan;
+    /** The id of the copy (convert-mode, rehomed or orphaned session). */
+    const copyUuid = orphan ? orphanUuid(s.nativeId) : uuidV5(`${s.harness}:${s.nativeId}`);
+    // Where the session goes. A rehomed Claude transcript's project is inferred by reading the whole transcript
+    // (rehomeTarget), so it is resolved only for a session that will be imported; one already in T3 (or skipped below)
+    // is never read for it.
+    let target: { root: string; share: { hits: number; total: number } | null } | null = null;
+    const resolveTarget = async (): Promise<{ root: string; share: { hits: number; total: number } | null }> => {
+      if (target === null) {
+        if (route.kind !== "rehome") target = { root: canonicalRoot(ncwd), share: null };
+        else {
+          const r = canonicalRoot(await rehomeTarget(s, route));
+          target = { root: r, share: lastShare };
+        }
+      }
+      return target;
+    };
+    const lazyTarget = rehome && s.harness === "claude";
+    /** The project this item counts for (rootsUsed) when T3 already holds it: for a lazy target, where T3 holds its thread. */
+    const useRootInT3 = async (id: string): Promise<void> => {
+      const r = lazyTarget ? t3RootOf(id) : (await resolveTarget()).root;
+      if (r !== null) rootsUsed.set(rootKey(r), r);
+    };
     let instanceId: string | null;
     let convertAccount: AccountConfig | null = null;
-    if (convert) {
-      const acct = accountById.get((await finalAccount(root)).accountId);
+    if (lazyTarget || orphan) {
+      // A faithful copy stays in its own account.
+      convertAccount = s.accountId !== null ? accountById.get(s.accountId) ?? null : null;
+      instanceId = convertAccount ? instanceOfAccount.get(convertAccount.id) ?? null : null;
+    } else if (asCopy) {
+      const acct = accountById.get((await finalAccount((await resolveTarget()).root)).accountId);
       convertAccount = acct ?? null;
       instanceId = acct ? instanceOfAccount.get(acct.id) ?? null : null;
     } else if (s.harness === "claude") {
@@ -363,11 +511,11 @@ export async function buildPlan(input: PlanInput): Promise<Plan> {
     }
     // One session, two forms (Codex: its native id and its converted uuid). Already in T3 under the other form (any
     // instance) and not under this one: it is in T3; importing this form would make a second thread of one session.
-    const own = convert ? uuidV5(`${s.harness}:${s.nativeId}`) : s.nativeId;
+    const own = asCopy ? copyUuid : s.nativeId;
     if (!instancesOfSession.has(own) && otherForms(s, own).some((f) => instancesOfSession.has(f))) {
-      rootsUsed.set(rootKey(root), root);
+      await useRootInT3(own);
       note(s, "in-t3-as-other-form");
-      if (continuedSinceOtherForm(s, convert)) note(s, "continued-outside-t3");
+      if (continuedSinceOtherForm(s, asCopy)) note(s, "continued-outside-t3");
       return skip("already-in-t3");
     }
     if (instanceId === null) return skip("harness-unavailable");
@@ -390,35 +538,57 @@ export async function buildPlan(input: PlanInput): Promise<Plan> {
       return skip("duplicate");
     }
 
-    const uuid = convert ? uuidV5(`${s.harness}:${s.nativeId}`) : null;
+    const uuid = asCopy ? copyUuid : null;
     const expectedThreadId = `import:${instanceId}:${uuid ?? s.nativeId}`;
-    rootsUsed.set(rootKey(root), root);
     if (threadIds.has(expectedThreadId) || nativeRefs.has(`${instanceId}:${uuid ?? s.nativeId}`)) {
-      if (convert) {
+      await useRootInT3(uuid ?? s.nativeId);
+      if (asCopy) {
         // Convert-mode sessions share one source file (the harness db): compare the session's own activity with what
-        // the last conversion recorded.
+        // the last conversion recorded. A faithful copy's original is a file of its own: its size and time too. The
+        // copy in T3 is never rewritten (T3 never adds messages to an existing thread): the note is the signal, and
+        // for a rehomed Claude original it is its own note (R11: `t3sm merge` cannot bring that work into T3).
         const w = converted.get(`${s.harness}:${s.nativeId}`);
-        if (w && (w.updatedAt !== s.updatedAt || w.messageCount !== s.messageCount)) note(s, "continued-outside-t3");
+        const f = copiedFile.get(`${s.harness}:${s.nativeId}`);
+        if ((w && (w.updatedAt !== s.updatedAt || w.messageCount !== s.messageCount))
+          || (f && (f.size !== s.file.size || !near(s.file.mtimeMs, f.mtimeMs)))) {
+          note(s, (rehome || orphan) && s.harness === "claude" ? "continued-after-rehome" : "continued-outside-t3");
+        }
         return skip("already-in-t3");
       }
       const j = imported.get(`${s.harness}:${s.nativeId}`) ?? importedByPath.get(pathKey(s.file.path));
       if (j && (j.source.size !== s.file.size || !near(s.file.mtimeMs, j.source.mtimeMs)) && !mergedRevs.has(revisionUuid(s.nativeId, s.file.size))) {
-        note(s, "continued-outside-t3");
+        // A rehomed copy resumed outside T3 Code: merge cannot handle it either (R11).
+        note(s, isRehomeCopy(s) ? "continued-after-rehome" : "continued-outside-t3");
       }
       return skip("already-in-t3");
     }
     // The same session already in T3 under another instance (imported earlier under another account): importing it
     // here would make a second thread of one session. Listed in the report for review instead.
     if ([...(instancesOfSession.get(uuid ?? s.nativeId) ?? [])].some((i) => i !== instanceId)) {
+      await useRootInT3(uuid ?? s.nativeId);
       note(s, "in-t3-under-other-account");
       return skip("already-in-t3");
     }
+    const hold = orphanHold ?? (route.kind === "skip" ? route : null);
+    if (hold !== null) {
+      if (hold.badTarget !== undefined) warnings.push(`organize.overrides: rehome:${hold.badTarget} is not a folder T3 Code can hold a project in (refused, temporary or system); its sessions are skipped`);
+      if (hold.pending) {
+        const p = pending.get(hold.pending) ?? pending.set(hold.pending, { sessions: 0, folders: new Set() }).get(hold.pending)!;
+        p.sessions++;
+        p.folders.add(rootKey(ncwd));
+      }
+      return skip(hold.reason);
+    }
+    const { root, share } = await resolveTarget();
+    rootsUsed.set(rootKey(root), root);
     if (s.harness === "claude" && unmergedRevisions.has(pathKey(s.file.path))) return skip("revision");
     importRoots.add(rootKey(root));
-    if (convert) {
-      const p = platform === "win32" ? path.win32 : path.posix;
-      const targetFile = p.join(accountHome(convertAccount!), "projects", encodeClaudeProjectDir(root), `${uuid}.jsonl`);
-      return { kind: "convert-import", projectRoot: root, instanceId, expectedThreadId, uuid: uuid!, targetFile };
+    if (asCopy) {
+      const targetFile = pp.join(accountHome(convertAccount!), "projects", encodeClaudeProjectDir(root), `${uuid}.jsonl`);
+      const action: Action = { kind: "convert-import", projectRoot: root, instanceId, expectedThreadId, uuid: uuid!, targetFile };
+      if (rehome) Object.assign(action, s.harness === "claude" ? { copy: "faithful", rehomeFrom: ncwd } : { rehomeFrom: ncwd }, share ? { rehomeShare: share } : {});
+      else if (orphan) Object.assign(action, { copy: "faithful" });
+      return action;
     }
     return { kind: "import", projectRoot: root, instanceId, expectedThreadId };
   }
@@ -432,6 +602,8 @@ export async function buildPlan(input: PlanInput): Promise<Plan> {
   const projectsToCreate: ProjectSpec[] = [];
   const projectAccounts: Plan["projectAccounts"] = [];
   const projectDefaults: Plan["projectDefaults"] = [];
+  const nameLimit = rules.organize.names.maxLength;
+  const takenTitles = new Set(liveProjects.map((p) => p.title.toLowerCase()));
   for (const [k, root] of [...rootsUsed].sort((a, b) => cmp(a[1], b[1]))) {
     const pa = await finalAccount(root);
     projectAccounts.push({ root, accountId: pa.accountId, source: pa.source as AccountSource });
@@ -442,7 +614,10 @@ export async function buildPlan(input: PlanInput): Promise<Plan> {
       const cur = existing.defaultModelSelection?.["instanceId"];
       if (inst !== null && cur !== inst) projectDefaults.push({ root, instanceId: inst });
     } else if (importRoots.has(k)) {
-      projectsToCreate.push({ root, title: lastSegment(root), defaultInstanceId: inst });
+      // The General folder (rehomed sessions with no project of their own) has a fixed title.
+      const title = k === generalKey ? (lang === "pt" ? "Geral" : "General") : projectTitle(root, takenTitles, { maxLength: nameLimit, platform });
+      takenTitles.add(title.toLowerCase());
+      projectsToCreate.push({ root, title, defaultInstanceId: inst });
       if (inst !== null) projectDefaults.push({ root, instanceId: inst });
     }
   }
@@ -453,7 +628,18 @@ export async function buildPlan(input: PlanInput): Promise<Plan> {
     mirrorCopies: mirrorCopies.sort((a, b) => cmp(a.path, b.path)),
     items: items.map(({ sortRoot: _r, ...it }) => it),
     warnings: [...new Set(warnings)],
+    ...(pending.size > 0 ? {
+      decisionsPending: PENDING_KEYS.flatMap((key) => {
+        const p = pending.get(key);
+        return p ? [{ key, sessions: p.sessions, folders: p.folders.size }] : [];
+      }),
+    } : {}),
   };
+}
+
+/** The id of the copy of an orphaned T3 session (its thread deleted): distinct from a rehome copy's `claude:<id>`. */
+function orphanUuid(nativeId: string): string {
+  return uuidV5(`claude-orphan:${nativeId}`);
 }
 
 /** A run's start time from its id (`YYYYMMDD-HHMMSS-…`, UTC), or null. */

@@ -1,0 +1,3 @@
+✓ Nada para importar.
+
+· 2 sessões esperam: a pasta de destino ainda não está no T3 Code; corre t3sm start para a criar.

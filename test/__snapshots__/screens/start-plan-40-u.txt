@@ -1,0 +1,37 @@
+4/11 · Plan
+Now the plan: which sessions go into T3
+Code, and on which account. It only
+reads, and saves its report in t3sm's
+folder.
+Building the plan…
+
+╭─ The plan ──────────────────╮
+│ To import                23 │
+│ To convert, then import   0 │
+│ Skipped                   5 │
+│ New projects              1 │
+│ New instances             0 │
+│ By account                  │
+│   Claude Org             20 │
+│   Claude Personal         3 │
+╰─────────────────────────────╯
+Skipped most often: no T3 Code instance
+for its agent (4), in use right now (1).
+! Pi: 4 sessions will be skipped
+  T3 Code has no Pi instance. To bring
+  them, enable Pi in T3 Code settings
+  (Providers), then run t3sm again.
+Full report: ~/.t3code-se…/P1/plan.md
+
+Each project starts new threads on one
+account:
+#  Project      Account         Why
+────────────────────────────────────────
+1  ~/code/big   Claude Org      your ru…
+2  ~/code/busy  Claude Person…  default…
+3  ~/code/demo  Claude Person…  latest …
+A number = change that project's
+account, Enter or c = continue: q
+
+Stopped. Nothing is left half done; run
+t3sm again to continue.

@@ -35,27 +35,50 @@ CI (`.github/workflows/ci.yml`) runs `npm ci`, typecheck, test, build and the re
 check. Run all of them before you say a change is done.
 
 Running the CLI from a checkout: `node bin/t3sm.mjs --help` and `--version` are safe as they are. For anything
-else, point `T3SM_HOME` at a scratch folder under `.spike/` (git-ignored) so the real state folder is never used:
-Bash `T3SM_HOME=$PWD/.spike/state node bin/t3sm.mjs plan`, PowerShell
-`$env:T3SM_HOME="$PWD/.spike/state"; node bin/t3sm.mjs plan`.
+else, point `T3SM_HOME` at a scratch folder under `.spike/` (git-ignored) so the real state folder is never used,
+and point `HOME` and `USERPROFILE` at a scratch home too: `status`, `doctor`, `scan` and discovery read `~/.claude*`
+and the other agents' folders from the home folder, so `T3SM_HOME` alone still reads the real ones. Bash
+`T3SM_HOME=$PWD/.spike/state HOME=$PWD/.spike/home USERPROFILE=$PWD/.spike/home node bin/t3sm.mjs status`, PowerShell
+`$env:T3SM_HOME="$PWD/.spike/state"; $env:HOME="$PWD/.spike/home"; $env:USERPROFILE="$PWD/.spike/home"; node bin/t3sm.mjs status`.
+`update --check` looks up releases online: leave it out of manual runs unless a human asks.
 
 ## Project map
 
 - `bin/t3sm.mjs`, `bin/entry.mjs`: launcher. A checkout runs `src/` directly; an installed package runs `dist/`.
-- `src/cli/`: `main.ts` (dispatch, usage text, help per command), `commands/*.ts` (one per command), `errors.ts`
-  (error to exit code and user message).
+- `src/cli/`: `main.ts` (dispatch), `help.en.ts` / `help.pt.ts` (the usage and every command's help, styled by
+  `helpText.ts`), `helpTopics.ts` (`t3sm help <topic>`: `HELP_TOPICS`, read from `docs/help/` in a checkout and
+  `dist/help/` when installed), `flags.ts` (the options each command accepts), `commands/*.ts` (one per command),
+  `screen.ts` / `applyScreen.ts` / `failures.ts` / `ui.ts` (the command screens on the UI kit), `errors.ts` (error to
+  exit code and user message, drawn as a panel).
+- `src/assistant/`: the guided set-up (`t3sm start`): `steps.ts` (the 11 steps, the decisions gate, `resumePoint`),
+  `core.ts` (context, questions, step header), `runner.ts`, `deps.ts` (the real dependencies), its own catalogues
+  (`messages.en.ts`, `messages.pt.ts`).
+- `src/i18n/`: `lang.ts` (the language: English first, Portuguese by `--lang` or the locale; `resolveLang`, `fmt`), the
+  commands' catalogues (`messages.en.ts`, `messages.pt.ts`: identical keys), `cli.ts` (`cliT`, `makeCliUi`) and
+  `words.ts`; `src/ops/` and `src/plan/` word things through it without importing the CLI.
+- `src/ui/`: the terminal kit, zero dependencies: `caps` (colour depth, Unicode, TTY, cursor), `style` (semantic tokens,
+  symbols with ASCII fallbacks), `text` (display width, wrapping, truncation), `components` (app and step header,
+  panel, kv, table, callout), `layout` (wrapping and list helpers the screens share), `progress` (bar and spinner),
+  `list` (the interactive review list), `locale` (numbers, dates, relative times), `terminal`, `organizePreview`.
 - `src/core/`: `types.ts` (shared types: `HarnessId`, sessions, plan, journal entries, config), `paths.ts` (all
   path identity: `normalizeCwd`, `sameCwd`, Claude folder encoding), `journal.ts` (append-only, fsync'd;
   `recoverPendingMtimes`), `lock.ts`, `fsutil.ts` (`atomicWrite`, `publishNoClobber`), `config.ts`, `activity.ts`
-  (the 10-minute and 30-day windows), `glob.ts`, `uuid.ts`, `pid.ts`.
+  (the 10-minute and 30-day windows), `glob.ts`, `uuid.ts`, `pid.ts`, `version.ts` (install stamp: what build an install root holds),
+  `sysroot.ts` (Windows programs by their absolute System32 path, never a bare name).
 - `src/sources/`: one adapter per agent (`claude`, `codex`, `pi` native; `opencode` convert), `types.ts`
   (`SourceAdapter`, `Env`, adapter errors), `registry.ts`, shared JSONL scanning and discovery cache.
 - `src/plan/`: `planner.ts` (one action per session), `ownership.ts` (which account owns a copy or a project),
   `dedupe.ts` (mirror copies), `report.ts` (`plan.md` and summaries).
 - `src/apply/`: `apply.ts` (orchestration), `importer.ts` (waves: bump, park, scan, import, restore, verify),
   `waves.ts`, `materialize.ts` and `claudeWriter.ts` (converted transcripts).
-- `src/ops/`: `accounts`, `discoverAccounts`, `doctor`, `merge`, `quarantine` (and dedupe), `rollback`, `sync`,
-  `watch`, `schedule`, `update` (install kind, the npm release spec; `t3sm update` is the only command that starts npm).
+- `src/ops/`: `accounts`, `discoverAccounts`, `doctor`, `merge`, `follow` (rehome copies follow their original),
+  `quarantine` (and dedupe), `rollback`, `sync`,
+  `watch` (the watcher, its single-instance endpoint, token and heartbeat), `watcherControl` (`stopWatcher`: the stop
+  request, then a verified pid), `successor` (starting the next watcher), `notify`, `plugin`, `elevated`,
+  `watcherHealth` (the watcher's state from its heartbeat: one classification for `status` and `doctor`),
+  `syncStatus`, `schedule`, `update` (install kind, the release spec, the git/npm runner), `updater` (the update engine:
+  install, restart, health check, rollback), `autoUpdate` (the watcher's daily check; it starts `t3sm update --auto-run`
+  in a separate process). `t3sm update` and that child are the only things that start npm.
 - `src/t3/`: the only way to T3 Code: `runtime.ts` (find the server, loopback check, `t3` CLI), `auth.ts` (session
   tokens), `rpc.ts`, `api.ts`, `decode.ts` (strict response decoders), `compat.ts` (tested versions), `errors.ts`.
 - `test/`: mirrors `src/`. Fakes: `test/apply/fake-t3.ts`, `test/ops/helpers.ts`, `test/plan/helpers.ts`. Fixtures
@@ -63,7 +86,11 @@ Bash `T3SM_HOME=$PWD/.spike/state node bin/t3sm.mjs plan`, PowerShell
 - `scripts/release.js` (`--check`, version bump), `scripts/build-assets.js` (all README art, deterministic),
   `scripts/build.js` (`npm run build`: dist/ by stripping types with Node alone; no TypeScript needed, so a global
   install from git works).
-- `docs/`: user docs; `docs/spikes/` records measured T3 Code behaviour.
+- `src/organize/`: `t3sm organize`: `plan.ts` (pure), `history.ts` (the history rule), `sessions.ts`, `titles.ts`, `rename.ts`
+  (`projects rename --suggest`), `apply.ts` (apply and undo), `types.ts`.
+- `docs/`: user docs; `docs/help/` holds the help topics (`t3sm help <topic>`, English and `.pt.md`, copied into
+  `dist/help/` by the build); `docs/spikes/` records measured T3 Code behaviour; `docs/testing-0.3.md` (and `.pt.md`)
+  is the owner's hands-on guide to verify the release live.
 - Shipped in the package: `bin/`, `dist/`, `skills/` (the Claude Code skill), `.claude-plugin/` (its plugin
   manifests), `CHANGELOG.md`. Repository-only: `AGENTS.md`, `CLAUDE.md`, `ROADMAP.md`, `docs/`, `test/`.
 
@@ -79,7 +106,9 @@ Bash `T3SM_HOME=$PWD/.spike/state node bin/t3sm.mjs plan`, PowerShell
 - No `any`: use `unknown` and narrow. Decode every external input (T3 responses, transcripts, config) strictly.
 - Throw typed errors (`T3NotRunning`, `ShapeError`, `HarnessSchemaError`, `ConfigError`, ...) and map them to exit
   codes in `src/cli/errors.ts`. An adapter reports a bad session in `lastErrors`; it never throws for one session.
-- User-facing text is plain English: what happened, then what to do. Show home as `~`, mask emails.
+- User-facing text goes through the catalogues (`src/i18n/messages.*.ts`, `src/assistant/messages.*.ts`, the help
+  texts): English and European Portuguese with identical keys, plain words, what happened, then what to do. Show home
+  as `~`, mask emails. `--json`, `plan.md`, `journal.jsonl` and `logs/sync.log` stay English.
 
 ## Safety invariants (never break these)
 
@@ -112,12 +141,29 @@ Each names where it is enforced, then the test that pins it.
     `test/t3/auth.test.ts`.
 12. Writes ask: a writing command on a non-terminal without `--yes` exits 2; `--dry-run` writes nothing.
     `src/cli/commands/*.ts`; `test/cli/ops.test.ts`, `test/apply/dry-run.test.ts`.
-13. Unattended `sync` stays conservative: at most `sync.maxUnattendedImports`, no new instances, no pinning, no
-    quarantine or dedupe, merges only with `sync.autoMerge`. `src/ops/sync.ts` (`filterForSync`,
-    `DEFAULT_MAX_UNATTENDED_IMPORTS`); `test/ops/sync.test.ts`.
-14. An unknown T3 Code response shape or untested version aborts (exit 4) before the first write.
+13. Unattended `sync` stays conservative and never asks: at most `sync.maxUnattendedImports`, no new instances, no
+    quarantine or dedupe, merges only with `sync.autoMerge`. It organizes only the threads it has just imported
+    (archive, title, reopen), writes a copy from a refused folder only to a destination that already exists in T3
+    Code, and never creates the General folder or a project for such a copy, never pins or unpins, never deletes a
+    project and never changes a T3 Code setting; sessions of an unanswered question wait (`needsAttention`).
+    It may follow rehome copies whatever `sync.autoMerge` says (a copy whose original grew, neither file in use, the
+    copy untouched since t3sm wrote it: a new revision carrying the old thread's title and settled state, the old
+    thread archived only after it, at most `FOLLOWS_PER_CYCLE`; a copy continued itself is a conflict, never written),
+    and it applies the history rule to imported threads only (every `import:` thread, whether t3sm or T3 Code's own
+    import made it; a conversation started in T3 Code is only ever moved by T3 Code's own auto-settle option), after an
+    import to the projects that got new threads and once a day to every project (at most `HISTORY_PER_CYCLE` changes,
+    never a thread the user changed by hand; spec §5.1.4 and §5.2). The watcher may also, once a day, start the update child (`t3sm update --auto-run --yes`, a
+    separate detached process: never inside the watcher) for a newer patch or minor release when `update.auto` is on,
+    and restart itself into a new install. Approved by the owner on 2026-11-14 and, for following, the history rule and
+    automatic updates, on 2026-11-15. `src/ops/sync.ts` (`filterForSync`, `DEFAULT_MAX_UNATTENDED_IMPORTS`),
+    `src/ops/follow.ts` (`followRehomed`), `src/ops/autoUpdate.ts`; `test/ops/sync.test.ts`, `test/ops/follow.test.ts`.
+14. Only an unknown T3 Code response shape or an orchestration protocol other than 2 aborts (exit 4) before the first write; an untested version warns once and proceeds.
     `src/t3/decode.ts` (decoders throw `ShapeError`), `src/t3/compat.ts` (`compatGate`); `test/t3/decode.test.ts`.
-15. Never kill processes by image name or pattern (`taskkill /IM node.exe`, `pkill node`): only PIDs you started.
+15. Never kill processes by image name or pattern (`taskkill /IM node.exe`, `pkill node`): only PIDs you started. The
+    product stops its watcher the same way: `stopWatcher` asks over the watcher's authenticated endpoint first and
+    kills only the heartbeat's pid, and only once that process's command line is a t3sm watcher (`isT3smWatcher`) and
+    it started when the heartbeat says (pid reuse guard). `src/ops/watcherControl.ts`;
+    `test/ops/watcherControl.test.ts`.
 
 ## Testing rules
 
@@ -126,8 +172,9 @@ Each names where it is enforced, then the test that pins it.
   write a real `~/.claude*`, `~/.codex`, Pi or OpenCode folder, or a real T3 Code, from a unit test.
 - Fixtures are synthetic: invented text, `C:/work/demo` or `~/code/app` paths, `a***@example.com`. Never paste real
   session content, paths, names or emails into code, fixtures, logs, issues, commits or pull requests.
-- Live tests (`test/e2e/*.live.test.ts`) skip unless `T3_E2E=1`; three of the four need Windows. They write
-  synthetic files into the real `~/.claude` and the running T3 Code and clean up in `finally`. Run them only when a
+- Live tests (`test/e2e/live.test.ts`, read-only, and the five `test/e2e/*.live.test.ts`, which need Windows) skip
+  unless `T3_E2E=1`. The five write synthetic files into the real `~/.claude` and the running T3 Code and clean up in
+  `finally`. Run them only when a
   human asks, one file at a time, with `CLAUDE_CONFIG_DIR` removed, never in CI, never against real sessions:
   Bash `T3_E2E=1 node --test --test-timeout=180000 test/e2e/apply.live.test.ts`, PowerShell
   `$env:T3_E2E=1; node --test --test-timeout=180000 test/e2e/apply.live.test.ts`.
@@ -151,7 +198,8 @@ Read [docs/adding-a-harness.md](docs/adding-a-harness.md); `src/sources/opencode
 
 - English only: `AGENTS.md`, `CLAUDE.md`, `ROADMAP.md`, `CONTRIBUTING.md` and the other contributor docs.
   English and European Portuguese, changed together: `README.md` / `README.pt.md`,
-  `docs/switching-from-vscode.md` / `.pt.md`, and every `docs/migrate/*.md` with its `.pt.md` twin.
+  `docs/switching-from-vscode.md` / `.pt.md`, `docs/testing-0.3.md` / `.pt.md`, every help topic `docs/help/*.md`
+  with its `.pt.md` twin, and every `docs/migrate/*.md` with its `.pt.md` twin.
 - Every command or option you show must exist; run it. Status tables say only what was run (live, fixtures,
   planned).
 - After changing the art or the CLI's plan summary, run `npm run assets` and commit `docs/assets/`.
@@ -168,8 +216,9 @@ Read [docs/adding-a-harness.md](docs/adding-a-harness.md); `src/sources/opencode
 - Anything that writes real session data, t3sm's real state folder or a real T3 Code: `apply`, `dedupe`,
   `quarantine`, `merge --all` / `--session`, `rollback`, `doctor --repair`, `accounts --init [--force]`,
   `accounts --apply`, `accounts --rename`, `sync` (without `--dry-run`) and `sync --watch`, `schedule install` /
-  `remove`, `projects set` / `unset`, every write step of the guided assistant, and the live tests.
-- `t3sm update` without `--dry-run`: it reinstalls the user's global t3sm with npm.
+  `remove` / `restart`, `projects set` / `unset`, every write step of the guided assistant, and the live tests.
+- `t3sm update` without `--check` or `--dry-run`: it reinstalls the user's global t3sm with npm; `update --auto on|off`
+  changes config.json.
 - Pushing, tagging, publishing or running `node scripts/release.js <version>`.
 - Changing a safety invariant above, or the tests that pin one.
 - Adding a runtime dependency, or any network call beyond T3 Code on loopback.

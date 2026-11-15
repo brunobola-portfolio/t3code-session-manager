@@ -13,7 +13,7 @@
  * global mode on npm 11, so the clone never gets its devDependencies and `tsc` is missing. This script needs nothing
  * but the Node that runs it, so the git install works on every npm.
  */
-import { mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import * as nodeModule from "node:module";
@@ -46,8 +46,13 @@ function tsFiles(dir) {
   });
 }
 
-/** Writes outDir (emptied first) with one .js per .ts under srcDir. Returns the number of files written. */
-export function build(srcDir, outDir) {
+/**
+ * Writes outDir (emptied first) with one .js per .ts under srcDir, the help topics (docs/help/*.md) in outDir/help,
+ * plus outDir/build.json `{version, builtAt}` (the
+ * version from the package.json next to srcDir; builtAt now unless given). The background watcher compares builtAt
+ * with the one it started from and restarts into a new build (src/core/version.ts). Returns the number of .js files.
+ */
+export function build(srcDir, outDir, meta = {}) {
   const strip = stripper();
   rmSync(outDir, { recursive: true, force: true });
   const sources = tsFiles(srcDir);
@@ -55,6 +60,16 @@ export function build(srcDir, outDir) {
     const target = join(outDir, relative(srcDir, file)).replace(/\.ts$/, ".js");
     mkdirSync(dirname(target), { recursive: true });
     writeFileSync(target, rewriteImports(strip(readFileSync(file, "utf8"))));
+  }
+  const version = meta.version ?? JSON.parse(readFileSync(join(srcDir, "..", "package.json"), "utf8")).version;
+  const builtAt = meta.builtAt ?? new Date().toISOString();
+  mkdirSync(outDir, { recursive: true });
+  writeFileSync(join(outDir, "build.json"), JSON.stringify({ version, builtAt }) + "\n");
+  // The help topics (`t3sm help <topic>`): docs/help/*.md in both languages, read by the installed package from dist/help.
+  const help = meta.helpDir ?? join(srcDir, "..", "docs", "help");
+  if (existsSync(help)) {
+    mkdirSync(join(outDir, "help"), { recursive: true });
+    for (const f of readdirSync(help).filter((x) => x.endsWith(".md"))) copyFileSync(join(help, f), join(outDir, "help", f));
   }
   return sources.length;
 }

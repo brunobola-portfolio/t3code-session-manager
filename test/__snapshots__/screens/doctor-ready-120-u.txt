@@ -1,0 +1,15 @@
+   Check              Result
+───────────────────────────────────────────────────────────
+✓  Node               Node 24.11.1
+✓  State folder       ~/.t3code-session-manager is writable
+✓  T3 Code running    answering at http://127.0.0.1:3773
+!  CLAUDE_CONFIG_DIR  see below
+○  Codex sessions     no sessions on this machine
+
+! CLAUDE_CONFIG_DIR
+  T3 Code started from this shell would read C:/work/demo/.claude-alt as its default account
+  What to do: Start T3 Code from the Start menu, not from this shell
+
+╭─ ✓ Ready, with 1 warning ───╮
+│ Next: t3sm plan             │
+╰─────────────────────────────╯

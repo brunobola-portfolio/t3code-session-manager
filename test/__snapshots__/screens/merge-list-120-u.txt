@@ -1,0 +1,12 @@
+› 2 sessions were continued outside T3 Code:
+
+Project  Session   Last terminal activity  Added  T3 title
+────────────────────────────────────────────────────────────────────
+demo     1a2b3c4d  Nov 15, 11:20             +12  Fix the login form
+app      5e6f7a8b  Nov 15, 11:20              +3  Plan the API
+  • 5e6f7a8b: 1 other branch of the transcript (not the one claude --resume continues) is not merged
+
+  • 1 session not merged: this session was compacted; merging compacted sessions is not supported yet
+
+Run t3sm merge --all to merge them, or t3sm merge --session <id> for one. Each becomes a new T3 Code thread with the
+terminal work; the old thread is archived (undo with t3sm rollback). Nothing was changed.

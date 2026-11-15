@@ -18,6 +18,7 @@ import { expandHome, normalizeCwd, pathKey, sameCwd } from "../core/paths.ts";
 import { ACTIVE_WINDOW_MS, isActive } from "../core/activity.ts";
 import { MoveRefused, publishNoClobber } from "../core/fsutil.ts";
 import { compareCopies } from "../plan/ownership.ts";
+import type { CliKey } from "../i18n/cli.ts";
 
 export const QUARANTINE_DIR = "session-manager-quarantine";
 
@@ -41,8 +42,13 @@ export interface MoveOptions {
 export interface MoveReport {
   /** In order of the moves (a dedupe item's sidecar folder follows its file). */
   moved: { from: string; to: string }[];
-  skipped: { path: string; reason: string }[];
+  /** `reason`: English (logs, --json); `say`: the same in the catalogue's words, for the screen. */
+  skipped: { path: string; reason: string; say?: SkipSay }[];
 }
+
+/** A skip reason in the catalogue's words (moves.why.*). */
+export interface SkipSay { key: CliKey; vars?: Record<string, string | number> }
+const why = (key: CliKey, vars?: Record<string, string | number>): SkipSay => ({ key, ...(vars ? { vars } : {}) });
 
 /** The journal could not be written around a move. Aborts the command (exit 1). */
 export class JournalWriteError extends Error {
@@ -240,14 +246,14 @@ export async function quarantine(dirs: string[], accountHome: string, j: Journal
   const projects = join(accountHome, "projects");
   const dest = join(accountHome, QUARANTINE_DIR, "backups");
   for (const dir of dirs) {
-    const skip = (reason: string): void => void report.skipped.push({ path: dir, reason });
+    const skip = (reason: string, say?: SkipSay): void => void report.skipped.push({ path: dir, reason, ...(say ? { say } : {}) });
     try {
-      if (!sameCwd(dirname(dir), projects, ctx.platform) || !isBackupDirName(basename(dir))) { skip(`not a backup folder of ${accountHome}`); continue; }
+      if (!sameCwd(dirname(dir), projects, ctx.platform) || !isBackupDirName(basename(dir))) { skip(`not a backup folder of ${accountHome}`, why("moves.why.notBackup")); continue; }
       const st = await lstatOrNull(dir);
-      if (st === null) { skip("missing"); continue; }
-      if (!st.isDirectory()) { skip("not a folder"); continue; }
+      if (st === null) { skip("missing", why("moves.why.missing")); continue; }
+      if (!st.isDirectory()) { skip("not a folder", why("moves.why.notFolder")); continue; }
       const live = await findActive(dir, now() - ACTIVE_WINDOW_MS);
-      if (live !== null) { skip(`active (${live} changed in the last 10 minutes)`); continue; }
+      if (live !== null) { skip(`active (${live} changed in the last 10 minutes)`, why("moves.why.activeFile", { file: live })); continue; }
       const [to] = await pickFree(dest, (sfx) => [basename(dir) + sfx], ctx);
       if (!opts.dryRun) await moveAndJournal(dir, to!, "backup-dir", ctx);
       report.moved.push({ from: dir, to: to! });
@@ -271,27 +277,27 @@ export async function dedupe(copies: Plan["mirrorCopies"], accounts: AccountConf
   const home = opts.home ?? homedir();
   const report: MoveReport = { moved: [], skipped: [] };
   for (const c of copies) {
-    const skip = (reason: string): void => void report.skipped.push({ path: c.path, reason });
-    if (typeof c.path !== "string" || typeof c.keptPath !== "string" || hasDotDot(c.path) || hasDotDot(c.keptPath)) { skip("invalid plan entry"); continue; }
+    const skip = (reason: string, say?: SkipSay): void => void report.skipped.push({ path: c.path, reason, ...(say ? { say } : {}) });
+    if (typeof c.path !== "string" || typeof c.keptPath !== "string" || hasDotDot(c.path) || hasDotDot(c.keptPath)) { skip("invalid plan entry", why("moves.why.invalidEntry")); continue; }
     const acct = accounts.map((a) => expandHome(a.home, home)).find((h) => isInside(c.path, join(h, "projects"), ctx.platform));
-    if (acct === undefined) { skip("not inside a configured account's projects folder"); continue; }
+    if (acct === undefined) { skip("not inside a configured account's projects folder", why("moves.why.outsideAccount")); continue; }
     const rel = subdirOf(join(acct, "projects"), dirname(c.path), ctx.platform);
-    if (rel === null) { skip("not inside a configured account's projects folder"); continue; }
+    if (rel === null) { skip("not inside a configured account's projects folder", why("moves.why.outsideAccount")); continue; }
     try {
       const st = await lstatOrNull(c.path);
-      if (st === null) { skip("missing"); continue; }
-      if (!st.isFile()) { skip("not a file"); continue; }
-      if (isActive(st.mtimeMs, now())) { skip("active"); continue; }
-      if (sameCwd(c.path, c.keptPath, ctx.platform)) { skip("kept copy is the same file"); continue; }
-      if ((await lstatOrNull(c.keptPath)) === null) { skip("kept copy missing"); continue; }
+      if (st === null) { skip("missing", why("moves.why.missing")); continue; }
+      if (!st.isFile()) { skip("not a file", why("moves.why.notFile")); continue; }
+      if (isActive(st.mtimeMs, now())) { skip("active", why("moves.why.active")); continue; }
+      if (sameCwd(c.path, c.keptPath, ctx.platform)) { skip("kept copy is the same file", why("moves.why.keptSame")); continue; }
+      if ((await lstatOrNull(c.keptPath)) === null) { skip("kept copy missing", why("moves.why.keptMissing")); continue; }
       let relation;
       try {
         relation = await compareCopies(c.path, c.keptPath, ctx.platform);
       } catch (e) {
-        skip(`compare failed (${errCode(e)})`);
+        skip(`compare failed (${errCode(e)})`, why("moves.why.compareFailed", { code: errCode(e) }));
         continue;
       }
-      if (relation !== "identical" && relation !== "b-extends-a") { skip("no longer a mirror"); continue; }
+      if (relation !== "identical" && relation !== "b-extends-a") { skip("no longer a mirror", why("moves.why.notMirror")); continue; }
 
       const ext = extname(c.path);
       const stem = basename(c.path, ext);
@@ -300,13 +306,13 @@ export async function dedupe(copies: Plan["mirrorCopies"], accounts: AccountConf
       const sidecar = side !== null && side.isDirectory() ? sidecarPath : null;
       if (sidecar !== null) {
         const live = await findActive(sidecar, now() - ACTIVE_WINDOW_MS);
-        if (live !== null) { skip(`active (${live} changed in the last 10 minutes)`); continue; }
+        if (live !== null) { skip(`active (${live} changed in the last 10 minutes)`, why("moves.why.activeFile", { file: live })); continue; }
       }
       const destDir = join(acct, QUARANTINE_DIR, "mirror", ...(rel === "" ? [] : rel.split("/")));
       const [to, sideTo] = await pickFree(destDir, (sfx) => (sidecar ? [stem + sfx + ext, stem + sfx] : [stem + sfx + ext]), ctx);
       // Changed while it was being compared (the session resumed): leave it for the next run.
       const again = await lstatOrNull(c.path);
-      if (again === null || again.mtimeMs !== st.mtimeMs || again.size !== st.size) { skip("changed while checking"); continue; }
+      if (again === null || again.mtimeMs !== st.mtimeMs || again.size !== st.size) { skip("changed while checking", why("moves.why.changed")); continue; }
       if (opts.dryRun) {
         report.moved.push({ from: c.path, to: to! });
         if (sidecar) report.moved.push({ from: sidecar, to: sideTo! });

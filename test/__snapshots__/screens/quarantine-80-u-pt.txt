@@ -1,0 +1,5 @@
+claudeAgent (~/.claude): 1 pasta de cópia de segurança a mover, 1 fica de fora
+  • ~/.claude/projects/C--work-demo.bak
+    → ~/.claude/session-manager-quarantine/backups/C--work-demo.bak
+  ! fica de fora ~/.claude/projects/C--work-app.bak: em uso (session.jsonl mudou
+    nos últimos 10 minutos)

@@ -1,0 +1,42 @@
+5/11 - Decisions
+3 questions before the import. Until you
+answer, those conversations stay out of
+T3 Code. Nothing is lost.
+
++- 1 of 3 - Your home folder ----------+
+| 5 conversations were started in your |
+| home folder. T3 Code does not accept |
+| it as a project. t3sm can copy each  |
+| one into the project it worked in    |
+| most, or into one "General" project. |
+| The original stays where it is.      |
+|                                      |
+| Default       yes: nothing is lost,  |
+|               and you keep working   |
+|               in T3 Code             |
+| Change later  organize.folders.home  |
+|               ("rehome" | "import" | |
+|               "skip")                |
++--------------------------------------+
+Put copies of these conversations
+into the right projects? [Y/n/?/b/q] y
+
++- 2 of 3 - Folders T3 Code refuses ---+
+| 1 conversation comes from 1 folder   |
+| that T3 Code refuses as a project.   |
+| t3sm can copy it into the project it |
+| worked in, or into the "General"     |
+| project.                             |
+|                                      |
+| Default       yes: nothing is lost,  |
+|               and you keep working   |
+|               in T3 Code             |
+| Change later                         |
+|   organize.folders["t3-refused"]     |
+|   ("rehome" | "import" | "skip")     |
++--------------------------------------+
+Put a copy of this conversation into
+the right project? [Y/n/?/b/q] q
+
+Stopped. Nothing is left half done; run
+t3sm again to continue.

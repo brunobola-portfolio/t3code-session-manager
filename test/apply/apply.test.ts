@@ -1,16 +1,20 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, utimesSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { applyPlan, ApplyRefusal, type ApplyDeps, type SignalSource } from "../../src/apply/apply.ts";
-import { applyCommand } from "../../src/cli/commands/apply.ts";
+import { applyCommand, defaultFolderEnv } from "../../src/cli/commands/apply.ts";
+import { organizeCommand } from "../../src/cli/commands/organize.ts";
 import { main, type Io } from "../../src/cli/main.ts";
 import { Journal } from "../../src/core/journal.ts";
 import { acquireLock } from "../../src/core/lock.ts";
-import type { CanonicalTranscript, JournalEntry, Plan, PlanItem } from "../../src/core/types.ts";
-import { encodeClaudeProjectDir } from "../../src/core/paths.ts";
+import type { CanonicalTranscript, DiscoveredSession, JournalEntry, Plan, PlanItem } from "../../src/core/types.ts";
+import { encodeClaudeProjectDir, normalizeCwd, tildePath } from "../../src/core/paths.ts";
+import type { FolderEnv } from "../../src/plan/folders.ts";
+import { rollbackRun } from "../../src/ops/rollback.ts";
 import { uuidV5 } from "../../src/core/uuid.ts";
 import { SessionActiveError, SourceBusyError, type SourceAdapter } from "../../src/sources/types.ts";
+import { compatGate } from "../../src/t3/compat.ts";
 import { T3Incompatible } from "../../src/t3/errors.ts";
 import type { T3Api } from "../../src/t3/api.ts";
 import { DAY, fakeT3, inst, tempHome, transcript, type FakeT3 } from "./fake-t3.ts";
@@ -324,7 +328,8 @@ test("applyPlan: a conversion that fails is reported per session (import-failed 
   assert.equal(r.status, "partial");
   assert.equal(r.imported, 1);
   assert.equal(r.failed, 1);
-  assert.deepEqual(r.failures, [{ harness: "opencode", nativeId: "ses_bad", reason: "read-failed: database disk image is malformed" }]);
+  // Task 21: each failure names its project (where it was going) and its title (null: not a Claude transcript).
+  assert.deepEqual(r.failures, [{ harness: "opencode", nativeId: "ses_bad", reason: "read-failed: database disk image is malformed", projectRoot: "C:/work/other", title: null }]);
   const failed = (await e.journal()).filter((x) => x.t === "import-failed") as Extract<JournalEntry, { t: "import-failed" }>[];
   assert.deepEqual(failed.map((x) => [x.nativeId, x.reason]), [["ses_bad", "convert: read-failed: database disk image is malformed"]]);
   assert.ok(!f.calls.some((c) => c.toLowerCase().includes("other")), "no project for the root whose only session failed to convert");
@@ -399,9 +404,17 @@ test("applyPlan: a convert-only root whose existing converted transcript is in u
   mkdirSync(join(t, ".."), { recursive: true });
   writeFileSync(t, "resumed right now\n"); // e.g. `claude --resume` is writing it (mtime = now)
   const r = await applyPlan(mkPlan([a]), deps({ noopWithoutWrites: true }));
-  assert.equal(r.status, "noop");
   assert.deepEqual(r.heldRoots, [ROOT2]);
-  assert.deepEqual(await e.journal(), []);
+  // Only its (empty) project is created (S6: project.create imports nothing); nothing is converted or re-timed.
+  assert.deepEqual((await e.journal()).map((x) => x.t), ["run-start", "project-created", "project-default-set", "run-end"]);
+  // The run-end says how many projects waited (Task 22: the guided assistant reads it after the import).
+  const end = (await e.journal()).at(-1)!;
+  assert.equal(end.t === "run-end" ? end.held : undefined, 1);
+  const { listRuns } = await import("../../src/ops/rollback.ts");
+  assert.equal(listRuns(await e.journal()).at(-1)!.held, 1);
+  // The title t3sm gave it is journaled (projects rename --suggest renames only projects still carrying it).
+  const created = (await e.journal()).find((x) => x.t === "project-created") as { title?: string; root: string };
+  assert.equal(created.title, f.projects.find((p) => p.workspaceRoot === created.root)!.title);
   assert.equal(readFileSync(t, "utf8"), "resumed right now\n");
 });
 
@@ -426,9 +439,12 @@ test("applyPlan: SIGINT during a wave -> that wave's mtimes restored, no new wav
 function cli(state: string, isTTY = false, answer = "") {
   const out: string[] = [];
   const err: string[] = [];
-  const io: Io = { stdout: (s) => void out.push(s), stderr: (s) => void err.push(s), isTTY, prompt: async () => answer, env: { T3SM_HOME: state } };
+  const io: Io = { stdout: (s) => void out.push(s), stderr: (s) => void err.push(s), isTTY, prompt: async () => answer, env: { T3SM_HOME: state, LANG: "en_US.UTF-8" } };
   return { io, out: () => out.join(""), err: () => err.join("") };
 }
+
+/** A screen's text with panel borders gone and wrapped lines joined, so a sentence matches whatever the width. */
+const flat = (s: string): string => s.replace(/\x1b\[[0-9;]*m/g, "").replace(/[│|]/g, " ").replace(/\s+/g, " ");
 
 function savePlan(state: string, plan: Plan): string {
   const dir = join(state, "runs", plan.runId);
@@ -492,10 +508,11 @@ test("applyPlan: a transcript created after planning (listed at wave time) is pa
   assert.ok(!g.calls.includes("scan"));
 });
 
-test("applyPlan (noopWithoutWrites): a cycle where everything pending is held writes nothing at all", async () => {
+test("applyPlan (noopWithoutWrites): a cycle where everything pending is held (its project already in T3) writes nothing at all", async () => {
   const f = fakeT3();
   const e = env(f);
   f.opts.instances = [inst("claudeAgent", join(e.home, ".claude"))];
+  f.projects.push({ id: "p0", title: "demo", workspaceRoot: ROOT, defaultModelSelection: { instanceId: "claudeAgent", model: "m" } as never, archived: false, deleted: false, pinned: false, createdAt: null });
   const now = Date.now();
   const a = transcript(f, e.dir, ROOT, now - 60 * DAY);
   const busy = transcript(null, e.dir, ROOT, now - 60 * DAY);
@@ -558,7 +575,8 @@ test("applyPlan: confirm() gets the runnable plan (held projects removed) and th
   utimesSync(b2.session.file.path, new Date(), new Date());
   const c2 = cli(e2.state, true, "no");
   assert.equal(await applyCommand([], c2.io, { home: e2.home, connect: async () => g.api, signals: e2.signals }), 0);
-  assert.match(c2.out(), /held: in use: demo \(1 session; not part of this run\)/);
+  // Task 21: a row of the plan's panel, in conversations.
+  assert.match(flat(c2.out()), /Held \(in use\) 1 project, 1 conversation \(demo; not part of this run\)/);
 });
 
 test("t3sm apply: held projects are named with the hint to close the session or wait", async () => {
@@ -571,7 +589,172 @@ test("t3sm apply: held projects are named with the hint to close the session or 
   utimesSync(busy.session.file.path, new Date(), new Date());
   const c = cli(e.state);
   assert.equal(await applyCommand(["--yes"], c.io, { home: e.home, connect: async () => f.api, signals: e.signals }), 0);
-  assert.match(c.out(), /Held \(a session is in use\): demo\. Close the session or wait 10 minutes, then run again\./);
+  assert.match(flat(c.out()), /[!] demo waits: '[0-9a-f-]+\.jsonl' is in use \(written just now\); imported after 10 minutes idle/);
+});
+
+/** A Claude transcript in `dir` with title records, its mtime `mtimeMs` (the session being written). */
+function titled(dir: string, mtimeMs: number, records: string[]): string {
+  const id = "0000aaaa-0000-4000-8000-00000000beef";
+  const p = join(dir, `${id}.jsonl`);
+  writeFileSync(p, [
+    `{"type":"user","cwd":"C:/work/demo","sessionId":"${id}","message":{"role":"user","content":"secret text"}}`, ...records,
+  ].join("\n") + "\n");
+  utimesSync(p, mtimeMs / 1000, mtimeMs / 1000);
+  return p;
+}
+
+test("a held root still gets its project created (S6: project.create imports nothing)", async () => {
+  const f = fakeT3();
+  const e = env(f);
+  f.opts.instances = [inst("claudeAgent", join(e.home, ".claude"))];
+  const now = Date.now();
+  const a = transcript(f, e.dir, ROOT, now - 60 * DAY);
+  const busy = transcript(null, e.dir, ROOT, now - 60 * DAY);
+  utimesSync(busy.session.file.path, new Date(), new Date());
+  const before = mtimes([a]);
+  const r = await applyPlan(mkPlan([a]), e.deps());
+  assert.equal(r.status, "ok");
+  assert.equal(r.imported, 0);
+  assert.equal(r.deferredInUse, 1);
+  assert.deepEqual(r.heldRoots, [ROOT]);
+  const created = f.calls.filter((c) => c.startsWith("create:"));
+  assert.equal(created.length, 1, "the held project is created, empty");
+  assert.ok(f.calls.some((c) => c.startsWith("default:")), "and its default instance set");
+  assert.ok(!f.calls.some((c) => c === "scan" || c.startsWith("import:")), "nothing imported, no scan");
+  const kinds = (await e.journal()).map((x) => x.t);
+  assert.ok(kinds.includes("project-created") && kinds.includes("project-default-set"));
+  assert.ok(!kinds.includes("mtime-bump"), "no file time moved");
+  assert.deepEqual(mtimes([a]), before);
+});
+
+test("organize after an apply that held a root never deletes the empty project apply just created for it", async () => {
+  const f = fakeT3();
+  const e = env(f);
+  f.opts.instances = [inst("claudeAgent", join(e.home, ".claude"))];
+  const now = Date.now();
+  const a = transcript(f, e.dir, ROOT, now - 60 * DAY);
+  const busy = transcript(null, e.dir, ROOT, now - 60 * DAY);
+  utimesSync(busy.session.file.path, new Date(), new Date());
+  const plan = mkPlan([a]);
+  mkdirSync(join(e.state, "runs", plan.runId), { recursive: true });
+  writeFileSync(join(e.state, "runs", plan.runId, "plan.json"), JSON.stringify(plan));
+  const r = await applyPlan(plan, e.deps());
+  assert.deepEqual(r.heldRoots, [ROOT]);
+  assert.equal(f.projects.length, 1, "created empty");
+  const organize = async (at: number): Promise<string> => {
+    const out: string[] = [];
+    const io: Io = { stdout: (x) => void out.push(x), stderr: () => {}, isTTY: false, prompt: async () => "", env: { T3SM_HOME: e.state } };
+    assert.equal(await organizeCommand(["--dry-run"], io, { home: e.home, now: () => at, connect: async () => f.api }), 0);
+    return out.join("");
+  };
+  // Right after the apply (created in the last 24 h), and two days later while its session still waits to import
+  // (the latest plan's item, not in T3 Code yet): never deleted.
+  assert.doesNotMatch(await organize(now), /Delete/);
+  assert.doesNotMatch(await organize(now + 2 * DAY), /Delete/);
+  // Once nothing waits for it any more, it is an ordinary empty project t3sm created.
+  rmSync(join(e.state, "runs"), { recursive: true, force: true });
+  assert.match(await organize(now + 2 * DAY), /Delete 1 empty project t3sm created/);
+  // A project sync-status.json lists as held (by its name in T3 Code) is kept too.
+  writeFileSync(join(e.state, "sync-status.json"), JSON.stringify({ held: [{ project: "demo", title: null, modifiedAt: new Date(now).toISOString() }] }));
+  assert.doesNotMatch(await organize(now + 2 * DAY), /Delete/);
+});
+
+test("held lists the active conversation with its title and modified time", async () => {
+  const f = fakeT3();
+  const e = env(f);
+  f.opts.instances = [inst("claudeAgent", join(e.home, ".claude"))];
+  const now = Date.now();
+  const a = transcript(f, e.dir, ROOT, now - 60 * DAY);
+  const p = titled(e.dir, now - 3 * 60_000, [
+    `{"type":"ai-title","aiTitle":"First guess","sessionId":"x"}`,
+    `{"type":"custom-title","customTitle":"Synthetic work","sessionId":"x"}`,
+    `{"type":"ai-title","aiTitle":"Later guess","sessionId":"x"}`,
+  ]);
+  const r = await applyPlan(mkPlan([a]), e.deps());
+  assert.deepEqual(r.held, [{ project: "demo", root: ROOT, file: p, title: "Synthetic work", modifiedAt: new Date(statSync(p).mtimeMs).toISOString() }]);
+
+  // ai-title only: the newest one; no title record: null.
+  const g = fakeT3();
+  const e2 = env(g);
+  g.opts.instances = [inst("claudeAgent", join(e2.home, ".claude"))];
+  const b = transcript(g, e2.dir, ROOT, now - 60 * DAY);
+  const q = titled(e2.dir, now - 60_000, [`{"type":"ai-title","aiTitle":"Old","sessionId":"x"}`, `{"type":"ai-title","aiTitle":"New","sessionId":"x"}`]);
+  assert.deepEqual((await applyPlan(mkPlan([b]), e2.deps({ dryRun: true }))).held.map((h) => [h.file, h.title]), [[q, "New"]]);
+  const k = fakeT3();
+  const e3 = env(k);
+  k.opts.instances = [inst("claudeAgent", join(e3.home, ".claude"))];
+  const c = transcript(k, e3.dir, ROOT, now - 60 * DAY);
+  const z = titled(e3.dir, now, []);
+  assert.deepEqual((await applyPlan(mkPlan([c]), e3.deps())).held.map((h) => [h.file, h.title]), [[z, null]]);
+});
+
+test("the waiting line names the project as T3 shows it: its existing title, else the plan's (General), else the folder", async () => {
+  const GROOT = "C:/Users/demo/T3 General";
+  const now = Date.now();
+  const run = async (root: string, inT3: string | null, planTitle: string | null) => {
+    const f = fakeT3();
+    const e = env(f);
+    f.opts.instances = [inst("claudeAgent", join(e.home, ".claude"))];
+    if (inT3 !== null) f.projects.push({ id: "p0", title: inT3, workspaceRoot: root, defaultModelSelection: { instanceId: "claudeAgent", model: "m" } as never, archived: false, deleted: false, pinned: false, createdAt: null });
+    const it = transcript(f, e.dir, root, now - 2 * 60_000 - 5_000); // the planned session itself is being written
+    savePlan(e.state, mkPlan([it], { projectsToCreate: planTitle === null ? [] : [{ root, title: planTitle, defaultInstanceId: "claudeAgent" }] }));
+    const c = cli(e.state);
+    assert.equal(await applyCommand(["--yes"], c.io, { home: e.home, connect: async () => f.api, signals: e.signals, now: () => now }), 0);
+    return [...flat(c.out()).matchAll(/[!] ([^!]*?) waits: '[^']*' is in use \(written ([^)]*)\)/g)].map((m) => `${m[1]} (${m[2]})`);
+  };
+  // An existing T3 project renamed by the user: its title, not the folder (every cycle after the first).
+  assert.deepEqual(await run(ROOT, "Renamed App", null), ["Renamed App (2 min ago)"]);
+  // The General folder on a second cycle (in T3 as "General", no longer in projectsToCreate): "General", not "T3 General".
+  assert.deepEqual(await run(GROOT, "General", null), ["General (2 min ago)"]);
+  // First cycle: the plan's title ("Geral"); with neither, the folder name.
+  assert.deepEqual(await run(GROOT, null, "Geral"), ["Geral (2 min ago)"]);
+  assert.deepEqual(await run(ROOT, null, null), ["demo (2 min ago)"]);
+});
+
+test("apply prints \"<project> waits: '<title>' is in use (written 3 min ago); imported after 10 minutes idle\"", async () => {
+  const f = fakeT3();
+  const e = env(f);
+  f.opts.instances = [inst("claudeAgent", join(e.home, ".claude"))];
+  const now = Date.now();
+  savePlan(e.state, mkPlan([transcript(f, e.dir, ROOT, now - 60 * DAY)], {
+    projectsToCreate: [{ root: ROOT, title: "Demo App", defaultInstanceId: "claudeAgent" }],
+  }));
+  titled(e.dir, now - 3 * 60_000 - 5_000, [`{"type":"custom-title","customTitle":"Synthetic work","sessionId":"x"}`]);
+  const c = cli(e.state);
+  assert.equal(await applyCommand(["--yes"], c.io, { home: e.home, connect: async () => f.api, signals: e.signals, now: () => now }), 0);
+  assert.match(flat(c.out()), /[!] Demo App waits: 'Synthetic work' is in use \(written 3 min ago\); imported after 10 minutes idle/);
+  assert.ok(!/secret text/.test(c.out() + c.err()), "message content is never read out");
+  assert.ok(f.calls.includes(`create:${process.platform === "win32" ? "C:\\work\\demo" : ROOT}`));
+
+  // --dry-run lists the same details under "held (in use)".
+  const g = fakeT3();
+  const e2 = env(g);
+  g.opts.instances = [inst("claudeAgent", join(e2.home, ".claude"))];
+  savePlan(e2.state, mkPlan([transcript(g, e2.dir, ROOT, now - 60 * DAY)]));
+  titled(e2.dir, now - 30_000, []);
+  const d = cli(e2.state);
+  assert.equal(await applyCommand(["--dry-run"], d.io, { home: e2.home, connect: async () => g.api, signals: e2.signals, now: () => now }), 0);
+  assert.match(flat(d.out()), /Held \(in use\) 1 project, 1 conversation \(demo; not part of this run\) [!] demo waits: '0000aaaa-0000-4000-8000-00000000beef\.jsonl' is in use \(written just now\); imported after 10 minutes idle/);
+  assert.match(d.out(), /Projects to create\s+1 \(demo\)/);
+});
+
+test("t3sm apply --dry-run on an untested T3 Code version: one warning, then it proceeds (--allow-untested silences it)", async () => {
+  for (const flags of [[], ["--allow-untested"]]) {
+    const g = fakeT3({ version: "0.2.0" });
+    const e2 = env(g);
+    g.opts.instances = [inst("claudeAgent", join(e2.home, ".claude"))];
+    savePlan(e2.state, mkPlan([transcript(g, e2.dir, ROOT, Date.now() - 60 * DAY)], { t3Version: "0.2.0" }));
+    const connect = async (_home: string, o: { allowUntested: boolean; onNotice: (l: string) => void }): Promise<T3Api> => {
+      compatGate(g.api.version, { allowUntested: o.allowUntested, onNotice: o.onNotice });
+      return g.api;
+    };
+    const d = cli(e2.state);
+    assert.equal(await applyCommand(["--dry-run", ...flags], d.io, { home: e2.home, connect, signals: e2.signals }), 0, d.err());
+    const warnings = d.err().split("\n").filter((l) => /not been tested/.test(l));
+    assert.equal(warnings.length, flags.length === 0 ? 1 : 0, d.err());
+    if (flags.length === 0) assert.match(warnings[0]!, /^Warning: T3 Code 0[.]2[.]0 has not been tested with t3sm [(]tested: .*[)][.] Proceeding; every change is journaled and can be undone with t3sm rollback[.]$/);
+    assert.match(d.out(), /Projects to create/);
+  }
 });
 
 test("t3sm apply: non-TTY without --yes -> exit 2, nothing touched", async () => {
@@ -651,18 +834,25 @@ test("t3sm apply: stale plan -> exit 2 `Plan is stale; run \\`t3sm plan\\` again
   commands["apply"] = (a, io) => applyCommand(a, io, { home: e.home, connect: async () => f.api, signals: e.signals });
   try {
     assert.equal(await main(["apply", "--yes"], c2.io), 2);
-    assert.match(c2.err(), /Plan is stale; run `t3sm plan` again\./);
+    assert.match(c2.err(), /^\| Plan is stale; run t3sm plan again\. +\|$/m, "the hint on its own line of the panel, without backticks");
   } finally { commands["apply"] = orig; }
 });
 
-test("t3sm apply: --yes runs the latest plan, prints one line per wave, exit 0; --quiet prints nothing", async () => {
+test("t3sm apply: --yes runs the latest plan behind one progress bar (waves only with --verbose), exit 0; --quiet prints nothing", async () => {
   const f = fakeT3();
   const e = env(f);
   const now = Date.now();
   savePlan(e.state, mkPlan([transcript(f, e.dir, ROOT, now - 60 * DAY), transcript(f, e.dir, ROOT, now - 50 * DAY)]));
   const c = cli(e.state);
   assert.equal(await applyCommand(["--yes"], c.io, { home: e.home, connect: async () => f.api, signals: e.signals }), 0);
-  assert.match(c.out(), /Wave 1\/1 · 1 projects? · 2 sessions · imported 2 · retry 0/);
+  assert.match(c.out(), /^Importing 2 conversations [·-] 1 project/m, "one bar for the whole import");
+  assert.doesNotMatch(c.out(), /Wave /, "no wave lines by default");
+  assert.match(flat(c.out()), /Imported 2 conversations/);
+  const v = fakeT3();
+  v.files.push(...f.files);
+  const cv = cli(e.state);
+  assert.equal(await applyCommand(["--yes", "--verbose"], cv.io, { home: e.home, connect: async () => v.api, signals: e.signals }), 0);
+  assert.match(cv.out(), /Wave 1\/1 · 1 projects? · 2 sessions · imported 2 · retry 0/, "--verbose: the waves too");
   const f2 = fakeT3();
   f2.files.push(...f.files); // a fresh T3 that has none of them yet
   const c2 = cli(e.state);
@@ -699,7 +889,7 @@ test("t3sm apply: --only is resolved to an absolute path; matching nothing -> ex
     assert.equal(await main(["apply", "--yes", "--only", "nowhere-xyz"], c2.io), 2);
   } finally { commands["apply"] = orig; }
   const { resolve } = await import("node:path");
-  assert.ok(c2.err().includes(`No sessions or projects under ${resolve("nowhere-xyz")} in this plan.`), c2.err());
+  assert.ok(flat(c2.err()).replace(/ /g, "").includes(`No sessions or projects under ${resolve("nowhere-xyz")} in this plan.`.replace(/ /g, "")), c2.err());
   assert.deepEqual(f.calls, []);
   assert.deepEqual(await e.journal(), []);
 });
@@ -724,7 +914,7 @@ test("t3sm apply: sessions left unverified (shell unreachable after a wave) -> e
   (f.api as { listThreads: typeof real }).listThreads = async () => { if (++lt >= 3) throw new Error("shell down"); return real(); };
   const c = cli(e.state);
   assert.equal(await applyCommand(["--yes", "--plan", p], c.io, { home: e.home, connect: async () => f.api, signals: e.signals }), 5);
-  assert.match(c.out() + c.err(), /unverified 1/);
+  assert.match(flat(c.out()), /Not verified 1/);
   assert.ok(c.err().includes("Could not verify imports with T3 Code; stopped. Run `t3sm plan` and `t3sm apply` again."), c.err());
   const end = (await e.journal()).at(-1) as Extract<JournalEntry, { t: "run-end" }>;
   assert.equal(end.status, "partial");
@@ -835,7 +1025,7 @@ test("applyPlan: an import-attempt item whose thread now exists and whose file i
   for (const i of [a, b]) f.threads.set(tid(i), { id: tid(i), projectId: "p1", instanceId: "claudeAgent", archived: false, title: "t", updatedAt: now });
   appendFileSync(b.session.file.path, "{}\n"); // b continued since the attempt: what T3 holds is unknown
   utimesSync(b.session.file.path, (now - 50 * DAY) / 1000, (now - 50 * DAY) / 1000);
-  f.projects.push({ id: "p1", title: "demo", workspaceRoot: ROOT, defaultModelSelection: null, archived: false, deleted: false });
+  f.projects.push({ id: "p1", title: "demo", workspaceRoot: ROOT, defaultModelSelection: null, archived: false, deleted: false, pinned: false, createdAt: null });
   const r = await applyPlan(mkPlan([a, b], { projectsToCreate: [], projectDefaults: [] }), e.deps());
   assert.equal(r.status, "ok");
   const imp = (await e.journal()).filter((x) => x.t === "imported") as Extract<JournalEntry, { t: "imported" }>[];
@@ -925,4 +1115,326 @@ test("liveExposure: a transcript created after planning whose sessionId differs 
     [inside, [`import:claudeAgent:${inside}`], [`claudeAgent:${inside}`]],
     [plain, [`import:claudeAgent:${plain}`], [`claudeAgent:${plain}`]],
   ]);
+});
+
+// ---------- rehome destination folders (spec §4.3: the General folder, a `rehome:<folder>` override) ----------
+
+/** A copy of an OpenCode session from a refused folder (the home folder) into `root`, which may not exist on disk. */
+function rehomed(f: FakeT3, home: string, root: string, nativeId: string, reads: Map<string, CanonicalTranscript | Error>): PlanItem {
+  const it = converted(f, home, root, nativeId, Date.now() - 2 * DAY, reads);
+  return { ...it, action: { ...(it.action as Extract<PlanItem["action"], { kind: "convert-import" }>), rehomeFrom: home } };
+}
+
+/** How folders are classified in these tests: the temp home is not a temp folder here. */
+const folderEnvOf = (home: string): FolderEnv => ({
+  platform: process.platform, home, tmpdir: join(home, "no-such-tmp"), env: {}, t3BaseDir: join(home, ".t3"), t3WorktreesDir: join(home, ".t3", "worktrees"),
+});
+
+test("applyPlan (interactive): a missing rehome destination folder is created (journaled) before its project, then the copy imports", async () => {
+  const { f, e, reads, deps } = convertEnv();
+  const general = normalizeCwd(join(e.home, "T3 General"));
+  const item = rehomed(f, e.home, general, "ses_home", reads);
+  const notices: string[] = [];
+  const r = await applyPlan(mkPlan([item]), deps({ rehomeFolders: { env: folderEnvOf(e.home) }, onNotice: (l) => void notices.push(l) }));
+  assert.equal(r.status, "ok", JSON.stringify(r.failures));
+  assert.equal(r.imported, 1);
+  assert.ok(statSync(general).isDirectory(), "the folder exists on disk");
+  const es = await e.journal();
+  const fc = es.find((x) => x.t === "folder-created") as Extract<JournalEntry, { t: "folder-created" }> | undefined;
+  assert.ok(fc, "journaled");
+  assert.equal(normalizeCwd(fc.path), general);
+  assert.equal(normalizeCwd(fc.created), general);
+  const kinds = es.map((x) => x.t);
+  assert.ok(kinds.indexOf("folder-created") < kinds.indexOf("project-created"), "folder first, then the project");
+  assert.ok(f.calls.some((c) => c.startsWith("create:")));
+  assert.ok(notices.some((l) => /^Created the folder .*T3 General for conversations moved from folders T3 Code refuses\.$/.test(l)), notices.join("\n"));
+
+  // An existing folder is used as it is: nothing created, nothing journaled.
+  const n = (await e.journal()).length;
+  const again = rehomed(f, e.home, general, "ses_home2", reads);
+  f.projects.length = 0; // its project is not in T3 yet
+  await applyPlan(mkPlan([again]), deps({ rehomeFolders: { env: folderEnvOf(e.home) } }));
+  assert.ok(!(await e.journal()).slice(n).some((x) => x.t === "folder-created"));
+});
+
+test("applyPlan: a rehome destination T3 Code refuses (or a temp / system folder) is never created; its items fail with the reason, the rest go on", async () => {
+  const { f, e, reads, deps } = convertEnv();
+  const refused = normalizeCwd(join(e.home, "Downloads", "dest"));
+  const bad = rehomed(f, e.home, refused, "ses_bad", reads);
+  const ok = converted(f, e.home, ROOT2, "ses_ok", Date.now() - 2 * DAY, reads);
+  const notices: string[] = [];
+  const r = await applyPlan(mkPlan([bad, ok]), deps({ rehomeFolders: { env: folderEnvOf(e.home) }, onNotice: (l) => void notices.push(l) }));
+  assert.equal(r.status, "partial");
+  assert.equal(r.imported, 1, "the other item still imports");
+  assert.deepEqual(r.failures.map((x) => [x.nativeId, x.reason]), [["ses_bad", "target-folder: T3 Code does not accept it as a project"]]);
+  assert.ok(!existsSync(refused), "never created");
+  assert.ok(!existsSync((bad.action as { targetFile: string }).targetFile), "no copy written for it");
+  assert.ok(notices.includes(`cannot create ${tildePath(refused, e.home)}: T3 Code does not accept it as a project`), notices.join("\n"));
+  assert.ok(!f.calls.includes(`create:${process.platform === "win32" ? refused.replaceAll("/", "\\") : refused}`));
+  const failed = (await e.journal()).filter((x) => x.t === "import-failed") as Extract<JournalEntry, { t: "import-failed" }>[];
+  assert.deepEqual(failed.map((x) => [x.nativeId, x.reason]), [["ses_bad", "target-folder: T3 Code does not accept it as a project"]]);
+
+  // A temp folder (a scratchpad) is not created either.
+  const scratch = normalizeCwd(join(e.home, "work", "scratchpad", "x"));
+  const r2 = await applyPlan(mkPlan([rehomed(f, e.home, scratch, "ses_tmp", reads)]), deps({ rehomeFolders: { env: folderEnvOf(e.home) } }));
+  assert.deepEqual(r2.failures.map((x) => x.reason), ["target-folder: it is a temporary or system folder"]);
+  assert.ok(!existsSync(scratch));
+});
+
+test("applyPlan: a destination folder that cannot be created (permission, a file in the way) is reported; its items fail, the rest go on", async () => {
+  const { f, e, reads, deps } = convertEnv();
+  const denied = normalizeCwd(join(e.home, "denied", "General"));
+  const notices: string[] = [];
+  const mkdir = async (p: string): Promise<string | undefined> => {
+    throw Object.assign(new Error(`EACCES: permission denied, mkdir '${p}'`), { code: "EACCES" });
+  };
+  const ok = converted(f, e.home, ROOT2, "ses_ok", Date.now() - 2 * DAY, reads);
+  const r = await applyPlan(mkPlan([rehomed(f, e.home, denied, "ses_denied", reads), ok]),
+    deps({ rehomeFolders: { env: folderEnvOf(e.home), mkdir }, onNotice: (l) => void notices.push(l) }));
+  assert.equal(r.imported, 1);
+  assert.deepEqual(r.failures.map((x) => x.reason), ["target-folder: EACCES"]);
+  assert.ok(notices.includes(`cannot create ${tildePath(denied, e.home)}: EACCES`), notices.join("\n"));
+  assert.ok(!(await e.journal()).some((x) => x.t === "folder-created"));
+
+  const file = normalizeCwd(join(e.home, "a-file"));
+  writeFileSync(file, "not a folder");
+  const r2 = await applyPlan(mkPlan([rehomed(f, e.home, file, "ses_file", reads)]), deps({ rehomeFolders: { env: folderEnvOf(e.home) } }));
+  assert.deepEqual(r2.failures.map((x) => x.reason), ["target-folder: a file with that name is in the way"]);
+});
+
+test("applyPlan: a relative rehome destination (a relative organize.generalFolder) is never created in the current folder (R25)", async () => {
+  const { f, e, reads, deps } = convertEnv();
+  const notices: string[] = [];
+  const r = await applyPlan(mkPlan([rehomed(f, e.home, "T3 General R25", "ses_rel", reads)]), deps({ rehomeFolders: { env: folderEnvOf(e.home) }, onNotice: (l) => void notices.push(l) }));
+  assert.deepEqual(r.failures.map((x) => x.reason), ["target-folder: it is not an absolute folder"]);
+  assert.ok(notices.includes("cannot create T3 General R25: it is not an absolute folder"), notices.join("\n"));
+  assert.ok(!existsSync(join(process.cwd(), "T3 General R25")));
+  assert.ok(!(await e.journal()).some((x) => x.t === "folder-created"));
+});
+
+test("applyPlan: a rehome destination whose name has control characters is refused, never created, and printed without them (R25)", async () => {
+  const { f, e, reads, deps } = convertEnv();
+  const notices: string[] = [];
+  const evil = normalizeCwd(join(e.home, "T3 \u001b[31mGeneral"));
+  const r = await applyPlan(mkPlan([rehomed(f, e.home, evil, "ses_ctl", reads)]), deps({ rehomeFolders: { env: folderEnvOf(e.home) }, onNotice: (l) => void notices.push(l) }));
+  assert.deepEqual(r.failures.map((x) => x.reason), ["target-folder: its name contains control or invisible characters"]);
+  assert.ok(notices.some((l) => l.startsWith("cannot create ") && l.endsWith(": its name contains control or invisible characters")), notices.join("\n"));
+  assert.ok(!notices.some((l) => l.includes("\u001b")), "no escape reaches the terminal");
+  assert.ok(!existsSync(evil));
+  assert.ok(!(await e.journal()).some((x) => x.t === "folder-created"));
+  const dry = await applyPlan(mkPlan([rehomed(f, e.home, evil, "ses_ctl2", reads)]), deps({ rehomeFolders: { env: folderEnvOf(e.home) }, dryRun: true }));
+  assert.deepEqual(dry.dryRun?.foldersToCreate, []);
+});
+
+test("applyPlan: a rehome destination whose name has invisible format characters (bidi override, zero-width) is refused, never created", async () => {
+  for (const [i, ch] of ["‮", "​"].entries()) {
+    const { f, e, reads, deps } = convertEnv();
+    const notices: string[] = [];
+    const evil = normalizeCwd(join(e.home, `T3 Gen${ch}eral`));
+    const r = await applyPlan(mkPlan([rehomed(f, e.home, evil, `ses_inv${i}`, reads)]), deps({ rehomeFolders: { env: folderEnvOf(e.home) }, onNotice: (l) => void notices.push(l) }));
+    assert.deepEqual(r.failures.map((x) => x.reason), ["target-folder: its name contains control or invisible characters"]);
+    assert.ok(!existsSync(evil));
+    assert.ok(!(await e.journal()).some((x) => x.t === "folder-created"));
+  }
+});
+
+test("applyPlan: the destination's project is in T3 Code but its folder is gone (rolled back, deleted): the folder is created again (R25)", async () => {
+  const { f, e, reads, deps } = convertEnv();
+  const general = normalizeCwd(join(e.home, "T3 General"));
+  f.projects.push({ id: "pg", title: "General", workspaceRoot: general, defaultModelSelection: null, archived: false, deleted: false, pinned: false, createdAt: null });
+  const r = await applyPlan(mkPlan([rehomed(f, e.home, general, "ses_again", reads)]), deps({ rehomeFolders: { env: folderEnvOf(e.home) } }));
+  assert.equal(r.status, "ok", JSON.stringify(r.failures));
+  assert.ok(statSync(general).isDirectory());
+  const fc = (await e.journal()).filter((x) => x.t === "folder-created") as Extract<JournalEntry, { t: "folder-created" }>[];
+  assert.deepEqual(fc.map((x) => normalizeCwd(x.path)), [general]);
+  assert.ok(!f.calls.some((c) => c.startsWith("create:")), "the project T3 Code has is used");
+  // Its folder there now: nothing more is created or journaled.
+  const n = (await e.journal()).length;
+  await applyPlan(mkPlan([rehomed(f, e.home, general, "ses_again2", reads)]), deps({ rehomeFolders: { env: folderEnvOf(e.home) } }));
+  assert.ok(!(await e.journal()).slice(n).some((x) => x.t === "folder-created"));
+});
+
+test("applyPlan --dry-run and the confirmation list the folders a real run would create; nothing is created (R25)", async () => {
+  const { f, e, reads, deps } = convertEnv();
+  const general = normalizeCwd(join(e.home, "T3 General"));
+  const plan = mkPlan([rehomed(f, e.home, general, "ses_dry", reads)]);
+  const dry = await applyPlan(plan, deps({ rehomeFolders: { env: folderEnvOf(e.home) }, dryRun: true }));
+  assert.deepEqual(dry.dryRun?.foldersToCreate.map((x) => normalizeCwd(x)), [general]);
+  assert.ok(!existsSync(general));
+  let seen: string[] | null = null;
+  const declined = await applyPlan(plan, deps({ rehomeFolders: { env: folderEnvOf(e.home) }, confirm: async (_p, _h, x) => { seen = x.foldersToCreate; return false; } }));
+  assert.equal(declined.status, "declined");
+  assert.deepEqual(seen!.map((x) => normalizeCwd(x)), [general]);
+  assert.ok(!existsSync(general));
+});
+
+test("t3sm apply --dry-run and its confirmation say \"will create folder ~/T3 General\" (R25)", async () => {
+  const { f, e, reads } = convertEnv();
+  const general = normalizeCwd(join(e.home, "T3 General"));
+  savePlan(e.state, mkPlan([rehomed(f, e.home, general, "ses_cli", reads)]));
+  const d = cli(e.state);
+  assert.equal(await applyCommand(["--dry-run"], d.io, { home: e.home, connect: async () => f.api, signals: e.signals, folderEnv: folderEnvOf(e.home) }), 0, d.err());
+  assert.match(d.out(), /will create folder ~[\\/]T3 General/);
+  const t = cli(e.state, true, "no");
+  assert.equal(await applyCommand([], t.io, { home: e.home, connect: async () => f.api, signals: e.signals, folderEnv: folderEnvOf(e.home) }), 0, t.err());
+  assert.match(t.out(), /will create folder ~[\\/]T3 General/);
+  assert.match(t.out(), /Nothing changed\./);
+  assert.ok(!existsSync(general));
+});
+
+test("defaultFolderEnv takes the platform it is given (R25)", () => {
+  assert.equal(defaultFolderEnv("C:/Users/demo", {}, "win32").platform, "win32");
+  assert.equal(defaultFolderEnv("/home/demo", {}, "linux").platform, "linux");
+  assert.equal(defaultFolderEnv("/home/demo", {}, "linux").t3BaseDir, "/home/demo/.t3");
+});
+
+test("applyPlan without rehomeFolders (sync, invariant 13) never creates a folder", async () => {
+  const { f, e, reads, deps } = convertEnv();
+  const general = normalizeCwd(join(e.home, "T3 General"));
+  await applyPlan(mkPlan([rehomed(f, e.home, general, "ses_home", reads)]), deps());
+  assert.ok(!existsSync(general));
+  assert.ok(!(await e.journal()).some((x) => x.t === "folder-created"));
+});
+
+test("rollback removes a destination folder the run created while it is still empty; one with something in it is kept", async () => {
+  const { f, e, reads, deps, claudeHome } = convertEnv();
+  const general = normalizeCwd(join(e.home, "T3 General"));
+  const deep = normalizeCwd(join(e.home, "new", "deeper", "dest"));
+  const r = await applyPlan(mkPlan([rehomed(f, e.home, general, "ses_g", reads), rehomed(f, e.home, deep, "ses_d", reads)]), deps({ rehomeFolders: { env: folderEnvOf(e.home) } }));
+  assert.equal(r.status, "ok", JSON.stringify(r.failures));
+  writeFileSync(join(general, "notes.txt"), "the user's own file");
+  const journal = new Journal(join(e.state, "journal.jsonl"));
+  const dry = await rollbackRun(r.runId!, { journal, accountHomes: [claudeHome], dryRun: true });
+  assert.deepEqual(dry.foldersRemoved.map((x) => normalizeCwd(x)), [deep, normalizeCwd(join(e.home, "new", "deeper")), normalizeCwd(join(e.home, "new"))]);
+  assert.ok(existsSync(deep), "a dry run removes nothing");
+  const rb = await rollbackRun(r.runId!, { journal, accountHomes: [claudeHome] });
+  assert.ok(!existsSync(join(e.home, "new")), "every folder the run created, deepest first, while empty");
+  assert.deepEqual(rb.foldersKept.map((x) => normalizeCwd(x)), [general]);
+  assert.ok(existsSync(join(general, "notes.txt")));
+});
+
+test("t3sm apply creates the missing General folder for a faithful copy from the home folder, says so, and imports it", async () => {
+  const f = fakeT3();
+  const e = env(f);
+  const claudeHome = join(e.home, ".claude");
+  f.opts.instances = [inst("claudeAgent", claudeHome)];
+  const general = normalizeCwd(join(e.home, "T3 General"));
+  const homeCwd = normalizeCwd(e.home);
+  const id = "11111111-2222-4333-8444-555555555555";
+  const srcDir = join(claudeHome, "projects", encodeClaudeProjectDir(homeCwd));
+  mkdirSync(srcDir, { recursive: true });
+  const src = join(srcDir, `${id}.jsonl`);
+  const t0 = Date.now() - 3 * DAY;
+  const iso = new Date(t0).toISOString();
+  writeFileSync(src, JSON.stringify({ parentUuid: null, isSidechain: false, cwd: homeCwd, sessionId: id, type: "user", message: { role: "user", content: "synthetic question" }, uuid: "u-1", timestamp: iso }) + "\n");
+  utimesSync(src, t0 / 1000, t0 / 1000);
+  const uuid = uuidV5(`claude:${id}`);
+  const targetFile = join(claudeHome, "projects", encodeClaudeProjectDir(general), `${uuid}.jsonl`);
+  f.files.push({ path: targetFile, root: general, threadId: `import:claudeAgent:${uuid}` });
+  const st = statSync(src);
+  const item: PlanItem = {
+    session: { harness: "claude", accountId: "claudeAgent", nativeId: id, cwd: homeCwd, startedAt: iso, updatedAt: iso, messageCount: 1, corruptLines: 0, file: { path: src, size: st.size, mtimeMs: st.mtimeMs, atimeMs: st.atimeMs }, flags: [], cwdOffsetBytes: 0 },
+    action: { kind: "convert-import", projectRoot: general, instanceId: "claudeAgent", expectedThreadId: `import:claudeAgent:${uuid}`, uuid, targetFile, copy: "faithful", rehomeFrom: homeCwd },
+    notes: [],
+  };
+  savePlan(e.state, mkPlan([item]));
+  const c = cli(e.state);
+  assert.equal(await applyCommand(["--yes"], c.io, { home: e.home, connect: async () => f.api, signals: e.signals, folderEnv: folderEnvOf(e.home) }), 0, c.err() + c.out());
+  assert.ok(statSync(general).isDirectory());
+  assert.match(c.err(), /Created the folder ~[\\/]T3 General for conversations moved from folders T3 Code refuses\./);
+  assert.ok(f.threads.has(`import:claudeAgent:${uuid}`));
+});
+
+test("applyPlan: an orphan copy is not written when T3 Code lists the session's thread again right before the write (thread lists read as complete are re-checked)", async () => {
+  const f = fakeT3();
+  const e = env(f);
+  const claudeHome = join(e.home, ".claude");
+  f.opts.instances = [inst("claudeAgent", claudeHome)];
+  const general = normalizeCwd(join(e.home, "T3 General"));
+  const homeCwd = normalizeCwd(e.home);
+  const id = "21111111-2222-4333-8444-555555555555";
+  const t3Thread = "31111111-2222-4333-8444-555555555555";
+  const srcDir = join(claudeHome, "projects", encodeClaudeProjectDir(homeCwd));
+  mkdirSync(srcDir, { recursive: true });
+  const src = join(srcDir, `${id}.jsonl`);
+  const t0 = Date.now() - 3 * DAY;
+  const iso = new Date(t0).toISOString();
+  writeFileSync(src, JSON.stringify({ parentUuid: null, isSidechain: false, cwd: homeCwd, sessionId: id, type: "user", entrypoint: "t3-code", message: { role: "user", content: "synthetic question" }, uuid: "u-1", timestamp: iso }) + "\n");
+  utimesSync(src, t0 / 1000, t0 / 1000);
+  const uuid = uuidV5(`claude-orphan:${id}`);
+  const targetFile = join(claudeHome, "projects", encodeClaudeProjectDir(general), `${uuid}.jsonl`);
+  f.files.push({ path: targetFile, root: general, threadId: `import:claudeAgent:${uuid}` });
+  const st = statSync(src);
+  const orphan = (over: Partial<DiscoveredSession>): PlanItem => ({
+    session: { harness: "claude", accountId: "claudeAgent", nativeId: id, cwd: homeCwd, startedAt: iso, updatedAt: iso, messageCount: 1, corruptLines: 0, file: { path: src, size: st.size, mtimeMs: st.mtimeMs, atimeMs: st.atimeMs }, flags: [], cwdOffsetBytes: 0, startedIn: "t3", t3ThreadId: t3Thread, ...over },
+    action: { kind: "convert-import", projectRoot: general, instanceId: "claudeAgent", expectedThreadId: `import:claudeAgent:${uuid}`, uuid, targetFile, copy: "faithful", rehomeFrom: homeCwd },
+    notes: [],
+  });
+  // T3 Code's first listing (the plan's view) misses the thread; it is there when listed again.
+  const list = f.api.listThreads;
+  let calls = 0;
+  f.api.listThreads = async () => {
+    const ts = await list();
+    return ++calls === 1 ? ts : [...ts, { id: t3Thread, projectId: "p-other", instanceId: "claudeAgent", archived: false, title: "Live in T3", nativeSessionId: id }];
+  };
+  const notices: string[] = [];
+  const r = await applyPlan(mkPlan([orphan({})]), e.deps({ rehomeFolders: { env: folderEnvOf(e.home) }, onNotice: (l) => void notices.push(l) }));
+  assert.ok(calls >= 2, "listed again before the copy is written");
+  assert.equal(r.converted, 0, JSON.stringify(r));
+  assert.equal(r.deferred, 1);
+  assert.ok(!existsSync(targetFile), "no second thread for a live conversation");
+  assert.ok(!(await e.journal()).some((x) => x.t === "file-written"));
+  assert.ok(notices.some((l) => /lists its thread/.test(l)), notices.join("\n"));
+
+  // Still absent when listed again: the orphan is copied back as planned.
+  f.api.listThreads = list;
+  const r2 = await applyPlan(mkPlan([orphan({})]), e.deps({ rehomeFolders: { env: folderEnvOf(e.home) } }));
+  assert.equal(r2.converted, 1, JSON.stringify(r2));
+  assert.ok(existsSync(targetFile));
+});
+test("applyPlan: a failed re-check of T3 Code's threads defers the orphan copies only (nothing journaled or created for them); the run goes on", async () => {
+  const f = fakeT3();
+  const e = env(f);
+  const claudeHome = join(e.home, ".claude");
+  f.opts.instances = [inst("claudeAgent", claudeHome)];
+  const general = normalizeCwd(join(e.home, "T3 General"));
+  const homeCwd = normalizeCwd(e.home);
+  const id = "21111111-2222-4333-8444-555555555555";
+  const t3Thread = "31111111-2222-4333-8444-555555555555";
+  const srcDir = join(claudeHome, "projects", encodeClaudeProjectDir(homeCwd));
+  mkdirSync(srcDir, { recursive: true });
+  const src = join(srcDir, `${id}.jsonl`);
+  const t0 = Date.now() - 3 * DAY;
+  const iso = new Date(t0).toISOString();
+  writeFileSync(src, JSON.stringify({ parentUuid: null, isSidechain: false, cwd: homeCwd, sessionId: id, type: "user", entrypoint: "t3-code", message: { role: "user", content: "synthetic question" }, uuid: "u-1", timestamp: iso }) + "\n");
+  utimesSync(src, t0 / 1000, t0 / 1000);
+  const uuid = uuidV5(`claude-orphan:${id}`);
+  const targetFile = join(claudeHome, "projects", encodeClaudeProjectDir(general), `${uuid}.jsonl`);
+  f.files.push({ path: targetFile, root: general, threadId: `import:claudeAgent:${uuid}` });
+  const st = statSync(src);
+  const orphan = (over: Partial<DiscoveredSession>): PlanItem => ({
+    session: { harness: "claude", accountId: "claudeAgent", nativeId: id, cwd: homeCwd, startedAt: iso, updatedAt: iso, messageCount: 1, corruptLines: 0, file: { path: src, size: st.size, mtimeMs: st.mtimeMs, atimeMs: st.atimeMs }, flags: [], cwdOffsetBytes: 0, startedIn: "t3", t3ThreadId: t3Thread, ...over },
+    action: { kind: "convert-import", projectRoot: general, instanceId: "claudeAgent", expectedThreadId: `import:claudeAgent:${uuid}`, uuid, targetFile, copy: "faithful", rehomeFrom: homeCwd },
+    notes: [],
+  });
+  // The plan's listing works; the re-check right before the copy fails (a transient T3 read error).
+  const list = f.api.listThreads;
+  let calls = 0;
+  f.api.listThreads = async () => {
+    if (++calls >= 2) throw new Error("T3 Code did not answer");
+    return list();
+  };
+  const notices: string[] = [];
+  const r = await applyPlan(mkPlan([orphan({})]), e.deps({ rehomeFolders: { env: folderEnvOf(e.home) }, onNotice: (l) => void notices.push(l) }));
+  assert.ok(calls >= 2, "listed again before anything is written for the orphan");
+  assert.equal(r.converted, 0, JSON.stringify(r));
+  assert.equal(r.deferred, 1);
+  assert.equal(r.failed, 0);
+  assert.equal(r.status, "ok");
+  assert.ok(!existsSync(targetFile), "no copy");
+  assert.ok(!existsSync(general), "no folder created for a deferred orphan");
+  assert.equal(f.projects.length, 0, "no project created for a deferred orphan");
+  const j = await e.journal();
+  assert.ok(!j.some((x) => x.t === "file-written" || x.t === "folder-created" || x.t === "import-failed" || x.t === "project-created"), JSON.stringify(j.map((x) => x.t)));
+  assert.ok(notices.some((l) => /Could not list T3 Code's conversations again \(T3 Code did not answer\): 1 conversation deleted in T3 Code waits for the next run/.test(l)), notices.join("\n"));
 });

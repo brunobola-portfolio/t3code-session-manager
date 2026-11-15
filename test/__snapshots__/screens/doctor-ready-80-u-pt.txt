@@ -1,0 +1,16 @@
+   Verificação        Resultado
+──────────────────────────────────────────────────────────────
+✓  Node               Node 24.11.1
+✓  Pasta de estado    ~/.t3code-session-manager aceita escrita
+✓  T3 Code a correr   responde em http://127.0.0.1:3773
+!  CLAUDE_CONFIG_DIR  ver abaixo
+○  Sessões do Codex   nenhuma sessão nesta máquina
+
+! CLAUDE_CONFIG_DIR
+  um T3 Code aberto a partir desta shell leria C:/work/demo/.claude-alt como a
+  conta por omissão
+  O que fazer: Abre o T3 Code pelo menu Iniciar, não a partir desta shell
+
+╭─ ✓ Pronto, com 1 aviso ───╮
+│ A seguir: t3sm plan       │
+╰───────────────────────────╯

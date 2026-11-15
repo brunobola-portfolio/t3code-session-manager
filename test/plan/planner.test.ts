@@ -5,8 +5,9 @@ import { join } from "node:path";
 import assert from "node:assert/strict";
 import { buildPlan, type PlanInput } from "../../src/plan/planner.ts";
 import type { CopyRelation } from "../../src/plan/dedupe.ts";
-import type { Config, DiscoveredSession, InstanceSpec, JournalEntry, Plan, PlanItem, SessionFlag } from "../../src/core/types.ts";
+import type { Config, DiscoveredSession, InstanceSpec, JournalEntry, OrganizeConfig, Plan, PlanItem, SessionFlag } from "../../src/core/types.ts";
 import type { T3Project, T3Thread } from "../../src/t3/api.ts";
+import type { FolderEnv } from "../../src/plan/folders.ts";
 import { DAY, HOME, NOW, cfg, sess, uuid } from "./helpers.ts";
 
 const personal: InstanceSpec = { id: "claudeAgent", driver: "claudeAgent", displayName: "Claude", accentColor: null, homePath: `${HOME}/.claude`, environment: [] };
@@ -18,7 +19,15 @@ interface Over {
   instances?: InstanceSpec[]; providers?: { instanceId: string; driver: string }[]; journal?: JournalEntry[];
   missing?: string[]; pins?: Record<string, string>; compare?: Record<string, CopyRelation>;
   labels?: Record<string, string[]>;
+  folderEnv?: FolderEnv; lang?: "en" | "pt";
 }
+
+/** Deterministic folder classification for every planner test (never the machine's real tmpdir / env). */
+const FENV: FolderEnv = {
+  platform: "win32", home: HOME, tmpdir: `${HOME}/AppData/Local/Temp`,
+  env: { WINDIR: "C:/Windows", ProgramFiles: "C:/Program Files", ProgramData: "C:/ProgramData" },
+  t3BaseDir: `${HOME}/.t3`, t3WorktreesDir: `${HOME}/.t3/worktrees`,
+};
 
 function input(o: Over): PlanInput {
   return {
@@ -35,13 +44,13 @@ function input(o: Over): PlanInput {
       return rev === "a-extends-b" ? "b-extends-a" : rev === "b-extends-a" ? "a-extends-b" : rev;
     },
     labelRecords: async (p) => new Set(o.labels?.[p] ?? []),
-    platform: "win32", home: HOME,
+    platform: "win32", home: HOME, folderEnv: o.folderEnv ?? FENV, ...(o.lang ? { lang: o.lang } : {}),
   };
 }
 const plan = (o: Over): Promise<Plan> => buildPlan(input(o));
 const only = (p: Plan): PlanItem => { assert.equal(p.items.length, 1); return p.items[0]!; };
 const project = (id: string, root: string, over: Partial<T3Project> = {}): T3Project =>
-  ({ id, title: root.split("/").pop()!, workspaceRoot: root, defaultModelSelection: null, archived: false, deleted: false, ...over });
+  ({ id, title: root.split("/").pop()!, workspaceRoot: root, defaultModelSelection: null, archived: false, deleted: false, pinned: false, createdAt: null, ...over });
 const thread = (id: string, over: Partial<T3Thread> = {}): T3Thread => ({ id, projectId: "p1", instanceId: "claudeAgent", archived: false, title: "t", ...over });
 
 // ---------- skip rules (table, in precedence order) ----------
@@ -455,7 +464,7 @@ test("buildPlan: deterministic order (projectRoot, then updatedAt) and header fi
   assert.deepEqual(again.items.map((i) => i.session), [s3, s2, s1]);
 });
 
-test("buildPlan: 5000 synthetic sessions plan in under 2 s (compare injected)", async () => {
+test("buildPlan: 5000 synthetic sessions plan in under 2 s of CPU (compare injected)", async () => {
   const sessions: DiscoveredSession[] = [];
   for (let i = 0; i < 5000; i++) {
     const acct = i % 3 === 0 ? "claude-org" : "claudeAgent";
@@ -463,11 +472,14 @@ test("buildPlan: 5000 synthetic sessions plan in under 2 s (compare injected)", 
   }
   const inp = input({ sessions });
   inp.compareCopies = async () => "identical";
-  const t0 = performance.now();
+  // CPU time of this process, not the wall clock: on a loaded machine the wall clock also counts the time the process
+  // waits for a CPU (seen at 10x the work), while the CPU time only grows with the work done (a quadratic planner).
+  const c0 = process.cpuUsage();
   const out = await buildPlan(inp);
-  const ms = performance.now() - t0;
+  const { user, system } = process.cpuUsage(c0);
+  const ms = (user + system) / 1000;
   assert.equal(out.items.length, 5000);
-  assert.ok(ms < 2000, `took ${ms} ms`);
+  assert.ok(ms < 2000, `took ${ms.toFixed(0)} ms of CPU`);
 });
 
 // ---------- review fixes ----------
@@ -659,4 +671,468 @@ test("B12: a session whose thread exists under ANOTHER instance is already in T3
   assert.deepEqual([byRef.action, byRef.notes], [{ kind: "skip", reason: "already-in-t3" }, ["in-t3-under-other-account"]]);
   const { renderPlanMarkdown } = await import("../../src/plan/report.ts");
   assert.match(renderPlanMarkdown(p), new RegExp(`already in T3 Code under another account[^\n]*${s.nativeId}`));
+});
+
+test("buildPlan: projectsToCreate titles are unique against T3 projects and each other", async () => {
+  const out = await plan({
+    sessions: [sess({ cwd: "C:/work/TPB/ADDON V10" }), sess({ cwd: "C:/work/PZO/ADDON V10" }), sess({ cwd: "C:/work/VOA/ADDON V10" })],
+    projects: [project("p1", "C:/work/OLD/ADDON V10", { title: "ADDON V10" })],
+  });
+  const titles = out.projectsToCreate.map((p) => p.title).sort();
+  assert.equal(new Set(titles.map((t) => t.toLowerCase())).size, 3);
+  assert.deepEqual(titles, ["ADDON V10 · PZO", "ADDON V10 · TPB", "ADDON V10 · VOA"]);
+});
+
+// ---------- folder and session categories (organize, spec §4.1–§4.4) ----------
+const DECIDED: Partial<Config> = { organize: { decided: ["home", "t3-refused", "temp", "system", "automated"] } };
+const TMP = `${HOME}/AppData/Local/Temp`;
+const GENERAL_EN = `${HOME}/T3 General`;
+/** organize.folders with the spec defaults, `over` replacing some. */
+const folders = (over: Partial<OrganizeConfig["folders"]>): OrganizeConfig["folders"] =>
+  ({ home: "rehome", "t3-refused": "rehome", temp: "skip", system: "skip", ...over });
+
+/** A synthetic Claude transcript in a temp folder: records in `cwd`, one Edit tool_use per path in `paths`. */
+async function transcript(cwd: string, paths: string[]): Promise<{ file: string; done: () => Promise<void> }> {
+  const dir = await mkdtemp(join(tmpdir(), "t3sm-plan-rehome-"));
+  const file = join(dir, "t.jsonl");
+  const recs: unknown[] = [{ type: "user", cwd, message: { role: "user", content: "synthetic question" } }];
+  for (const p of paths) recs.push({ type: "assistant", cwd, message: { role: "assistant", content: [{ type: "tool_use", name: "Edit", input: { file_path: p } }] } });
+  await writeFile(file, recs.map((r) => JSON.stringify(r)).join("\n") + "\n");
+  return { file, done: () => rm(dir, { recursive: true, force: true }) };
+}
+
+test("categories: a home-folder Claude session becomes a faithful convert-import into the inferred root", async () => {
+  const { uuidV5 } = await import("../../src/core/uuid.ts");
+  const paths = Array.from({ length: 6 }, (_, n) => `C:/work/app/src/f${n}.ts`);
+  const t = await transcript(HOME, paths);
+  try {
+    const s = sess({ cwd: HOME, path: t.file, accountId: "claude-org" });
+    const p = await plan({ sessions: [s], config: DECIDED, projects: [project("p1", "C:/work/app")] });
+    const u = uuidV5(`claude:${s.nativeId}`);
+    const it = only(p);
+    if (it.action.kind !== "convert-import") throw new Error(`expected convert-import, got ${JSON.stringify(it.action)}`);
+    const { targetFile, ...rest } = it.action;
+    assert.deepEqual(rest, {
+      kind: "convert-import", projectRoot: "C:/work/app", instanceId: "claude-org", expectedThreadId: `import:claude-org:${u}`,
+      uuid: u, copy: "faithful", rehomeFrom: HOME, rehomeShare: { hits: 6, total: 6 },
+    });
+    assert.equal(targetFile.replace(/\\/g, "/"), `${HOME}/.claude-org/projects/C--work-app/${u}.jsonl`);
+    assert.deepEqual(p.projectsToCreate, [], "an existing T3 project, no General folder");
+    // Planning again gives the same target (uuid derived from the source id).
+    const again = only(await plan({ sessions: [s], config: DECIDED, projects: [project("p1", "C:/work/app")] }));
+    assert.deepEqual(again.action, it.action);
+  } finally { await t.done(); }
+});
+
+test("categories: a home-folder Claude session goes to the General folder when nothing is inferred (title per language, never cwd-missing)", async () => {
+  const t = await transcript(HOME, ["C:/work/a/x.ts", "C:/work/b/y.ts"]);
+  try {
+    const s = sess({ cwd: HOME, path: t.file });
+    for (const [lang, root, title] of [["en", GENERAL_EN, "General"], ["pt", `${HOME}/T3 Geral`, "Geral"]] as const) {
+      const p = await plan({ sessions: [s], config: DECIDED, lang, missing: [root], projects: [project("p1", "C:/work/a")] });
+      const it = only(p);
+      assert.equal(it.action.kind, "convert-import", JSON.stringify(it.action));
+      if (it.action.kind !== "convert-import") return;
+      assert.equal(it.action.projectRoot, root);
+      assert.equal(it.action.copy, "faithful");
+      assert.equal(it.action.targetFile.replace(/\\/g, "/").startsWith(`${HOME}/.claude/projects/${root.replace(/[^A-Za-z0-9]/g, "-")}/`), true);
+      assert.deepEqual(p.projectsToCreate, [{ root, title, defaultInstanceId: "claudeAgent" }]);
+    }
+    // Already a T3 project: not created again.
+    const p2 = await plan({ sessions: [s], config: DECIDED, projects: [project("g", GENERAL_EN, { title: "Mine" })] });
+    assert.deepEqual(p2.projectsToCreate, []);
+  } finally { await t.done(); }
+});
+
+test("categories: inference never rehomes into a folder that no longer exists (plan folder or T3 project): General instead", async () => {
+  // C:/work/gone: a plan `project` folder (its session is cwd-missing); C:/work/old: a T3 project whose folder is gone.
+  for (const gone of ["C:/work/gone", "C:/work/old"]) {
+    const t = await transcript(HOME, Array.from({ length: 6 }, (_, n) => `${gone}/f${n}.ts`));
+    try {
+      const home = sess({ cwd: HOME, path: t.file });
+      const p = await plan({
+        sessions: [home, sess({ cwd: "C:/work/gone" })], config: DECIDED,
+        projects: [project("p-old", "C:/work/old")], missing: ["C:/work/gone", "C:/work/old"],
+      });
+      const it = p.items.find((i) => i.session === home)!;
+      assert.equal(it.action.kind, "convert-import", JSON.stringify(it.action));
+      if (it.action.kind === "convert-import") assert.equal(it.action.projectRoot, GENERAL_EN, gone);
+      assert.ok(!p.projectsToCreate.some((x) => x.root === gone), `${gone} is not created`);
+    } finally { await t.done(); }
+  }
+  // Defensive: an injected inference naming a missing folder falls back to General too.
+  const s = sess({ cwd: HOME, path: "C:/nope/x.jsonl" });
+  const p = await buildPlan({ ...input({ sessions: [s], config: DECIDED, missing: ["C:/work/vanished"] }),
+    inferProjectRoot: async () => ({ root: "C:/work/vanished", hits: 9, total: 9, share: 1 }) });
+  const a = only(p).action;
+  assert.equal(a.kind === "convert-import" ? a.projectRoot : a.kind, GENERAL_EN);
+  assert.deepEqual(p.projectsToCreate.map((x) => x.root), [GENERAL_EN]);
+});
+
+test("categories: only one General folder: an existing T3 project at ~/T3 Geral or ~/T3 General is reused whatever the language; organize.generalFolder wins", async () => {
+  const s = sess({ cwd: HOME, path: "C:/nope/g.jsonl" });
+  const target = async (o: Partial<Over>) => {
+    const p = await plan({ sessions: [s], config: DECIDED, ...o });
+    const it = only(p);
+    if (it.action.kind !== "convert-import") throw new Error(JSON.stringify(it.action));
+    return { root: it.action.projectRoot, create: p.projectsToCreate };
+  };
+  // Fresh: the language picks the default.
+  assert.deepEqual(await target({ lang: "pt" }), { root: `${HOME}/T3 Geral`, create: [{ root: `${HOME}/T3 Geral`, title: "Geral", defaultInstanceId: "claudeAgent" }] });
+  // A PT General project exists; the plan is in EN: reuse it, create nothing.
+  assert.deepEqual(await target({ lang: "en", projects: [project("g", `${HOME}/T3 Geral`, { title: "Geral" })] }), { root: `${HOME}/T3 Geral`, create: [] });
+  // An EN General project exists; the plan is in PT: reuse it.
+  assert.deepEqual(await target({ lang: "pt", projects: [project("g", `${HOME}/T3 General`, { title: "General" })] }), { root: `${HOME}/T3 General`, create: [] });
+  // A deleted T3 project there does not count.
+  assert.equal((await target({ lang: "en", projects: [project("g", `${HOME}/T3 Geral`, { deleted: true })] })).root, GENERAL_EN);
+  // organize.generalFolder set: used even when a default General project exists.
+  const own = { organize: { decided: DECIDED.organize!.decided!, generalFolder: "~/code/inbox" } };
+  assert.deepEqual(await target({ config: own, projects: [project("g", `${HOME}/T3 Geral`)] }),
+    { root: `${HOME}/code/inbox`, create: [{ root: `${HOME}/code/inbox`, title: "General", defaultInstanceId: "claudeAgent" }] });
+});
+
+test("categories: a t3-refused Codex session converts into the target; Pi (no converter) is skipped t3-refused", async () => {
+  const { uuidV5 } = await import("../../src/core/uuid.ts");
+  const cx = sess({ harness: "codex", accountId: null, cwd: `${HOME}/Documents/Codex/2026-01-01/new-chat` });
+  const it = only(await plan({ sessions: [cx], config: DECIDED }));
+  const u = uuidV5(`codex:${cx.nativeId}`);
+  if (it.action.kind !== "convert-import") throw new Error(`expected convert-import, got ${JSON.stringify(it.action)}`);
+  const { targetFile, ...rest } = it.action;
+  assert.deepEqual(rest, {
+    kind: "convert-import", projectRoot: GENERAL_EN, instanceId: "claudeAgent", expectedThreadId: `import:claudeAgent:${u}`, uuid: u,
+    rehomeFrom: `${HOME}/Documents/Codex/2026-01-01/new-chat`,
+  });
+  assert.equal(targetFile.replace(/\\/g, "/"), `${HOME}/.claude/projects/C--Users-demo-T3-General/${u}.jsonl`);
+  const pi = sess({ harness: "pi", accountId: null, cwd: `${HOME}/Downloads/x` });
+  assert.deepEqual(only(await plan({ sessions: [pi], config: DECIDED })).action, { kind: "skip", reason: "t3-refused" });
+  // folders["t3-refused"] = "skip"
+  const off = { organize: { decided: ["t3-refused"], folders: folders({ "t3-refused": "skip" }) } };
+  assert.deepEqual(only(await plan({ sessions: [cx], config: off })).action, { kind: "skip", reason: "t3-refused" });
+});
+
+test("categories: an automated session is skipped as automated when decided, undecided otherwise, imported when chosen", async () => {
+  const auto = (): DiscoveredSession => ({ ...sess(), origin: "automated" });
+  assert.deepEqual(only(await plan({ sessions: [auto()], config: DECIDED })).action, { kind: "skip", reason: "automated" });
+  assert.deepEqual(only(await plan({ sessions: [auto()] })).action, { kind: "skip", reason: "undecided" });
+  const yes = { organize: { decided: ["automated"], sessions: { automated: "import" as const } } };
+  assert.equal(only(await plan({ sessions: [auto()], config: yes })).action.kind, "import");
+  // A human session in a project folder is imported with a fresh config (nothing to decide).
+  assert.equal(only(await plan({ sessions: [{ ...sess(), origin: "human" }] })).action.kind, "import");
+});
+
+test("categories: temp and system folders are skipped by default once decided; import when chosen", async () => {
+  const temp = () => sess({ cwd: `${TMP}/scratch1` });
+  const sys = () => sess({ cwd: "C:/Program Files/Tool" });
+  const p = await plan({ sessions: [temp(), sys()], config: DECIDED });
+  assert.deepEqual(p.items.map((i) => i.action).sort((a, b) => JSON.stringify(a) < JSON.stringify(b) ? -1 : 1),
+    [{ kind: "skip", reason: "system-folder" }, { kind: "skip", reason: "temp-folder" }]);
+  assert.deepEqual(p.projectsToCreate, []);
+  const fresh = await plan({ sessions: [temp(), sys()] });
+  assert.deepEqual(fresh.items.map((i) => i.action), [{ kind: "skip", reason: "undecided" }, { kind: "skip", reason: "undecided" }]);
+  const imp = { organize: { decided: ["temp"], folders: folders({ temp: "import" }) } };
+  assert.equal(only(await plan({ sessions: [temp()], config: imp })).action.kind, "import");
+});
+
+test("categories: an override import beats the temp category; skip and rehome:<root> overrides too", async () => {
+  const s = sess({ cwd: `${TMP}/keep/me` });
+  const over = (action: "import" | "skip" | `rehome:${string}`) => ({ organize: { overrides: [{ match: `${TMP}/keep/**`, action }, { match: "**", action: "skip" as const }] } });
+  const it = only(await plan({ sessions: [s], config: over("import") }));
+  assert.equal(it.action.kind, "import");
+  if (it.action.kind === "import") assert.equal(it.action.projectRoot, `${TMP}/keep/me`);
+  assert.deepEqual(only(await plan({ sessions: [s], config: over("skip") })).action, { kind: "skip", reason: "excluded" });
+  const r = only(await plan({ sessions: [s], config: over("rehome:~/code/app") }));
+  assert.equal(r.action.kind, "convert-import");
+  if (r.action.kind === "convert-import") {
+    assert.equal(r.action.projectRoot, `${HOME}/code/app`);
+    assert.equal(r.action.rehomeFrom, `${TMP}/keep/me`);
+  }
+  // First match wins: the catch-all skip applies to another folder.
+  assert.deepEqual(only(await plan({ sessions: [sess({ cwd: "C:/work/demo" })], config: over("import") })).action, { kind: "skip", reason: "excluded" });
+});
+
+test("categories: no native import item ever has a home or refused cwd", async () => {
+  const { isT3Refused } = await import("../../src/plan/folders.ts");
+  const cwds = [HOME, `${HOME}/Downloads/a`, `${HOME}/Documents/Codex/x/new-chat`, TMP, `${HOME}/.t3/worktrees/w`];
+  const sessions = cwds.flatMap((cwd) => [sess({ cwd }), sess({ harness: "codex", accountId: null, cwd }), sess({ harness: "pi", accountId: null, cwd })]);
+  const configs: Partial<Config>[] = [
+    {}, DECIDED,
+    { organize: { decided: ["home", "t3-refused"], folders: folders({ home: "import", "t3-refused": "import" }) } },
+    { organize: { overrides: [{ match: "**", action: "import" }] } },
+  ];
+  for (const c of configs) {
+    const p = await plan({ sessions, config: c });
+    for (const it of p.items) {
+      if (it.action.kind === "import") assert.ok(!isT3Refused(it.session.cwd!, FENV), `${JSON.stringify(c)}: native import of ${it.session.cwd}`);
+    }
+    assert.ok(!p.projectsToCreate.some((x) => isT3Refused(x.root, FENV)), "no project at a refused folder");
+  }
+});
+
+test("categories: decisionsPending counts sessions and folders per key; sessions already in T3 or with a missing folder are not pending", async () => {
+  const inT3 = sess({ cwd: `${TMP}/c` });
+  const p = await plan({
+    sessions: [
+      sess({ cwd: HOME, path: "C:/nope/a.jsonl" }), sess({ cwd: HOME, path: "C:/nope/b.jsonl" }),
+      sess({ cwd: `${TMP}/a` }), sess({ cwd: `${TMP}/a` }), sess({ cwd: `${TMP}/b` }),
+      { ...sess(), origin: "automated" }, sess({ cwd: "C:/work/demo" }),
+      inT3, sess({ cwd: `${TMP}/gone` }),
+    ],
+    threads: [thread(`import:claudeAgent:${inT3.nativeId}`)],
+    missing: [`${TMP}/gone`],
+  });
+  assert.deepEqual(p.decisionsPending, [
+    { key: "home", sessions: 2, folders: 1 },
+    { key: "temp", sessions: 3, folders: 2 },
+    { key: "automated", sessions: 1, folders: 1 },
+  ]);
+  const reasons = p.items.map((i) => (i.action.kind === "skip" ? i.action.reason : i.action.kind)).sort();
+  assert.deepEqual(reasons, ["already-in-t3", "cwd-missing", "import", "undecided", "undecided", "undecided", "undecided", "undecided", "undecided"]);
+  assert.equal((await plan({ sessions: [sess()] })).decisionsPending, undefined, "nothing pending: absent");
+});
+
+test("categories: the faithful copy of a rehomed session is never planned as a second native import", async () => {
+  const { uuidV5 } = await import("../../src/core/uuid.ts");
+  const s = sess({ cwd: HOME, path: "C:/nope/orig.jsonl" });
+  const u = uuidV5(`claude:${s.nativeId}`);
+  const target = `${HOME}/.claude/projects/C--Users-demo-T3-General/${u}.jsonl`;
+  const copy = sess({ cwd: GENERAL_EN, nativeId: u, path: target });
+  const p = await plan({ sessions: [s, copy], config: DECIDED });
+  assert.deepEqual(p.items.find((i) => i.session === copy)!.action, { kind: "skip", reason: "converted" });
+  // Journaled by an earlier run (file-written with a claude source): converted until its thread exists.
+  const journal: JournalEntry[] = [{ t: "file-written", runId: "r0", path: target, sha256: "0".repeat(64), mtimeMs: 1, source: { harness: "claude", nativeId: s.nativeId, updatedAt: s.updatedAt, messageCount: 4 } }];
+  assert.deepEqual(only(await plan({ sessions: [copy], config: DECIDED, journal })).action, { kind: "skip", reason: "converted" });
+  const done = only(await plan({ sessions: [copy], config: DECIDED, journal, threads: [thread(`import:claudeAgent:${u}`)] }));
+  assert.deepEqual(done.action, { kind: "skip", reason: "already-in-t3" });
+});
+
+test("categories (R11): a rehomed session whose copy is in T3 is noted continued-after-rehome (never continued-outside-t3) once its original changed since it was copied (activity, size or time)", async () => {
+  const { uuidV5 } = await import("../../src/core/uuid.ts");
+  const s = sess({ cwd: HOME, path: "C:/nope/orig.jsonl", size: 5000, mtimeMs: NOW - 2 * DAY });
+  const u = uuidV5(`claude:${s.nativeId}`);
+  const target = `${HOME}/.claude/projects/C--Users-demo-T3-General/${u}.jsonl`;
+  const written = (over: { updatedAt?: string; messageCount?: number; size?: number; mtimeMs?: number } = {}, rehome = true): JournalEntry[] => [{
+    t: "file-written", runId: "r0", path: target, sha256: "0".repeat(64), mtimeMs: 1,
+    source: { harness: "claude", nativeId: s.nativeId, updatedAt: over.updatedAt ?? s.updatedAt, messageCount: over.messageCount ?? s.messageCount },
+    ...(rehome ? { rehomeOf: { path: s.file.path, nativeId: s.nativeId, cwd: HOME, size: over.size ?? s.file.size, mtimeMs: over.mtimeMs ?? s.file.mtimeMs } } : {}),
+  }];
+  const threads = [thread(`import:claudeAgent:${u}`)];
+  const notesOf = async (journal: JournalEntry[]): Promise<string[]> => {
+    const it = only(await plan({ sessions: [s], config: DECIDED, journal, threads }));
+    assert.deepEqual(it.action, { kind: "skip", reason: "already-in-t3" });
+    return it.notes;
+  };
+  assert.deepEqual(await notesOf(written()), [], "unchanged since copied");
+  assert.deepEqual(await notesOf(written({ messageCount: 3 })), ["continued-after-rehome"], "new messages");
+  // A record without a timestamp (a rename: custom-title) changes neither updatedAt nor messageCount, only the file.
+  assert.deepEqual(await notesOf(written({ size: 4000 })), ["continued-after-rehome"], "grew");
+  assert.deepEqual(await notesOf(written({ mtimeMs: NOW - 3 * DAY })), ["continued-after-rehome"], "written since");
+  assert.deepEqual(await notesOf(written({ mtimeMs: s.file.mtimeMs + 1 })), [], "a time within the journal's tolerance is the same time");
+  assert.deepEqual(await notesOf(written({ size: 4000 }, false)), [], "no rehomeOf (a conversion): activity only");
+});
+
+test("categories (R11): a rehome copy resumed outside T3 Code is noted continued-after-rehome; a native session keeps continued-outside-t3", async () => {
+  const { uuidV5 } = await import("../../src/core/uuid.ts");
+  const orig = sess({ cwd: HOME, path: "C:/nope/orig.jsonl" });
+  const u = uuidV5(`claude:${orig.nativeId}`);
+  const target = `${HOME}/.claude/projects/C--work-demo/${u}.jsonl`;
+  const journal: JournalEntry[] = [
+    { t: "file-written", runId: "r0", path: target, sha256: "0".repeat(64), mtimeMs: 1, source: { harness: "claude", nativeId: orig.nativeId, updatedAt: orig.updatedAt, messageCount: orig.messageCount } },
+    { t: "imported", runId: "r0", harness: "claude", nativeId: orig.nativeId, threadId: `import:claudeAgent:${u}`, source: { path: target, size: 1000, mtimeMs: NOW - 10 * DAY } },
+  ];
+  // The copy grew since the import (resumed in a terminal); journaled under the original's id, found by its path.
+  const copy = sess({ cwd: "C:/work/demo", nativeId: u, path: target, size: 5000, mtimeMs: NOW - DAY });
+  const p = await plan({ sessions: [copy], config: DECIDED, journal, threads: [thread(`import:claudeAgent:${u}`)] });
+  assert.deepEqual([only(p).action, only(p).notes], [{ kind: "skip", reason: "already-in-t3" }, ["continued-after-rehome"]]);
+  // The same shape for an ordinary Claude session (no copy): merge handles it.
+  const native = sess({ cwd: "C:/work/demo", size: 5000, mtimeMs: NOW - DAY });
+  const nj: JournalEntry[] = [{ t: "imported", runId: "r0", harness: "claude", nativeId: native.nativeId, threadId: `import:claudeAgent:${native.nativeId}`, source: { path: native.file.path, size: 1000, mtimeMs: NOW - 10 * DAY } }];
+  const n = only(await plan({ sessions: [native], config: DECIDED, journal: nj, threads: [thread(`import:claudeAgent:${native.nativeId}`)] }));
+  assert.deepEqual(n.notes, ["continued-outside-t3"]);
+});
+
+test("categories: a rehome:<folder> override that names a folder T3 Code refuses (or a temp / system one) skips its sessions, with a warning", async () => {
+  for (const target of [`${HOME}/Downloads/x`, `${HOME}/AppData/Local/Temp/x`, "C:/Windows/x", HOME]) {
+    const s = sess({ cwd: HOME, path: "C:/nope/x.jsonl" });
+    const p = await plan({ sessions: [s], config: { organize: { ...DECIDED.organize, overrides: [{ match: HOME, action: `rehome:${target}` }] } } });
+    assert.deepEqual(only(p).action, { kind: "skip", reason: "t3-refused" }, target);
+    assert.ok(p.warnings.includes(`organize.overrides: rehome:${target} is not a folder T3 Code can hold a project in (refused, temporary or system); its sessions are skipped`), p.warnings.join("\n"));
+  }
+  const fine = await plan({ sessions: [sess({ cwd: HOME, path: "C:/nope/y.jsonl" })], config: { organize: { ...DECIDED.organize, overrides: [{ match: HOME, action: "rehome:D:/work/hub" }] } } });
+  const a = only(fine).action;
+  assert.ok(a.kind === "convert-import" && a.projectRoot === "D:/work/hub");
+});
+
+test("categories: a rehomed session whose copy is already in T3 Code is never read to infer its project; only sessions to import are", async () => {
+  const { uuidV5 } = await import("../../src/core/uuid.ts");
+  const done = sess({ cwd: HOME, path: "C:/nope/done.jsonl" });
+  const todo = sess({ cwd: HOME, path: "C:/nope/todo.jsonl" });
+  const reads: string[] = [];
+  const p = await buildPlan({
+    ...input({
+      sessions: [done, todo], config: DECIDED, projects: [project("p1", "C:/work/a")],
+      threads: [thread(`import:claudeAgent:${uuidV5(`claude:${done.nativeId}`)}`)],
+    }),
+    inferProjectRoot: async (file) => { reads.push(file); return { root: "C:/work/a", hits: 7, total: 8, share: 0.875 }; },
+  });
+  assert.deepEqual(reads, ["C:/nope/todo.jsonl"], "one inference read, for the session that will be imported");
+  const byPath = (f: string) => p.items.find((i) => i.session.file.path === f)!;
+  assert.deepEqual(byPath("C:/nope/done.jsonl").action, { kind: "skip", reason: "already-in-t3" });
+  assert.equal(byPath("C:/nope/todo.jsonl").action.kind, "convert-import");
+  // The copy's project in T3 Code still gets its account (as before), read from where T3 Code holds the thread.
+  assert.ok(p.projectAccounts.some((x) => x.root === "C:/work/a"));
+});
+
+test("categories: an inferred rehome target carries its share (hits of total); a General fallback carries none", async () => {
+  const s = sess({ cwd: HOME, path: "C:/nope/x.jsonl" });
+  const inferred = await buildPlan({ ...input({ sessions: [s], config: DECIDED, projects: [project("p1", "C:/work/a")], missing: [] }),
+    inferProjectRoot: async () => ({ root: "C:/work/a", hits: 7, total: 8, share: 0.875 }) });
+  const a = only(inferred).action;
+  assert.ok(a.kind === "convert-import");
+  assert.equal(a.projectRoot, "C:/work/a");
+  assert.deepEqual(a.rehomeShare, { hits: 7, total: 8 });
+  const none = await buildPlan({ ...input({ sessions: [s], config: DECIDED }), inferProjectRoot: async () => null });
+  const b = only(none).action;
+  assert.ok(b.kind === "convert-import");
+  assert.equal(b.rehomeShare, undefined);
+});
+
+// ---------- sessions started in T3 Code (startedIn "t3"): already there, orphaned, unknown ----------
+const ORPHAN_YES: Partial<Config> = { organize: { decided: ["orphaned"] } };
+/** A Claude session T3 Code started; `tid` its T3 thread id (handoff), or none. */
+const t3sess = (tid: string | undefined, over: Parameters<typeof sess>[0] = {}): DiscoveredSession =>
+  ({ ...sess(over), startedIn: "t3", ...(tid !== undefined ? { t3ThreadId: tid } : {}) });
+
+test("T3-started session with its thread present is already in T3 and never bumped", async () => {
+  const tid = uuid(7001);
+  const s = t3sess(tid);
+  const other = sess();
+  const p = await plan({ sessions: [s, other], threads: [thread(tid)] });
+  const it = p.items.find((i) => i.session === s)!;
+  assert.deepEqual([it.action, it.notes], [{ kind: "skip", reason: "already-in-t3" }, ["started-in-t3"]]);
+  assert.equal(p.items.find((i) => i.session === other)!.action.kind, "import");
+  // A skip is what keeps it from ever being bumped: apply builds its waves from the `import` items only (src/apply/
+  // apply.ts), and the importer bumps only wave items (test/apply/importer.test.ts). Filtering the skips here and
+  // checking the waves would only test this test.
+  assert.equal(p.decisionsPending, undefined);
+});
+
+test("thread archived still counts as present", async () => {
+  const tid = uuid(7002);
+  const it = only(await plan({ sessions: [t3sess(tid)], threads: [thread(tid, { archived: true })] }));
+  assert.deepEqual([it.action, it.notes], [{ kind: "skip", reason: "already-in-t3" }, ["started-in-t3"]]);
+});
+
+test("thread in another instance still counts", async () => {
+  const tid = uuid(7003);
+  const it = only(await plan({ sessions: [t3sess(tid)], threads: [thread(tid, { instanceId: "claude-org", projectId: "p9" })] }));
+  assert.deepEqual([it.action, it.notes], [{ kind: "skip", reason: "already-in-t3" }, ["started-in-t3"]]);
+  // Held by its native ref instead (T3's own record of the session): present too, never copied.
+  const s = t3sess(uuid(7004));
+  const byRef = only(await plan({ sessions: [s], config: ORPHAN_YES, threads: [thread(uuid(7005), { instanceId: "claude-org", nativeSessionId: s.nativeId })] }));
+  assert.deepEqual([byRef.action, byRef.notes], [{ kind: "skip", reason: "already-in-t3" }, ["started-in-t3"]]);
+});
+
+test("deleted thread: undecided, then copy after a yes", async () => {
+  const { uuidV5 } = await import("../../src/core/uuid.ts");
+  const s = t3sess(uuid(7010));
+  const gone = await plan({ sessions: [s], threads: [thread(uuid(7011))] });
+  assert.deepEqual(only(gone).action, { kind: "skip", reason: "undecided" });
+  assert.deepEqual(gone.decisionsPending, [{ key: "orphaned", sessions: 1, folders: 1 }]);
+
+  const u = uuidV5(`claude-orphan:${s.nativeId}`);
+  const yes = only(await plan({ sessions: [s], config: ORPHAN_YES }));
+  if (yes.action.kind !== "convert-import") throw new Error(`expected convert-import, got ${JSON.stringify(yes.action)}`);
+  const { targetFile, ...rest } = yes.action;
+  assert.deepEqual(rest, { kind: "convert-import", projectRoot: "C:/work/demo", instanceId: "claudeAgent", expectedThreadId: `import:claudeAgent:${u}`, uuid: u, copy: "faithful" });
+  const dir = (f: string): string => f.replace(/\\/g, "/").replace(/\/[^/]*$/, "");
+  assert.equal(targetFile.replace(/\\/g, "/"), `${HOME}/.claude/projects/C--work-demo/${u}.jsonl`);
+  assert.equal(dir(targetFile), dir(s.file.path), "the copy sits next to the original (same project folder)");
+
+  const no = only(await plan({ sessions: [s], config: { organize: { decided: ["orphaned"], sessions: { automated: "skip", orphaned: "skip" } } } }));
+  assert.deepEqual(no.action, { kind: "skip", reason: "orphaned-in-t3" });
+
+  // A temp folder (any category) keeps its own folder; a folder T3 Code refuses goes to the rehome target instead.
+  const temp = only(await plan({ sessions: [t3sess(uuid(7012), { cwd: `${TMP}/x` })], config: ORPHAN_YES }));
+  assert.deepEqual([temp.action.kind, (temp.action as { projectRoot?: string }).projectRoot], ["convert-import", `${TMP}/x`]);
+  const refused = await buildPlan({ ...input({ sessions: [t3sess(uuid(7013), { cwd: HOME, path: "C:/nope/o.jsonl" })], config: ORPHAN_YES }), inferProjectRoot: async () => null });
+  const ra = only(refused).action;
+  if (ra.kind !== "convert-import") throw new Error(`expected convert-import, got ${JSON.stringify(ra)}`);
+  assert.deepEqual([ra.projectRoot, ra.rehomeFrom, ra.copy], [GENERAL_EN, HOME, "faithful"]);
+});
+
+test("no thread id: t3-native-unknown, never copied", async () => {
+  for (const config of [undefined, ORPHAN_YES]) {
+    const p = await plan({ sessions: [t3sess(undefined)], ...(config ? { config } : {}) });
+    assert.deepEqual([only(p).action, only(p).notes], [{ kind: "skip", reason: "t3-native-unknown" }, []]);
+    assert.equal(p.decisionsPending, undefined);
+  }
+});
+
+test("copy of an orphan is not re-detected as T3-native", async () => {
+  const { uuidV5 } = await import("../../src/core/uuid.ts");
+  const tid = uuid(7020);
+  const s = t3sess(tid);
+  const u = uuidV5(`claude-orphan:${s.nativeId}`);
+  const target = `${HOME}/.claude/projects/C--work-demo/${u}.jsonl`;
+  // The copy keeps every record (entrypoint t3-code, the handoff naming the deleted thread): only cwd and id change.
+  const copy = t3sess(tid, { nativeId: u, path: target });
+  const journal: JournalEntry[] = [{
+    t: "file-written", runId: "r0", path: target, sha256: "0".repeat(64), mtimeMs: 1,
+    source: { harness: "claude", nativeId: s.nativeId, updatedAt: s.updatedAt, messageCount: s.messageCount },
+    rehomeOf: { path: s.file.path, nativeId: s.nativeId, cwd: "C:/work/demo", size: s.file.size, mtimeMs: s.file.mtimeMs },
+  }];
+  const act = (p: Plan, x: DiscoveredSession): PlanItem => p.items.find((i) => i.session === x)!;
+  // Written, not imported yet: the original's item imports it; the copy is t3sm's own (converted).
+  const before = await plan({ sessions: [s, copy], config: ORPHAN_YES, journal });
+  assert.equal(act(before, s).action.kind, "convert-import");
+  assert.deepEqual(act(before, copy).action, { kind: "skip", reason: "converted" });
+  // Imported: both are in T3; no second copy, no question, with or without the journal (copy id fallback).
+  for (const j of [journal, []]) {
+    const after = await plan({ sessions: [s, copy], config: ORPHAN_YES, journal: j, threads: [thread(`import:claudeAgent:${u}`)] });
+    assert.deepEqual([act(after, s).action, act(after, s).notes], [{ kind: "skip", reason: "already-in-t3" }, []]);
+    assert.deepEqual([act(after, copy).action, act(after, copy).notes], [{ kind: "skip", reason: "already-in-t3" }, []]);
+    assert.equal(after.decisionsPending, undefined);
+    assert.equal(after.items.filter((i) => i.action.kind !== "skip").length, 0);
+  }
+  // The copy resumed outside T3 Code is a rehome copy (isRehomeCopy): never offered to `t3sm merge`.
+  const resumed: DiscoveredSession = { ...copy, file: { ...copy.file, size: 5000 } };
+  const imported: JournalEntry = { t: "imported", runId: "r0", harness: "claude", nativeId: s.nativeId, threadId: `import:claudeAgent:${u}`, source: { path: target, size: 1000, mtimeMs: copy.file.mtimeMs } };
+  const later = await plan({ sessions: [s, resumed], config: ORPHAN_YES, journal: [...journal, imported], threads: [thread(`import:claudeAgent:${u}`)] });
+  assert.deepEqual(act(later, resumed).notes, ["continued-after-rehome"]);
+});
+
+test("a mirror copy of a T3-started session stays a mirror copy (dedupe still sees it); its kept copy is already in T3", async () => {
+  const tid = uuid(7030);
+  const p = { ...sess({ nativeId: ID, path: P, accountId: "claudeAgent" }), startedIn: "t3" as const, t3ThreadId: tid };
+  const o = { ...sess({ nativeId: ID, path: O, accountId: "claude-org" }), startedIn: "t3" as const, t3ThreadId: tid };
+  const out = await plan({ sessions: [p, o], pins: { "C:/work/demo": "C:\\Users\\demo\\.claude-org" }, compare: { [`${P}|${O}`]: "identical" }, threads: [thread(tid)] });
+  const by = new Map(out.items.map((i) => [i.session.file.path, i]));
+  assert.deepEqual([by.get(O)!.action, by.get(O)!.notes], [{ kind: "skip", reason: "already-in-t3" }, ["started-in-t3"]]);
+  assert.deepEqual(by.get(P)!.action, { kind: "skip", reason: "mirror-copy" });
+  assert.deepEqual(out.mirrorCopies, [{ path: P, nativeId: ID, keptPath: O, relation: "identical" }]);
+});
+
+test("an orphan under a skip override is excluded, whatever the orphaned answer", async () => {
+  const config: Partial<Config> = { organize: { decided: ["orphaned"], overrides: [{ match: "C:/work/demo/**", action: "skip" }, { match: `${HOME}`, action: "skip" }] } };
+  for (const cwd of ["C:/work/demo/x", HOME]) {
+    const p = await plan({ sessions: [t3sess(uuid(7040), { cwd, path: "C:/nope/x.jsonl" })], config });
+    assert.deepEqual(only(p).action, { kind: "skip", reason: "excluded" }, cwd);
+    assert.equal(p.decisionsPending, undefined, cwd);
+  }
+  // Undecided too: the user's own rule wins over the question.
+  const undecided = await plan({ sessions: [t3sess(uuid(7041), { cwd: "C:/work/demo/x" })], config: { organize: { overrides: [{ match: "C:/work/demo/**", action: "skip" }] } } });
+  assert.deepEqual([only(undecided).action, undecided.decisionsPending], [{ kind: "skip", reason: "excluded" }, undefined]);
+});
+
+test("an orphan under a rehome:<folder> override is copied into that folder", async () => {
+  const { uuidV5 } = await import("../../src/core/uuid.ts");
+  for (const cwd of ["C:/work/demo/x", HOME]) {
+    const s = t3sess(uuid(7050), { cwd, path: "C:/nope/r.jsonl" });
+    const config: Partial<Config> = { organize: { decided: ["orphaned"], overrides: [{ match: cwd, action: "rehome:~/code/app" }] } };
+    const a = only(await plan({ sessions: [s], config })).action;
+    if (a.kind !== "convert-import") throw new Error(`expected convert-import, got ${JSON.stringify(a)}`);
+    const u = uuidV5(`claude-orphan:${s.nativeId}`);
+    assert.deepEqual([a.projectRoot, a.rehomeFrom, a.copy, a.uuid], [`${HOME}/code/app`, cwd, "faithful", u], cwd);
+    assert.equal(a.targetFile.replace(/\\/g, "/"), `${HOME}/.claude/projects/C--Users-demo-code-app/${u}.jsonl`);
+  }
 });

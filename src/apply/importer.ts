@@ -110,6 +110,9 @@ function metadataCost(cost: number | null, size: number): number {
   return Math.max(0, Math.min(cost ?? size, size, CWD_SCAN_MAX_BYTES));
 }
 
+/** The transcript that holds its project: being written (mtime within ACTIVE_WINDOW_MS of now). */
+export interface ActiveFile { path: string; mtimeMs: number; harness: HarnessId | null }
+
 export interface ExposureIndex {
   /**
    * The exposed transcripts of a root right now: inside the window, not already in T3, not in `exclude` (path keys
@@ -117,9 +120,9 @@ export interface ExposureIndex {
    * ACTIVE_WINDOW_MS of that clock, either side (a session written during the scan gets an mtime slightly AHEAD of
    * an earlier clock reading; T3 would import it now): the caller holds the root. Only an mtime more than
    * ACTIVE_WINDOW_MS in the future counts as parked (a crash leftover at now + 7 days, which T3 skips) and is
-   * ignored. park: the rest, with fresh stats.
+   * ignored. park: the rest, with fresh stats. active (with inUse): the file that made the root in use, as stat'ed.
    */
-  scan(k: string, root: string, clock: () => number, exclude: ReadonlySet<string>, wave: number): Promise<{ inUse: boolean; busy?: boolean; park: Parked[] }>;
+  scan(k: string, root: string, clock: () => number, exclude: ReadonlySet<string>, wave: number): Promise<{ inUse: boolean; busy?: boolean; active?: ActiveFile; park: Parked[] }>;
   pathKey(p: string): string;
 }
 
@@ -179,7 +182,7 @@ export function exposureIndex(o: {
         const t = clock(); // at stat time, never before the awaits
         if (st.mtimeMs > t + ACTIVE_WINDOW_MS) continue; // parked (a leftover at +7 days): T3 skips it
         if (!inImportWindow(st.mtimeMs, t)) continue; // outside the window: T3 cannot take it
-        if (isActive(st.mtimeMs, t)) return { inUse: true, park: [] }; // recent, or up to 10 min ahead
+        if (isActive(st.mtimeMs, t)) return { inUse: true, active: { path: c.path, mtimeMs: st.mtimeMs, harness: c.harness }, park: [] }; // recent, or up to 10 min ahead
         park.push({ st, id: c.id, cost: metadataCost(c.cost, st.size), source: sourceOf(c.harness) });
       }
       return { inUse: false, park };
@@ -253,6 +256,8 @@ export interface WavesResult {
   waves: number;
   /** Plan roots held this run because a transcript of the project was in use (each once). */
   heldRoots: string[];
+  /** For roots first held during a wave (in use, not busy): the transcript that held them. */
+  heldActive: { root: string; file: ActiveFile }[];
   /** Waves stopped early because the system clock jumped (their remaining items are deferred `clock-jump`). */
   clockJumps: number;
   /** Transcripts parked (future file time) across all waves of the run, counted once per wave they were parked in. */
@@ -355,7 +360,7 @@ export async function runWaves(ctx: WaveCtx, waves: Wave[]): Promise<WavesResult
   for (const [r, id] of ctx.projectIds) projectId.set(key(r), id);
 
   const all = waves.flatMap(waveItems).filter((i) => threadIdOf(i) !== null).sort(byOriginalMtime);
-  const res: WavesResult = { imported: [], failed: [], deferred: [], restoreErrors: [], unverified: [], stoppedUnverified: false, aborted: false, waves: 0, heldRoots: [], clockJumps: 0, parked: 0 };
+  const res: WavesResult = { imported: [], failed: [], deferred: [], restoreErrors: [], unverified: [], stoppedUnverified: false, aborted: false, waves: 0, heldRoots: [], heldActive: [], clockJumps: 0, parked: 0 };
   const statFn = ctx.stat ?? stat;
   /** Imported or failed: T3 will not take these in a later wave. */
   const settled = new Set<PlanItem>();
@@ -471,7 +476,10 @@ export async function runWaves(ctx: WaveCtx, waves: Wave[]): Promise<WavesResult
     for (const [k, root] of waveRoots) {
       const s = await exposure.scan(k, root, () => ctx.now(), readyKeys, res.waves + 1);
       if (s.busy) holdBusy(k);
-      else if (s.inUse) heldForRun.add(k);
+      else if (s.inUse) {
+        heldForRun.add(k);
+        if (s.active) res.heldActive.push({ root, file: s.active });
+      }
       else parkedOf.set(k, s.park);
     }
     if (ready.some((r) => heldForRun.has(key(itemRoot(r.item))))) {

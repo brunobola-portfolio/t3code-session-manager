@@ -52,7 +52,7 @@ function scenario() {
   const b = transcript(f, t.dir, ROOT, now - 3 * DAY);
   const c = transcript(f, t.dir, ROOT2, now - 40 * DAY, { instanceId: "claude-org" });
   const big = transcript(f, t.dir, ROOT, now - 50 * DAY, { cost: CWD_SCAN_MAX_BYTES + 1 });
-  f.projects.push({ id: "p-existing", title: "demo", workspaceRoot: ROOT, defaultModelSelection: { instanceId: "claude-org", model: "m" } as never, archived: false, deleted: false });
+  f.projects.push({ id: "p-existing", title: "demo", workspaceRoot: ROOT, defaultModelSelection: { instanceId: "claude-org", model: "m" } as never, archived: false, deleted: false, pinned: false, createdAt: null });
   const plan = mkPlan([a, b, c, big], { instancesToCreate: [ORG], projectsToCreate: [{ root: ROOT2, title: "other", defaultInstanceId: "claude-org" }],
     projectDefaults: [{ root: ROOT, instanceId: "claudeAgent" }, { root: ROOT2, instanceId: "claude-org" }] });
   // An interrupted run left a bump behind: a dry run reports it and does not restore it.
@@ -98,13 +98,15 @@ test("applyPlan dryRun: a held project (a session in use) is reported, not impor
   const r = await applyPlan(mkPlan([a]), { stateDir: t.state, home: t.home, signals: noSignals, dryRun: true, connect: async () => f.api });
   assert.deepEqual(r.dryRun!.held, { roots: [ROOT], sessions: 1 });
   assert.equal(r.dryRun!.waves, 0);
+  assert.deepEqual(r.dryRun!.projectsToCreate, [ROOT], "a held project is still created (empty) by a real run");
+  assert.deepEqual(r.held.map((h) => h.root), [ROOT]);
   assert.equal(snapshot(t.home), before);
 });
 
 function cli(state: string) {
   const out: string[] = [];
   const err: string[] = [];
-  const io: Io = { stdout: (s) => void out.push(s), stderr: (s) => void err.push(s), isTTY: false, prompt: async () => { throw new Error("no prompt in a dry run"); }, env: { T3SM_HOME: state } };
+  const io: Io = { stdout: (s) => void out.push(s), stderr: (s) => void err.push(s), isTTY: false, prompt: async () => { throw new Error("no prompt in a dry run"); }, env: { T3SM_HOME: state, LANG: "en_US.UTF-8" } };
   return { io, out: () => out.join(""), err: () => err.join("") };
 }
 
@@ -116,15 +118,18 @@ test("t3sm apply --dry-run: no --yes needed off a terminal; prints the summary a
   const c = cli(t.state);
   assert.equal(await applyCommand(["--dry-run"], c.io, { home: t.home, connect: async () => f.api, signals: noSignals }), 0, c.err());
   const o = c.out();
-  assert.match(o, /^Plan 20261111-120000-abcd/m, "same summary as the confirmation");
-  assert.match(o, /Would do:/);
-  assert.match(o, /instances to create\s+1 \(claude-org\)/);
-  assert.match(o, /projects to create\s+1/);
-  assert.match(o, /project defaults to set\s+2/);
-  assert.match(o, /conversions to write\s+0/);
-  assert.match(o, /import waves\s+1 \(3 sessions\)/);
-  assert.match(o, /would fail up front\s+1/);
-  assert.match(o, /1 transcript file time left bumped by an interrupted run/);
+  // Task 21: the plan's panel, then "Would do" as a panel of aligned rows, the up-front failures as a table.
+  assert.match(o, /^\S+ Plan 20261111-120000-abcd/m, "same summary as the confirmation");
+  assert.match(o, /^\S+ Would do /m);
+  assert.match(o, /New accounts in T3 Code\s+1 \(Org\)/, "accounts by their display name, never the id");
+  assert.match(o, /Projects to create\s+1/);
+  assert.match(o, /Project defaults to set\s+2/);
+  assert.match(o, /Conversions to write\s+0/);
+  assert.match(o, /Import waves\s+1 \(3 conversations\)/);
+  assert.match(o, /Would fail up front\s+1/);
+  assert.match(o, /1 conversation would fail to import/, "a dry run says would");
+  assert.doesNotMatch(o, /cwd-unreadable-in-t3|instance-unavailable:/, "reasons in words, never their codes");
+  assert.match(o.replace(/\n  /g, " "), /1 transcript file time was left bumped by an interrupted run/);
   assert.match(o, /Dry run: nothing was written\./);
   assert.deepEqual(f.calls, ["close"]);
   assert.equal(snapshot(t.home), before);

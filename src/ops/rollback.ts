@@ -14,12 +14,19 @@
 // when T3 Code is not reachable): per-project default instance restored to `previous`; instance label/colour/home
 // restored only with `instances`; imported threads listed (archived only with `archiveThreads`, never deleted).
 // Merges (`merged` / `thread-archived`): a revision still exactly as t3sm wrote it is deleted (file level, above), its
-// old thread unarchived and its revision thread archived; a revision continued since keeps both threads (reported).
+// old thread unarchived and its revision thread archived; a revision continued since keeps both threads (reported), and
+// so does a merge a later run (not rolled back) built on: a follow of its revision thread, or a revision of its
+// revision ("followed again by run X; roll back X first"). A revision a later run journaled again (reused it and
+// swapped it in) is that run's: kept here ("rewritten"), with its thread.
+// Destination folders an apply created for rehome copies (`folder-created`): removed deepest first, up to the topmost
+// one it created, each only while it is empty; one holding anything is kept (reported).
+// Organize changes (`organize-change`): reverted exactly as `t3sm organize --undo` does (undoOrganizeEntries), newest
+// first, only where T3 still shows the value t3sm set; T3 Code is reached first, before any file is touched.
 // Idempotent: every step checks the current state (or a later journal entry) first, and a rollback that changes
 // nothing writes nothing to the journal.
 
-import { lstat, mkdir, rm } from "node:fs/promises";
-import { basename, dirname, join } from "node:path";
+import { lstat, mkdir, readdir, rm, rmdir } from "node:fs/promises";
+import { basename, dirname, isAbsolute, join } from "node:path";
 import type { JournalEntry } from "../core/types.ts";
 import { effectiveWrites, newRunId, type Journal } from "../core/journal.ts";
 import { sha256File, statSafe } from "../core/fsutil.ts";
@@ -28,6 +35,8 @@ import { ConfigError } from "../core/config.ts";
 import { isActive } from "../core/activity.ts";
 import type { T3Api } from "../t3/api.ts";
 import { T3NotRunning } from "../t3/errors.ts";
+import { organizeGate } from "../t3/compat.ts";
+import { OrganizeReadError, undoOrganizeEntries, type OrganizeUndoItem } from "../organize/apply.ts";
 import {
   JournalWriteError, MoveRefused, QUARANTINE_DIR, hasDotDot, isInside, moveEntry, moveFailure, nodeMoveFs, pruneEmptyQuarantineDirs, subdirOf,
   type MoveFs,
@@ -48,9 +57,12 @@ export interface RollbackDeps {
   dryRun?: boolean;
   fs?: MoveFs;
   platform?: NodeJS.Platform;
+  /** Organize changes on an unverified T3 Code version: no warning (`--allow-untested`). */
+  allowUntested?: boolean;
+  onNotice?: (line: string) => void;
 }
 
-type KeptReason = "revision continued" | "revision in use" | "revision rewritten" | "T3 Code unreachable";
+type KeptReason = "revision continued" | "revision in use" | "revision rewritten" | "T3 Code unreachable" | `followed again by run ${string}; roll back ${string} first`;
 
 export interface InstanceChange {
   instanceId: string;
@@ -72,8 +84,14 @@ export interface RollbackReport {
   filesKeptModified: string[];
   /** Changed within the last 10 minutes (in use): kept; run rollback again later. */
   filesKeptActive: string[];
+  /** Destination folders the run created for rehome copies, removed (would be, in a dry run) because they were empty. */
+  foldersRemoved: string[];
+  /** Such folders kept because something is in them now. */
+  foldersKept: string[];
   /** Rewritten by a later run: left alone. */
   filesKeptRewritten: string[];
+  /** Rehome copies a follow rewrote in place (refresh mode): kept, since their T3 thread already holds those records. */
+  filesKeptRefreshed: string[];
   unquarantined: string[];
   unquarantineConflicts: { from: string; to: string }[];
   /** Back at the original path already (an earlier rollback crashed before journaling, or moved by hand). */
@@ -105,6 +123,8 @@ export interface RollbackReport {
    * (original thread + merge revision threads) without any active thread. Review them in T3 Code.
    */
   needsReview: { threadId: string; reason: string }[];
+  /** Organize changes of the run, newest first: reverted (would be, in a dry run), user-changed (left alone), already, failed. */
+  organize: OrganizeUndoItem[];
   /** Why the T3 part was not done (e.g. "T3 Code not running"); null when T3 was reachable or not needed. */
   t3Unavailable: string | null;
   /** Includes every malformed or out-of-bounds journal entry that was skipped. */
@@ -116,6 +136,16 @@ const isStr = (u: unknown): u is string => typeof u === "string" && u !== "";
 const strOrNull = (u: unknown): boolean => u === null || typeof u === "string";
 const msg = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
+/** `path`, then each parent up to and including `created` (deepest first); null when `created` is not one of them. */
+function foldersUpTo(path: string, created: string): string[] | null {
+  const out: string[] = [];
+  for (let d = path; ; d = dirname(d)) {
+    out.push(d);
+    if (pathKey(d) === pathKey(created)) return out;
+    if (dirname(d) === d) return null;
+  }
+}
+
 /** Newest run with a run-start that is not itself a rollback. */
 export function latestRunId(entries: JournalEntry[]): string | null {
   for (let i = entries.length - 1; i >= 0; i--) {
@@ -123,6 +153,19 @@ export function latestRunId(entries: JournalEntry[]): string | null {
     if (e.t === "run-start" && typeof e.command === "string" && !e.command.startsWith("rollback")) return e.runId;
   }
   return null;
+}
+
+/** Entry kinds whose rollback changes T3 Code through something other than organize's commands. */
+const OTHER_T3_KINDS: ReadonlySet<string> = new Set(["project-default-set", "instance-pinned", "instance-updated", "imported", "import-attempt", "merged", "followed", "thread-archived", "thread-unarchived"]);
+
+/**
+ * The rollback of `runId` touches T3 Code only through organize's commands (it has organize changes and nothing else
+ * for T3). Such a rollback runs on any T3 Code version with organizeGate's one warning (ruling R18), so the caller
+ * connects with allowUntested and lets organizeGate speak.
+ */
+export function organizeOnlyRun(entries: JournalEntry[], runId: string): boolean {
+  const mine = entries.filter((e) => e.runId === runId);
+  return mine.some((e) => e.t === "organize-change") && !mine.some((e) => OTHER_T3_KINDS.has(e.t));
 }
 
 /** The run-start command of `runId` marks it as a rollback run (those are never rolled back). */
@@ -184,11 +227,17 @@ function malformed(e: JournalEntry): string | null {
     case "project-default-set": return isStr(o.projectId) ? null : "projectId missing";
     case "project-created": return isStr(o.projectId) && typeof o.root === "string" ? null : "projectId/root missing";
     case "instance-created": return isStr(o.instanceId) ? null : "instanceId missing";
+    case "folder-created": {
+      if (!isStr(o.path) || !isStr(o.created) || hasDotDot(o.path) || hasDotDot(o.created) || !isAbsolute(o.path)) return "path/created missing or not absolute";
+      return foldersUpTo(o.path, o.created) === null ? "created is not the folder or one of its parents" : null;
+    }
+    case "organize-change": return isStr(o.kind) && isStr(o.target) ? null : "kind/target missing";
     case "imported": return isStr(o.threadId) ? null : "threadId missing";
     case "import-attempt": return Array.isArray(o.items) && (o.parked === undefined || Array.isArray(o.parked)) ? null : "items missing";
     case "thread-archived": return isStr(o.threadId) ? null : "threadId missing";
     case "thread-unarchived": return isStr(o.threadId) ? null : "threadId missing";
     case "merged": return isStr(o.nativeId) && isStr(o.revisionFile) && isStr(o.oldThreadId) && isStr(o.newThreadId) ? null : "nativeId/revisionFile/oldThreadId/newThreadId missing";
+    case "followed": return isStr(o.original) && isStr(o.copy) && isStr(o.oldThread) && (o.mode === "refresh" || o.mode === "revision") ? null : "original/copy/oldThread/mode missing";
     case "instance-pinned":
       return isStr(o.instanceId) && isObj(o.previous) && strOrNull(o.previous.homePath) && isObj(o.next) && typeof o.next.homePath === "string" ? null : "instanceId/previous/next invalid";
     case "instance-updated": {
@@ -212,9 +261,9 @@ export async function rollbackRun(targetRunId: string, deps: RollbackDeps): Prom
   if (isRollbackRun(all, targetRunId)) throw new ConfigError("Cannot roll back a rollback run.");
   const r: RollbackReport = {
     runId: null, targetRunId, command: null,
-    filesRemoved: [], filesKeptModified: [], filesKeptActive: [], filesKeptRewritten: [], unquarantined: [], unquarantineConflicts: [], alreadyRestored: [],
+    filesRemoved: [], filesKeptModified: [], filesKeptActive: [], filesKeptRewritten: [], filesKeptRefreshed: [], foldersRemoved: [], foldersKept: [], unquarantined: [], unquarantineConflicts: [], alreadyRestored: [],
     unquarantineMissing: [], unquarantineFailed: [], defaultsRestored: [], defaultsSkipped: [], instanceChanges: [], instancesCreated: [], projectsCreated: [],
-    threadsToReview: [], threadsVerified: false, threadsArchived: [], parkedThreads: [], threadsUnarchived: [], mergesKept: [], needsReview: [], t3Unavailable: null, errors: [],
+    threadsToReview: [], threadsVerified: false, threadsArchived: [], parkedThreads: [], threadsUnarchived: [], mergesKept: [], needsReview: [], organize: [], t3Unavailable: null, errors: [],
   };
   const mine: { e: JournalEntry; i: number }[] = [];
   let any = false;
@@ -276,8 +325,42 @@ export async function rollbackRun(targetRunId: string, deps: RollbackDeps): Prom
   }
   const kept = new Map<string, KeptReason>();
 
+  // Merges a later run built on (follow makes such chains routine: cycle A follows the copy into R1, cycle B follows R1
+  // into R2): a later run swapped this merge's revision thread out again (`merged` / `followed` with it as the old
+  // thread), or wrote a revision of this revision that is still there. Undoing it would delete the transcript the later
+  // chain continues from and bring back a second active thread, so it is kept whole (its revision file too) until that
+  // run is rolled back first. A later swap counts until a rollback undid it (rolled back, and its revision gone): a
+  // rollback that kept it (the revision continued since) leaves it standing.
+  const rolledBackRuns = new Set(all.flatMap((e) => (e.t === "rolled-back" ? [e.targetRunId] : [])));
+  const liveWrites = new Set<JournalEntry>(effectiveWrites(all, keyOf));
+  const there = async (file: string): Promise<boolean> => exists(file).catch(() => true);
+  for (const { e, i } of mine) {
+    if (e.t !== "merged") continue;
+    const rev = basename(e.revisionFile, ".jsonl");
+    let later: string | null = null;
+    for (let xi = i + 1; xi < all.length && later === null; xi++) {
+      const x = all[xi]!;
+      if (x.runId === targetRunId) continue;
+      const swap = x.t === "merged" && x.oldThreadId === e.newThreadId && isStr(x.revisionFile) ? x.revisionFile
+        : x.t === "followed" && x.oldThread === e.newThreadId && isStr(x.copy) ? x.copy : null;
+      if (swap !== null && (!rolledBackRuns.has(x.runId) || (await there(swap)))) later = x.runId;
+      else if (x.t === "file-written" && x.revisionOf?.nativeId === rev && liveWrites.has(x) && isStr(x.path) && (await there(x.path))) later = x.runId;
+    }
+    if (later !== null) kept.set(keyOf(e.revisionFile), `followed again by run ${later}; roll back ${later} first`);
+  }
+
+  // Organize changes: T3 is opened before anything else, and an unverified version warns once (never refuses).
+  const organizeEntries = mine.filter((x) => x.e.t === "organize-change").map((x) => x.e);
+  if (organizeEntries.length > 0) {
+    await connectT3Once();
+    if (api !== null) organizeGate((api as T3Api).version, { allowUntested: deps.allowUntested ?? false, onNotice: deps.onNotice });
+  }
+
   // ---------- files (newest first) ----------
   const seenFiles = new Set<string>();
+  // Rehome copies a follow rewrote in place (refresh mode): T3 grew their thread from the new records, and the copy
+  // before the refresh is gone; removing the file would leave that thread without its transcript. Kept, reported.
+  const refreshed = new Set(mine.flatMap(({ e }) => (e.t === "followed" && e.mode === "refresh" && isStr(e.copy) ? [keyOf(e.copy)] : [])));
   try {
   for (const { e, i } of [...mine].reverse()) {
     if (e.t === "file-written") {
@@ -287,6 +370,8 @@ export async function rollbackRun(targetRunId: string, deps: RollbackDeps): Prom
       const k = keyOf(e.path);
       if (seenFiles.has(k)) continue; // only this run's last write of a path counts
       seenFiles.add(k);
+      if (refreshed.has(k)) { r.filesKeptRefreshed.push(e.path); continue; }
+      if (kept.has(k)) continue; // a later run built on this revision (above): reported with its merge
       if (revisionPaths.has(k) && revisionsBlocked !== null && (await exists(e.path).catch(() => true))) {
         kept.set(k, "T3 Code unreachable");
         r.errors.push(`kept the merge revision ${e.path}: ${revisionsBlocked}; run the rollback again with T3 Code running`);
@@ -368,6 +453,30 @@ export async function rollbackRun(targetRunId: string, deps: RollbackDeps): Prom
       r.projectsCreated.unshift({ projectId: e.projectId, root: e.root });
     }
   }
+    // Destination folders the run created (newest first): each only while it is empty, deepest first.
+    for (const { e } of [...mine].reverse()) {
+      if (e.t !== "folder-created") continue;
+      let removedChild: string | null = null;
+      for (const dir of foldersUpTo(e.path, e.created) ?? []) {
+        let entries: string[];
+        try { entries = await readdir(dir); } catch (err) {
+          if ((err as NodeJS.ErrnoException).code === "ENOENT") { removedChild = dir; continue; } // gone already
+          r.errors.push(`could not read ${dir}: ${msg(err)}`);
+          break;
+        }
+        if (entries.some((x) => removedChild === null || x !== basename(removedChild))) { r.foldersKept.push(dir); break; }
+        if (!dry) {
+          await begin();
+          try { await rmdir(dir); } catch (err) {
+            if ((err as NodeJS.ErrnoException).code === "ENOTEMPTY") r.foldersKept.push(dir);
+            else r.errors.push(`could not remove ${dir}: ${msg(err)}`);
+            break;
+          }
+        }
+        r.foldersRemoved.push(dir);
+        removedChild = dir;
+      }
+    }
   } catch (e) {
     await (api as T3Api | null)?.close();
     throw e;
@@ -429,6 +538,9 @@ export async function rollbackRun(targetRunId: string, deps: RollbackDeps): Prom
   const mergedOld = new Set(mine.flatMap(({ e }) => (e.t === "merged" ? [e.oldThreadId] : [])));
   for (const { e } of mine) {
     if (e.t !== "thread-archived" || keptOld.has(e.threadId) || mergedOld.has(e.threadId)) continue;
+    // The run's own revision thread, archived back by a follow that stopped before its swap (the copy changed during
+    // the import): it stays archived; there is no old thread to bring back.
+    if (revisionsOfRun.some((w) => e.threadId.endsWith(`:${w.rev}`))) continue;
     let keep = false;
     let any = false;
     for (const w of revisionsOfRun) {
@@ -463,8 +575,16 @@ export async function rollbackRun(targetRunId: string, deps: RollbackDeps): Prom
     const w = revisionsOfRun.find((x) => x.rev === e.nativeId);
     if (w && e.threadId.endsWith(`:${w.rev}`)) link(`${e.threadId.slice(0, -w.rev.length)}${w.nativeId}`, e.threadId);
   }
-  /** Revision threads of merges kept whole (continued since): never archived by this rollback. */
-  const keptNew = new Set(mine.flatMap(({ e }) => (e.t === "merged" && kept.has(keyOf(e.revisionFile)) ? [e.newThreadId] : [])));
+  /**
+   * Threads of revisions this rollback keeps (a merge kept whole, or a revision a later run journaled again and swapped
+   * in): the session continues there, so they are never archived here, nor have their carried title or state reverted.
+   */
+  const keptNew = new Set(mine.flatMap(({ e }) => {
+    if (e.t === "merged") return kept.has(keyOf(e.revisionFile)) ? [e.newThreadId] : [];
+    if (e.t !== "imported") return [];
+    const w = revisionsOfRun.find((x) => x.rev === e.nativeId);
+    return w && e.threadId.endsWith(`:${w.rev}`) && kept.has(keyOf(w.path)) ? [e.threadId] : [];
+  }));
   const needsReview = (threadId: string, reason: string): void => {
     if (!r.needsReview.some((x) => x.threadId === threadId)) r.needsReview.push({ threadId, reason });
   };
@@ -479,10 +599,34 @@ export async function rollbackRun(targetRunId: string, deps: RollbackDeps): Prom
     return false;
   };
 
-  const needT3 = defaults.size > 0 || threadIds.length > 0 || swaps.length > 0 || (deps.instances === true && instEntries.length > 0);
+  const needT3 = organizeEntries.length > 0 || defaults.size > 0 || threadIds.length > 0 || swaps.length > 0 || (deps.instances === true && instEntries.length > 0);
 
   if (needT3) await connectT3Once();
   try {
+    // organize (first: the newest changes of a run that imported and then organized)
+    if (organizeEntries.length > 0) {
+      if (!api) r.errors.push(`organize changes not undone: ${r.t3Unavailable ?? "T3 Code not connected"}`);
+      else {
+        // Only the first read of T3 is caught (nothing changed yet); a journal failure (JournalWriteError, naming what
+        // was already reverted) stops the rollback like every other journal failure here. r.organize fills as it goes.
+        // A follow's title and settled state carried to its revision thread (src/ops/follow.ts) stay with that thread:
+        // the swap below archives it and brings the old thread back with its own. (T3 cannot clear a settled override,
+        // so a carry onto a thread that had none could not be put back anyway.)
+        const swappedOut = new Set(swaps.flatMap((sw) => (sw.old !== null && sw.rev !== null ? [sw.rev] : [])));
+        // A kept follow's revision thread (keptNew) keeps them too: it is the thread the user continues.
+        const carried = new Set(mine.flatMap(({ e }) => (e.t === "followed" && isStr(e.newThread) && (swappedOut.has(e.newThread) || keptNew.has(e.newThread)) ? [e.newThread] : [])));
+        const toUndo = organizeEntries.filter((e) => !(e.t === "organize-change" && carried.has(e.target) && (e.kind === "title" || e.kind === "unsettle" || e.kind === "settle")));
+        try {
+          await undoOrganizeEntries(toUndo, targetRunId, { api, journal: j, begin, dryRun: dry, platform, history: all }, r.organize);
+        } catch (e) {
+          if (!(e instanceof OrganizeReadError)) throw e;
+          r.errors.push(`organize changes not undone: ${e.message}`);
+        }
+        // An archive put back changes which threads are archived: read them again below when needed.
+        if (r.organize.some((x) => x.kind === "archive" && x.status === "reverted")) live = null;
+      }
+    }
+
     // defaults
     if (defaults.size > 0) {
       let projects: Awaited<ReturnType<T3Api["listProjects"]>> | null = null;
@@ -600,7 +744,7 @@ export async function rollbackRun(targetRunId: string, deps: RollbackDeps): Prom
     r.runId = rb;
     const at = new Date(now()).toISOString();
     const partial = r.errors.length > 0 || r.unquarantineConflicts.length > 0 || r.unquarantineFailed.length > 0 || r.defaultsSkipped.length > 0
-      || r.instanceChanges.some((c) => c.status === "failed");
+      || r.instanceChanges.some((c) => c.status === "failed") || r.organize.some((x) => x.status === "failed");
     await j.append({ t: "rolled-back", runId: rb, targetRunId, at });
     await j.append({ t: "run-end", runId: rb, at, status: partial ? "partial" : "ok" });
   }
@@ -677,7 +821,13 @@ export interface RunSummary {
   /** run-end status, "incomplete" (started, no run-end) or "-" (no run-start: an `accounts` change). */
   status: string;
   rolledBackBy: string | null;
-  counts: { imported: number; importFailed: number; filesWritten: number; quarantined: number; unquarantined: number; defaults: number; instances: number; projects: number; archived: number; merged: number };
+  /** Projects the run left for later because a conversation of theirs was in use (its run-end; absent when none). */
+  held?: number;
+  /** organized: changes `t3sm organize` made (organize-change); organizeReverted: organize changes an undo put back. */
+  counts: {
+    imported: number; importFailed: number; filesWritten: number; quarantined: number; unquarantined: number; defaults: number; instances: number;
+    projects: number; archived: number; merged: number; organized: number; organizeReverted: number;
+  };
 }
 
 /** One summary per run id, in journal order (mtime-bump/restore bookkeeping alone does not make a run). */
@@ -686,17 +836,17 @@ export function listRuns(entries: JournalEntry[]): RunSummary[] {
   const get = (id: string): RunSummary => {
     let s = byId.get(id);
     if (!s) {
-      s = { runId: id, at: null, command: null, status: "-", rolledBackBy: null, counts: { imported: 0, importFailed: 0, filesWritten: 0, quarantined: 0, unquarantined: 0, defaults: 0, instances: 0, projects: 0, archived: 0, merged: 0 } };
+      s = { runId: id, at: null, command: null, status: "-", rolledBackBy: null, counts: { imported: 0, importFailed: 0, filesWritten: 0, quarantined: 0, unquarantined: 0, defaults: 0, instances: 0, projects: 0, archived: 0, merged: 0, organized: 0, organizeReverted: 0 } };
       byId.set(id, s);
     }
     return s;
   };
   for (const e of entries) {
-    if (e.t === "mtime-bump" || e.t === "mtime-restore") continue;
+    if (e.t === "mtime-bump" || e.t === "mtime-restore" || e.t === "update") continue; // update: t3sm update, not a run to roll back
     const s = get(e.runId);
     switch (e.t) {
       case "run-start": s.at = e.at; s.command = e.command; if (s.status === "-") s.status = "incomplete"; break;
-      case "run-end": s.status = e.status; break;
+      case "run-end": s.status = e.status; if (typeof e.held === "number" && e.held > 0) s.held = e.held; break;
       case "imported": s.counts.imported++; break;
       case "import-failed": s.counts.importFailed++; break;
       case "file-written": break; // counted below from the writes that really happened (effectiveWrites)
@@ -707,6 +857,8 @@ export function listRuns(entries: JournalEntry[]): RunSummary[] {
       case "instance-created": case "instance-pinned": case "instance-updated": s.counts.instances++; break;
       case "project-created": s.counts.projects++; break;
       case "thread-archived": s.counts.archived++; break;
+      case "organize-change": s.counts.organized++; break;
+      case "organize-undone": s.counts.organizeReverted++; break;
       case "rolled-back": get(e.targetRunId).rolledBackBy = e.runId; break;
       default: break;
     }

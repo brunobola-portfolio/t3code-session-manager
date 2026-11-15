@@ -20,7 +20,7 @@ where.
 One line, the same on Windows, macOS and Linux:
 
 ```bash
-npm install -g --install-links github:brunobola-portfolio/t3code-session-manager#v0.2.1
+npm install -g --install-links github:brunobola-portfolio/t3code-session-manager#v0.3.0
 t3sm
 ```
 
@@ -31,23 +31,81 @@ the guided set-up; `t3sm --help` lists every command, grouped by what you want t
 (`t3sm schedule install`) needs this installed command, because it must stay where it is. CI runs this exact line on
 Windows, macOS and Linux.
 
+## Install from a folder on this computer
+
+To install a checkout you have locally (a release not on GitHub yet, or your own build), install its release tag
+with npm. Make sure the checkout is clean and at the tag first:
+
+```powershell
+git -C D:\Work\t3code-session-manager status --short                  # prints nothing: no local changes
+git -C D:\Work\t3code-session-manager describe --tags --exact-match   # prints the tag, such as v0.3.0
+npm install -g --install-links D:\Work\t3code-session-manager
+t3sm --version
+```
+
+npm runs the package's own build (`prepare`, which writes `dist/` inside the checkout; `dist/` is git-ignored) and
+copies the result into its global folder. Once t3sm is installed, later releases from that folder are one command:
+`t3sm update --from D:\Work\t3code-session-manager` installs the newest `vX.Y.Z` tag on its `main` and remembers the
+folder, so the background watcher follows it from then on (see [Update](#update)). On macOS and Linux use a path such
+as `~/work/t3code-session-manager`.
+
+## Upgrading from 0.2.x
+
+0.2.x has no `--from` and its watcher cannot be asked to stop, so do the first upgrade by hand, in this order:
+
+1. Install the new version with the install line above (or from a folder, as just shown). The running 0.2.x watcher
+   keeps running the old code meanwhile; that is harmless.
+2. `t3sm schedule install --watch --dry-run`, then `t3sm schedule install --watch --yes` (or answer `y`). The new
+   t3sm stops the old watcher by its process id, after checking that the process is a t3sm watcher started when its
+   heartbeat says (never by name), recreates the scheduler entry with the 15-minute keep-alive and starts the new
+   watcher.
+3. `t3sm status` and `t3sm doctor`: the watcher line shows the new version (`t3sm status --json`: `watcher.version`).
+
+If you used the plain schedule (`t3sm schedule install` without `--watch`), run that again instead: there is no
+resident watcher to stop. From then on updates are automatic.
+
 ## Update
 
 ```bash
 t3sm update
 ```
 
-It shows your version, asks, runs `npm install -g --install-links github:brunobola-portfolio/t3code-session-manager#semver:*` (npm
-picks the highest release tag; t3sm itself contacts nothing) and prints the old and new versions. It also tells you
-if the background sync needs `t3sm schedule install` again (normally not: a global install stays at the same path).
-A watcher started at logon keeps the old version until you next sign in. `t3sm update --dry-run` only prints the npm
-command. The state folder (`~/.t3code-session-manager`: config, journal, plans) carries over between versions.
-Version 0.1.0 has no `update` command: from it, run the install line above once.
+It looks up the newest `vX.Y.Z` release on GitHub (`git ls-remote`, or `npm view` when git cannot: t3sm's only network
+call; installing then downloads the release with npm, and the optional `/t3sm` plugin install in `t3sm start` goes
+through `claude plugin` after your yes), shows the change (`0.3.0 -> 0.3.1 (patch)`), asks, and installs that tag with
+`npm install -g --install-links github:brunobola-portfolio/t3code-session-manager#v<version>`. Then it stops the
+background watcher (through its own control, never by name), starts it again on the new version and waits up to 2
+minutes for it; if it does not start, the previous version is reinstalled. What is new is printed after the update,
+from the CHANGELOG it installed; `t3sm changelog` shows it again later (`--since <version>` for several releases).
+t3sm never installs an older version than the one you have. Every update is journaled. The state folder
+(`~/.t3code-session-manager`: config, journal, plans) carries over between versions.
+
+```bash
+t3sm update --check            # only look: installed, newest, patch/minor/major, source, automatic updates
+t3sm update --dry-run          # what would be installed; changes nothing
+t3sm update --from D:\Work\t3code-session-manager   # from a checkout on this computer (its vX.Y.Z tags on main)
+t3sm update --source github    # back to GitHub
+t3sm update --auto off         # no automatic updates (on: the default)
+```
+
+**Automatic updates.** Once a day the background watcher (`t3sm schedule install --watch`) looks for a newer release
+of the same source. A patch or minor release (0.x minors included) is installed by itself, the same way, in a
+separate hidden process; a major release is only announced (a notification, and `t3sm update --check`): run
+`t3sm update` to install it. An update that fails or is interrupted shows in `t3sm status` as a need; one that was
+rolled back (the previous version runs again) as worth knowing. The automatic check never tries a rolled-back version
+again; `t3sm update` can still install it on purpose. Offline, nothing happens until the network is back.
+`t3sm update --auto off` turns this off.
+
+**From a folder.** `--from <folder>` takes a local checkout (a drive path such as `D:\Work\t3code-session-manager` on Windows; a network
+folder is refused) and installs its newest `vX.Y.Z` tag on `main` (`master` when there is no `main`), showing that
+tag's CHANGELOG first. The folder is remembered for later updates once the new version is in; `--source github`
+switches back. Version 0.1.0 has no `update` command, and 0.2.x's only installs from GitHub: from them, install once by
+hand ([Upgrading from 0.2.x](#upgrading-from-02x)).
 
 ## Run it with npx (no install)
 
 ```bash
-npx -y github:brunobola-portfolio/t3code-session-manager#v0.2.1 doctor
+npx -y github:brunobola-portfolio/t3code-session-manager#v0.3.0 doctor
 ```
 
 Every command works this way: replace `doctor` with `plan`, `apply`, and so on. The first run downloads and builds
@@ -86,8 +144,10 @@ To update the plugin: `/plugin marketplace update t3code-session-manager`.
 
 ## Uninstall
 
-1. Stop the background sync, if you installed it: `t3sm schedule remove` (it also removes the Windows task file or
-   the LaunchAgent; on Linux, the `# t3sm` crontab line).
+1. Stop the background sync, if you installed it: `t3sm schedule remove` (it stops the running watcher the safe way,
+   then removes the Windows task and its file, the LaunchAgent, or on Linux the `# t3sm` crontab lines; it exits 1
+   with the watcher's pid if that is still running). Do this before `npm uninstall`, or the scheduler keeps starting a
+   command that no longer exists.
 2. Optional: undo runs you do not want to keep. `t3sm runs` lists them, `t3sm rollback --run <id>` undoes one
    (converted files and merge revisions are deleted while unchanged, quarantined folders move back, project defaults
    are restored). Imported threads stay in T3 Code; delete or archive them there if you like.

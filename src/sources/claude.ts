@@ -1,4 +1,4 @@
-import { type Dirent } from "node:fs";
+import { createReadStream, type Dirent } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { basename, join } from "node:path";
 import type { DiscoveredSession, SessionFlag } from "../core/types.ts";
@@ -6,7 +6,7 @@ import { statSafe } from "../core/fsutil.ts";
 import { expandHome } from "../core/paths.ts";
 import { isActive } from "../core/activity.ts";
 import { createDiscoveryCache, readCachedMtimes } from "./cache.ts";
-import { isNum, isoOrNull, isStrOrNull, scanJsonl, type ReadOptions } from "./jsonl.ts";
+import { extractText, isNum, isoOrNull, isStrOrNull, scanJsonlChunks, type ReadOptions } from "./jsonl.ts";
 import { isUuid } from "../core/uuid.ts";
 import {
   CWD_SCAN_MAX_BYTES,
@@ -20,7 +20,7 @@ const MIB = 1024 * 1024;
 const OVER_32MIB = 32 * MIB;
 const OVER_4GIB = 4 * 1024 * MIB;
 const BACKUP_DIR = /\.bak(-\d{8}-\d{6})?$/;
-const CACHE_VERSION = 3;
+const CACHE_VERSION = 5; // 5: ScanResult.handoffThreadId and t3Native (4: entrypoint)
 const CACHE_FILE = "claude-discovery.json";
 
 /** Result of scanning one transcript; everything that does not depend on `now`. */
@@ -39,6 +39,23 @@ export interface ScanResult {
    * the last record that is not sidechain, meta or compact summary; null when none carries one (T3 then uses the stem).
    */
   sessionId: string | null;
+  /** `entrypoint` of the first record that carries one (cli, claude-vscode, sdk-py...); null when none does. */
+  entrypoint: string | null;
+  /** The first entrypoint is exactly "t3-code": T3 Code started this session (an imported one continued in T3 is not). */
+  t3Native: boolean;
+  /** First `Thread: <uuid>` in user or system message text within the first 200 records (T3's handoff message); else null. */
+  handoffThreadId: string | null;
+}
+
+const HANDOFF_MAX_RECORDS = 200;
+const HANDOFF_THREAD_RE = /\bThread: ([0-9a-f-]{36})\b/;
+
+/** Text of a user or system record (message.content, or a system record's own content). */
+function handoffText(o: Record<string, unknown>): string {
+  if (o.type !== "user" && o.type !== "system") return "";
+  const m = o.message;
+  const fromMessage = m !== null && typeof m === "object" ? extractText((m as { content?: unknown }).content) : "";
+  return fromMessage !== "" ? fromMessage : extractText(o.content);
 }
 
 /** A user record whose content is only tool_result blocks is tool plumbing, not a user message. */
@@ -50,12 +67,21 @@ function isToolResultOnly(content: unknown): boolean {
 /**
  * Stream a transcript once (shared byte-exact scanner). The file is never loaded whole.
  */
-export async function scanTranscript(path: string, readOpts: ReadOptions = {}): Promise<ScanResult> {
+export function scanTranscript(path: string, readOpts: ReadOptions = {}): Promise<ScanResult> {
+  return scanTranscriptChunks(createReadStream(path, readOpts) as AsyncIterable<Buffer>);
+}
+
+/**
+ * scanTranscript over any byte stream: the same measure discovery takes (a faithful copy is measured from its text
+ * before it is written, so the activity journaled for it is exactly what discovery reports for its source).
+ */
+export async function scanTranscriptChunks(chunks: AsyncIterable<Buffer>): Promise<ScanResult> {
   const r: ScanResult = {
     cwd: null, startedAt: null, updatedAt: null, messageCount: 0, visibleUserCount: 0,
     corruptLines: 0, cwdOffsetBytes: 0, cwdReadable: false, sessionId: null,
+    entrypoint: null, t3Native: false, handoffThreadId: null,
   };
-  const totals = await scanJsonl(path, readOpts, (o, info) => {
+  const totals = await scanJsonlChunks(chunks, (o, info) => {
     if (r.cwd === null && typeof o.cwd === "string" && o.cwd !== "") {
       r.cwd = o.cwd;
       r.cwdOffsetBytes = info.offset;
@@ -63,6 +89,14 @@ export async function scanTranscript(path: string, readOpts: ReadOptions = {}): 
       // file, and a record only parses once complete. So a cwd record is readable iff it ends
       // (newline included) at byte <= 1 MiB, and it is among the first 1000 lines (blank lines count).
       r.cwdReadable = info.offset <= CWD_SCAN_MAX_BYTES && info.recordIndex <= CWD_SCAN_MAX_RECORDS;
+    }
+    if (r.entrypoint === null && typeof o.entrypoint === "string" && o.entrypoint !== "") {
+      r.entrypoint = o.entrypoint;
+      r.t3Native = o.entrypoint === "t3-code";
+    }
+    if (r.handoffThreadId === null && info.recordIndex <= HANDOFF_MAX_RECORDS) {
+      const text = handoffText(o);
+      if (text !== "") r.handoffThreadId = HANDOFF_THREAD_RE.exec(text)?.[1] ?? null;
     }
     const hidden = o.isSidechain === true || o.isMeta === true || o.isCompactSummary === true;
     if (!hidden && typeof o.sessionId === "string" && o.sessionId.trim() !== "") r.sessionId = o.sessionId.trim();
@@ -104,7 +138,8 @@ function isValidResult(r: unknown): r is ScanResult {
   const o = r as Record<string, unknown>;
   return isStrOrNull(o.cwd) && isStrOrNull(o.startedAt) && isStrOrNull(o.updatedAt) &&
     isNum(o.messageCount) && isNum(o.visibleUserCount) && isNum(o.corruptLines) &&
-    isNum(o.cwdOffsetBytes) && typeof o.cwdReadable === "boolean" && isStrOrNull(o.sessionId);
+    isNum(o.cwdOffsetBytes) && typeof o.cwdReadable === "boolean" && isStrOrNull(o.sessionId) && isStrOrNull(o.entrypoint) &&
+    typeof o.t3Native === "boolean" && isStrOrNull(o.handoffThreadId);
 }
 
 export type { ReadOptions };
@@ -243,6 +278,9 @@ export function createClaudeAdapter(opts: ClaudeAdapterOptions = {}): ClaudeAdap
             file,
             flags,
             cwdOffsetBytes: result.cwdOffsetBytes,
+            origin: result.entrypoint?.startsWith("sdk-") ? "automated" : "human",
+            ...(result.entrypoint !== null ? { startedIn: result.t3Native ? "t3" as const : "elsewhere" as const } : {}),
+            ...(result.handoffThreadId !== null ? { t3ThreadId: result.handoffThreadId } : {}),
           };
         }
       }

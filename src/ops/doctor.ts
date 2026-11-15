@@ -19,16 +19,23 @@ import { connectT3, type ProviderInstanceInfo, type T3Api } from "../t3/api.ts";
 import { checkCompat, TESTED_VERSIONS } from "../t3/compat.ts";
 import { defaultRunner } from "../t3/auth.ts";
 import { redact } from "../t3/errors.ts";
-import { describeError, oneLine } from "../cli/errors.ts";
+import { describeError, oneLine } from "./errorCodes.ts";
+import type { Lang } from "../assistant/i18n.ts";
+import { cliT, type CliKey } from "../i18n/cli.ts";
 import { STOP_SIGNALS, futureLeftovers } from "../apply/apply.ts";
 import { discoverAccountHomes, formatSources, nodeDiscoveryEnv, resolveAccounts, type DiscoveredHome } from "./discoverAccounts.ts";
 import { findBackupDirs, findOrphanedQuarantine, QUARANTINE_DIR, type OrphanedItem } from "./quarantine.ts";
 import { defaultBinPath, realRunner, scheduleSpec, scheduleStatus } from "./schedule.ts";
 import { pidAlive, readHeartbeat, type Heartbeat } from "./watch.ts";
 import { readMergePending } from "./merge.ts";
+import { PLUGIN_ID, packageVersion, readPluginState, type PluginState } from "./plugin.ts";
+import { installChangedAt, installRoot, installStamp, type InstallStamp } from "../core/version.ts";
+import { watcherHealth } from "./watcherHealth.ts";
 import { allAdapters, sessionForms, sessionIdsInT3 } from "../sources/registry.ts";
 import { countCodexSessions } from "../sources/codex.ts";
 import type { Availability, FileTime } from "../sources/types.ts";
+import { shownAccountName, shownText } from "../plan/names.ts";
+import { maskEmail, maskEmailsIn } from "../core/mask.ts";
 
 export interface SignalSource {
   once(ev: "SIGINT" | "SIGTERM" | "SIGHUP", fn: () => void): unknown;
@@ -47,7 +54,60 @@ export interface HarnessStatus {
 }
 
 export type CheckStatus = "ok" | "warn" | "fail" | "skip";
-export interface Check { id: string; status: CheckStatus; message: string; fix?: string }
+/**
+ * What a check found, for a screen that words it itself (the guided assistant) instead of reading the English message:
+ * merge-pending: sessions continued in a terminal, sessions with work on a side branch, when they were counted (ISO);
+ * harness:<agent>: the agent, its sessions (null: not counted for this agent), unreadable files, and whether T3 Code
+ * lacks the agent's own instance for sessions that need it. Additive: `--json` shows it too.
+ */
+export type CheckData =
+  | { continued: number; sideBranch: number; at: string }
+  | { harness: string; sessions: number | null; readErrors: number; noInstance: boolean };
+
+/**
+ * One piece of a check's text for the screen, in the user's language: a catalogue key (src/i18n/messages.*.ts), its
+ * values (a value may itself be parts, worded in the same language), literal punctuation before it (`sep`), and `cap`
+ * to start it with a capital. A value named `<x>Ms` (a duration) also gives `<x>` ("3 h", "2 days").
+ */
+export interface SayPart { key: CliKey; vars?: Record<string, string | number | SayPart[]>; sep?: string; cap?: boolean }
+
+/**
+ * A check. `message` and `fix` are English (what --json prints, unchanged); `say` and `sayFix` word the same text from
+ * the catalogues for the screen (English gives exactly `message` and `fix`). --json leaves `say` and `sayFix` out.
+ */
+export interface Check { id: string; status: CheckStatus; message: string; fix?: string; data?: CheckData; say?: SayPart[]; sayFix?: SayPart[] }
+
+/** A duration the way doctor words it: minutes under an hour, hours under two days, then days. */
+function ageText(ms: number, lang: Lang): string {
+  const m = Math.round(ms / 60_000);
+  if (m < 60) return cliT(lang, "doctor.age.min", { n: m });
+  const h = Math.round(m / 60);
+  return h < 48 ? cliT(lang, "doctor.age.h", { n: h }) : cliT(lang, "doctor.age.days", { n: Math.round(h / 24) });
+}
+
+/** Parts as one text in `lang`. */
+export function sayText(parts: SayPart[], lang: Lang): string {
+  return parts.map((p) => {
+    const vars: Record<string, string | number> = {};
+    for (const [k, v] of Object.entries(p.vars ?? {})) {
+      vars[k] = Array.isArray(v) ? sayText(v, lang) : v;
+      if (/Ms$/.test(k) && typeof v === "number") vars[k.slice(0, -2)] = ageText(v, lang);
+    }
+    const text = cliT(lang, p.key, vars);
+    return (p.sep ?? "") + (p.cap ? text.replace(/^./, (c) => c.toUpperCase()) : text);
+  }).join("");
+}
+
+const part = (key: CliKey, vars?: SayPart["vars"], sep?: string): SayPart => ({ key, ...(vars ? { vars } : {}), ...(sep !== undefined ? { sep } : {}) });
+
+/** A check worded from the catalogue: its English message and fix, and the parts the screen words in any language. */
+function said(id: string, status: CheckStatus, msg: SayPart[], fix?: SayPart[], data?: CheckData): Check {
+  return {
+    id, status, message: sayText(msg, "en"), say: msg,
+    ...(fix && fix.length > 0 ? { fix: sayText(fix, "en"), sayFix: fix } : {}),
+    ...(data !== undefined ? { data } : {}),
+  };
+}
 
 export interface DoctorDeps {
   home: string;
@@ -104,6 +164,15 @@ export interface DoctorDeps {
   /** `missing`: paths in the installed command that no longer exist (when the scheduler module reports them). */
   scheduleStatus(): Promise<{ kind: string; installed: boolean; nextRun: string | null; detail: string | null; missing?: string[] }>;
   readHeartbeat(): Promise<Heartbeat | null>;
+  /**
+   * What an install root holds now (null root: this t3sm's own) and when that last changed on disk; null when it cannot
+   * be read. The watcher's heartbeat is compared with it (stale version).
+   */
+  installStamp?(root: string | null): (InstallStamp & { changedAtMs: number | null }) | null;
+  /** This t3sm's version (what an installed plugin is compared with). */
+  packageVersion?: string;
+  /** The t3sm plugin in one Claude account home (reads <home>/plugins/installed_plugins.json; never writes). */
+  pluginState?(accountHome: string): Promise<PluginState>;
   /** Sessions continued in a terminal and waiting for `t3sm merge`, as last counted by sync / merge (cache only). */
   mergePending?(): Promise<{ count: number; orphaned: number; at: string } | null>;
 }
@@ -118,17 +187,10 @@ const DEFAULT_TIMEOUT_MS = 10_000;
 export const CHECK_TIMEOUTS_MS: Readonly<Record<string, number>> = { "future-mtimes": 45_000, harnesses: 30_000 };
 /** The only checks whose throw or timeout is a FAIL: without them t3sm cannot run (or would import wrongly). */
 const CRITICAL_CHECKS = new Set(["node-version", "state-dir", "config", "t3-runtime", "t3-reachable", "t3-version", "t3-cli", "t3-token", "instances", "instance-home-drift"]);
-const SLOW_FIX = "Not a problem to fix by itself: run t3sm doctor again (a large home can be slow the first time)";
 const HARNESS_BIN: Record<HarnessId, string> = { claude: "claude", codex: "codex", pi: "pi", opencode: "opencode" };
 const HARNESS_DRIVER: Partial<Record<HarnessId, string>> = { codex: "codex", pi: "pi" };
 
-export function maskEmail(email: string): string {
-  const at = email.lastIndexOf("@");
-  if (at < 1) return "***";
-  return `${email[0]}***@${email.slice(at + 1)}`;
-}
-
-const EMAIL_RE = /([A-Za-z0-9])[A-Za-z0-9._%+-]*@([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,})/g;
+export { maskEmail };
 
 export { pendingMtimePaths };
 
@@ -142,22 +204,13 @@ function bounded(p: Promise<unknown>, ms: number): Promise<void> {
   return Promise.race([p.then(() => {}, () => {}), new Promise<void>((r) => { timer = setTimeout(r, ms); })]).finally(() => clearTimeout(timer));
 }
 
-function plural(n: number, one: string, many = `${one}s`): string {
-  return `${n} ${n === 1 ? one : many}`;
-}
-
-function ago(ms: number): string {
-  const m = Math.round(ms / 60_000);
-  if (m < 60) return `${m} min`;
-  const h = Math.round(m / 60);
-  return h < 48 ? `${h} h` : `${Math.round(h / 24)} days`;
-}
-
 export async function runDoctor(deps: DoctorDeps): Promise<{ checks: Check[] }> {
   const { home, platform } = deps;
   const budgetOf = (id: string): number => deps.checkTimeoutsMs?.[id] ?? CHECK_TIMEOUTS_MS[id] ?? deps.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const t = (p: string) => tildePath(p, home, platform);
-  const openT3 = platform === "win32" ? "Open T3 Code from the Start menu" : "Open T3 Code";
+  const win = platform === "win32";
+  const openT3 = [part(win ? "doctor.fix.openT3.win" : "doctor.fix.openT3.other")];
+  const slowFix = [part("doctor.fix.slow")];
   const checks: Check[] = [];
 
   /** `onTimeout` (optional) builds the check's own result when its budget runs out (e.g. how far a walk got). */
@@ -172,29 +225,32 @@ export async function runDoctor(deps: DoctorDeps): Promise<{ checks: Check[] }> 
       checks.push(...(Array.isArray(r) ? r : [r]));
     } catch (e) {
       if (e instanceof CheckTimeout && onTimeout) { checks.push(onTimeout(budget)); return; }
-      const message = e instanceof CheckTimeout ? `did not finish within ${budget / 1000} s` : oneLine(describeError(e).message.replace(/^Unexpected error: /, ""));
-      if (CRITICAL_CHECKS.has(id)) checks.push({ id, status: "fail", message });
-      else if (e instanceof CheckTimeout) checks.push({ id, status: "warn", message: `${message}; not checked this time`, fix: SLOW_FIX });
-      else checks.push({ id, status: "warn", message });
+      const s = budget / 1000;
+      const msg = e instanceof CheckTimeout ? [part("doctor.say.timeout", { s })] : [part("doctor.say.error", { error: oneLine(describeError(e).message.replace(/^Unexpected error: /, "")) })];
+      if (CRITICAL_CHECKS.has(id)) checks.push(said(id, "fail", msg));
+      else if (e instanceof CheckTimeout) checks.push(said(id, "warn", [part("doctor.say.timeoutWarn", { s })], slowFix));
+      else checks.push(said(id, "warn", msg));
     } finally {
       clearTimeout(timer);
     }
   }
-  const ok = (id: string, message: string): Check => ({ id, status: "ok", message });
-  const skip = (id: string, why: string): Check => ({ id, status: "skip", message: why });
+  const ok = (id: string, ...msg: SayPart[]): Check => said(id, "ok", msg);
+  const skip = (id: string, ...msg: SayPart[]): Check => said(id, "skip", msg);
+  const needsT3 = (id: string): Check => skip(id, part("doctor.say.needsT3"));
+  const needs = (id: string, check: string): Check => skip(id, part("doctor.say.needs", { check }));
 
   // ---------- this machine ----------
   await run("node-version", async () => {
     const [maj = 0, min = 0] = deps.nodeVersion.split(".").map(Number);
     const good = maj > MIN_NODE[0] || (maj === MIN_NODE[0] && min >= MIN_NODE[1]);
-    return good ? ok("node-version", `Node ${deps.nodeVersion}`)
-      : { id: "node-version", status: "fail", message: `Node ${deps.nodeVersion} is too old (t3sm needs ${MIN_NODE.join(".")} or newer)`, fix: "Install Node 22.18 or newer" };
+    return good ? ok("node-version", part("doctor.say.nodeVersion.ok", { version: deps.nodeVersion }))
+      : said("node-version", "fail", [part("doctor.say.nodeVersion.old", { version: deps.nodeVersion, min: MIN_NODE.join(".") })], [part("doctor.fix.nodeVersion")]);
   });
 
   await run("state-dir", async () => {
     const why = await deps.stateWritable();
-    return why === null ? ok("state-dir", `${t(deps.stateDir)} is writable`)
-      : { id: "state-dir", status: "fail", message: `${t(deps.stateDir)} is not writable (${why})`, fix: "Fix the folder's permissions, or point T3SM_HOME at a writable folder" };
+    return why === null ? ok("state-dir", part("doctor.say.stateDir.ok", { dir: t(deps.stateDir) }))
+      : said("state-dir", "fail", [part("doctor.say.stateDir.fail", { dir: t(deps.stateDir), why })], [part("doctor.fix.stateDir")]);
   });
 
   let config: Config | null = null;
@@ -205,13 +261,13 @@ export async function runDoctor(deps: DoctorDeps): Promise<{ checks: Check[] }> 
     } catch (e) {
       configValid = false;
       if (e instanceof ConfigError) {
-        return { id: "config", status: "fail", message: oneLine(e.message.split("\n").slice(0, 2).join(" ")), fix: "Fix config.json, or delete it and run `t3sm accounts --init`" };
+        return said("config", "fail", [part("doctor.say.config.invalid", { error: oneLine(e.message.split("\n").slice(0, 2).join(" ")) })], [part("doctor.fix.config")]);
       }
       throw e;
     }
-    if (config === null) return ok("config", "no config.json yet: commands use the detected accounts (`t3sm accounts --init` writes one)");
+    if (config === null) return ok("config", part("doctor.say.config.none"));
     const c = config as Config;
-    return ok("config", `${plural(c.accounts.length, "account")} (${c.accounts.map((a) => a.id).join(", ")}), default ${c.defaultAccount}`);
+    return ok("config", part("doctor.say.config.ok", { n: c.accounts.length, ids: c.accounts.map((a) => a.id).join(", "), default: c.defaultAccount }));
   });
   let accounts: AccountConfig[] = [];
   try { accounts = config !== null ? (config as Config).accounts : configValid ? await deps.detectAccounts() : []; } catch { accounts = []; }
@@ -220,42 +276,37 @@ export async function runDoctor(deps: DoctorDeps): Promise<{ checks: Check[] }> 
 
   await run("lock", async () => {
     const info = await deps.lockInfo();
-    if (info === null) return ok("lock", "free");
+    if (info === null) return ok("lock", part("doctor.say.lock.free"));
+    const file = t(join(deps.stateDir, "lock"));
     if (info.hostname !== (deps.hostname ?? hostname())) {
       // A shared state folder: the pid means nothing here, and t3sm never takes over another machine's lock.
-      const what = `held by pid ${info.pid} on another machine for ${ago(info.ageMs)}`;
-      return info.ageMs > LOCK_OLD_MS
-        ? { id: "lock", status: "warn", message: what, fix: `If no t3sm runs on that machine any more, delete ${t(join(deps.stateDir, "lock"))}` }
-        : ok("lock", what);
+      const what = part("doctor.say.lock.otherMachine", { pid: info.pid, ageMs: info.ageMs });
+      return info.ageMs > LOCK_OLD_MS ? said("lock", "warn", [what], [part("doctor.fix.lock.otherMachine", { file })]) : ok("lock", what);
     }
-    if (rebootedSince(info.uptimeSec, (deps.uptime ?? uptime)())) {
-      return ok("lock", `left by a run from before the last restart; the next t3sm run takes it over`);
-    }
+    if (rebootedSince(info.uptimeSec, (deps.uptime ?? uptime)())) return ok("lock", part("doctor.say.lock.rebooted"));
     const alive = deps.pidAlive(info.pid);
-    if (!alive) return ok("lock", `left by pid ${info.pid}, which is gone; the next t3sm run takes it over`);
-    if (info.ageMs > LOCK_OLD_MS) {
-      return { id: "lock", status: "warn", message: `held for ${ago(info.ageMs)} by pid ${info.pid}`,
-        fix: `If no t3sm command is running, delete ${t(join(deps.stateDir, "lock"))}` };
-    }
-    return ok("lock", `held by pid ${info.pid} for ${ago(info.ageMs)} (a t3sm run in progress)`);
+    if (!alive) return ok("lock", part("doctor.say.lock.gone", { pid: info.pid }));
+    if (info.ageMs > LOCK_OLD_MS) return said("lock", "warn", [part("doctor.say.lock.old", { ageMs: info.ageMs, pid: info.pid })], [part("doctor.fix.lock.old", { file })]);
+    return ok("lock", part("doctor.say.lock.held", { pid: info.pid, ageMs: info.ageMs }));
   });
 
   let journal: JournalEntry[] = [];
   await run("pending-mtimes", async () => {
     journal = await deps.readJournal();
     const pending = pendingMtimePaths(journal, platform);
-    if (pending.length === 0) return ok("pending-mtimes", "no transcript file time is left bumped");
-    const what = `${plural(pending.length, "transcript file time")} still bumped by an interrupted run`;
-    if (!deps.repair) return { id: "pending-mtimes", status: "warn", message: what, fix: "Run any t3sm command that writes, or t3sm doctor --repair" };
+    if (pending.length === 0) return ok("pending-mtimes", part("doctor.say.pendingMtimes.none"));
+    const what = part("doctor.say.pendingMtimes.left", { n: pending.length });
+    if (!deps.repair) return said("pending-mtimes", "warn", [what], [part("doctor.fix.pendingMtimes")]);
     const r = await deps.repairMtimes();
-    if (r === null) return { id: "pending-mtimes", status: "warn", message: `${what}; another t3sm run holds the lock and restores them itself`, fix: "Run t3sm doctor --repair again when it has finished" };
-    const parts = [`restored ${r.restored.length}`];
-    if (r.missing.length) parts.push(`${r.missing.length} gone`);
-    if (r.skippedModified.length) parts.push(`${r.skippedModified.length} edited since (left alone)`);
+    if (r === null) return said("pending-mtimes", "warn", [what, part("doctor.say.pendingMtimes.busy")], [part("doctor.fix.pendingMtimes.busy")]);
+    const parts = [part("doctor.say.pendingMtimes.restored", { n: r.restored.length })];
+    if (r.missing.length) parts.push(part("doctor.say.pendingMtimes.gone", { n: r.missing.length }, ", "));
+    if (r.skippedModified.length) parts.push(part("doctor.say.pendingMtimes.edited", { n: r.skippedModified.length }, ", "));
     if (r.failed.length) {
-      return { id: "pending-mtimes", status: "warn", message: `${parts.join(", ")}, ${r.failed.length} failed (${r.failed[0]!.error})`, fix: "Close programs holding those transcripts, then run t3sm doctor --repair again" };
+      parts.push(part("doctor.say.pendingMtimes.failed", { n: r.failed.length, error: r.failed[0]!.error }, ", "));
+      return said("pending-mtimes", "warn", parts, [part("doctor.fix.pendingMtimes.failed")]);
     }
-    return ok("pending-mtimes", parts.join(", "));
+    return said("pending-mtimes", "ok", parts);
   });
 
   {
@@ -265,9 +316,9 @@ export async function runDoctor(deps: DoctorDeps): Promise<{ checks: Check[] }> 
     const ahead: FileTime[] = [];
     const leftovers = () => futureLeftovers(ahead, journal, deps.now(), platform);
     const list = (paths: string[]) => `${paths.slice(0, 3).map((p) => t(p)).join(", ")}${paths.length > 3 ? ", ..." : ""}`;
-    const fix = "t3sm cannot know their real time: set each file's modification time back (to its last activity, or to now) when no program is writing it";
+    const fix = [part("doctor.fix.futureMtimes")];
     await run("future-mtimes", async () => {
-      if (!deps.futureMtimes) return ok("future-mtimes", "not checked");
+      if (!deps.futureMtimes) return ok("future-mtimes", part("doctor.say.futureMtimes.unchecked"));
       const src = deps.futureMtimes(effective);
       const horizon = deps.now() + ACTIVE_WINDOW_MS;
       for await (const f of src instanceof Promise ? await src : src) {
@@ -276,24 +327,20 @@ export async function runDoctor(deps: DoctorDeps): Promise<{ checks: Check[] }> 
         if (f.mtimeMs > horizon) ahead.push(f);
       }
       const found = leftovers();
-      if (found.length === 0) return ok("future-mtimes", `no transcript has a file time in the future (${plural(checked, "file")} checked)`);
-      return { id: "future-mtimes", status: "warn",
-        message: `${plural(found.length, "transcript")} ${found.length === 1 ? "has" : "have"} a file time more than 10 minutes in the future, not from a pending t3sm run (${list(found)}); T3 Code skips ${found.length === 1 ? "it" : "them"}`,
-        fix };
+      if (found.length === 0) return ok("future-mtimes", part("doctor.say.futureMtimes.none", { n: checked }));
+      return said("future-mtimes", "warn", [part("doctor.say.futureMtimes.found", { n: found.length, list: list(found) })], fix);
     }, (ms) => {
       stop = true;
       const found = leftovers();
-      const sofar = found.length === 0 ? ", none in the future so far" : `; ${plural(found.length, "transcript")} in the future so far: ${list(found)}`;
-      return { id: "future-mtimes", status: "warn", message: `could not finish checking file times in ${ms / 1000} s (${plural(checked, "file")} checked${sofar})`,
-        fix: found.length === 0 ? SLOW_FIX : fix };
+      const sofar = found.length === 0 ? part("doctor.say.futureMtimes.timeoutNone") : part("doctor.say.futureMtimes.timeoutSome", { n: found.length, list: list(found) });
+      return said("future-mtimes", "warn", [part("doctor.say.futureMtimes.timeout", { s: ms / 1000, n: checked }), sofar], found.length === 0 ? slowFix : fix);
     });
   }
 
   await run("claude-env", async () => {
     const v = deps.env["CLAUDE_CONFIG_DIR"];
-    if (!v) return ok("claude-env", "CLAUDE_CONFIG_DIR is not set in this shell");
-    return { id: "claude-env", status: "warn", message: `T3 Code started from this shell would read ${t(v)} as its default account`,
-      fix: platform === "win32" ? "Start T3 Code from the Start menu, not from this shell" : "Start T3 Code from your desktop launcher, not from this shell" };
+    if (!v) return ok("claude-env", part("doctor.say.claudeEnv.unset"));
+    return said("claude-env", "warn", [part("doctor.say.claudeEnv.set", { dir: t(v) })], [part(win ? "doctor.fix.claudeEnv.win" : "doctor.fix.claudeEnv.other")]);
   });
 
   // ---------- T3 Code ----------
@@ -301,28 +348,28 @@ export async function runDoctor(deps: DoctorDeps): Promise<{ checks: Check[] }> 
   let reachable = false;
   await run("t3-runtime", async () => {
     rt = await deps.readRuntime();
-    if (rt === null) return { id: "t3-runtime", status: "fail", message: "no usable ~/.t3/userdata/server-runtime.json (T3 Code never ran as this user?)", fix: openT3 };
-    return ok("t3-runtime", `T3 Code ${rt.serverVersion} at ${rt.origin}`);
+    if (rt === null) return said("t3-runtime", "fail", [part("doctor.say.t3Runtime.none")], openT3);
+    return ok("t3-runtime", part("doctor.say.t3Runtime.ok", { version: rt.serverVersion, origin: rt.origin }));
   });
   await run("t3-reachable", async () => {
-    if (rt === null) return skip("t3-reachable", "needs t3-runtime");
+    if (rt === null) return needs("t3-reachable", "t3-runtime");
     reachable = await deps.probe(rt);
-    return reachable ? ok("t3-reachable", `answering at ${(rt as ServerRuntime).origin}`)
-      : { id: "t3-reachable", status: "fail", message: `T3 Code is not answering at ${(rt as ServerRuntime).origin}`, fix: openT3 };
+    const origin = (rt as ServerRuntime).origin;
+    return reachable ? ok("t3-reachable", part("doctor.say.t3Reachable.ok", { origin }))
+      : said("t3-reachable", "fail", [part("doctor.say.t3Reachable.fail", { origin })], openT3);
   });
   await run("t3-version", async () => {
-    if (!reachable || rt === null) return skip("t3-version", "needs a running T3 Code");
+    if (!reachable || rt === null) return needsT3("t3-version");
     const v = (rt as ServerRuntime).serverVersion;
-    const c = checkCompat(v);
-    if (c === "tested") return ok("t3-version", `${v} (tested)`);
-    if (c === "same-minor") return ok("t3-version", `${v} (same minor as a tested version; t3sm proceeds with a notice)`);
-    return { id: "t3-version", status: "fail", message: `${v} is untested (tested: ${TESTED_VERSIONS.join(", ")})`, fix: "Update t3sm, or pass --allow-untested to plan and apply" };
+    // Same minor or not, an untested version warns with one wording (as compatGate does when a command connects).
+    if (checkCompat(v) === "tested") return ok("t3-version", part("doctor.say.t3Version.tested", { version: v }));
+    return said("t3-version", "warn", [part("doctor.say.t3Version.untested", { version: v, tested: TESTED_VERSIONS.join(", ") })], [part("doctor.fix.t3Version")]);
   });
   let cli: string | null = null;
   await run("t3-cli", async () => {
     cli = deps.resolveCli();
-    return cli !== null ? ok("t3-cli", t(cli))
-      : { id: "t3-cli", status: "fail", message: "T3 Code's CLI (t3) is not in ~/.t3/bin or on PATH", fix: "Reinstall T3 Code, or add ~/.t3/bin to PATH" };
+    return cli !== null ? ok("t3-cli", part("doctor.say.t3Cli.ok", { path: t(cli) }))
+      : said("t3-cli", "fail", [part("doctor.say.t3Cli.missing")], [part("doctor.fix.t3Cli")]);
   });
 
   // ---- the one T3 session: revoked when the T3 checks end, or on Ctrl+C / SIGTERM (bounded), never awaited unboundedly.
@@ -352,18 +399,18 @@ export async function runDoctor(deps: DoctorDeps): Promise<{ checks: Check[] }> 
   let threadIdsP: Promise<Set<string> | null> | null = null;
   const instances = (): Promise<ProviderInstanceInfo[]> => (instancesP ??= (live as T3Api).providerInstances());
   const claudeInstances = async () => (await instances()).filter((i) => i.driver === "claudeAgent");
-  const needApi = (id: string) => skip(id, reachable ? "needs t3-token" : "needs a running T3 Code");
+  const needApi = (id: string) => (reachable ? needs(id, "t3-token") : needsT3(id));
 
   try {
     await run("t3-token", async () => {
-      if (!reachable) return skip("t3-token", "needs a running T3 Code");
-      if (cli === null) return skip("t3-token", "needs t3-cli");
+      if (!reachable) return needsT3("t3-token");
+      if (cli === null) return needs("t3-token", "t3-cli");
       for (const s of STOP_SIGNALS) signals.once(s, onSignal);
       listening = true;
       connecting = deps.connect();
       const a = await connecting;
       api = a;
-      return ok("t3-token", "issued a read-only session and a websocket ticket (revoked when doctor ends)");
+      return ok("t3-token", part("doctor.say.t3Token.ok"));
     });
     if (checks.at(-1)?.id === "t3-token" && checks.at(-1)?.status === "ok") live = api;
     // The session ids T3 holds (read-only; for harness:codex's "already in T3"), fetched while the session is open.
@@ -374,7 +421,7 @@ export async function runDoctor(deps: DoctorDeps): Promise<{ checks: Check[] }> 
     await run("instances", async () => {
       if (live === null) return needApi("instances");
       const list = await claudeInstances();
-      const problems: string[] = [];
+      const problems: SayPart[] = [];
       const seen = new Map<string, string[]>();
       for (const i of list) {
         if (i.homePath === null) continue;
@@ -384,60 +431,74 @@ export async function runDoctor(deps: DoctorDeps): Promise<{ checks: Check[] }> 
       for (const [, ids] of seen) {
         if (ids.length < 2) continue;
         const h = list.find((i) => i.instanceId === ids[0])!.homePath!;
-        problems.push(`${ids.slice(0, -1).join(", ")} and ${ids.at(-1)} both read ${t(h)}`);
+        problems.push(part("doctor.say.instances.shared", { ids: ids.slice(0, -1).join(", "), last: ids.at(-1)!, home: t(h) }, problems.length > 0 ? "; " : undefined));
       }
-      if (problems.length) return { id: "instances", status: "fail", message: problems.join("; "), fix: "Keep one instance per account home: remove the extra one in T3 Code settings (Providers)" };
+      if (problems.length) return said("instances", "fail", problems, [part("doctor.fix.instances.shared")]);
       const missing = expanded.filter((a) => !list.some((i) => i.homePath !== null && sameCwd(i.homePath, a.home, platform)));
       if (missing.length) {
-        return { id: "instances", status: "warn", message: `no T3 instance for ${missing.map((a) => `${a.id} (${t(a.home)})`).join(", ")}`, fix: "Run t3sm accounts --apply (or t3sm apply creates it)" };
+        return said("instances", "warn", [part("doctor.say.instances.missing", { list: missing.map((a) => `${a.id} (${t(a.home)})`).join(", ") })], [part("doctor.fix.instances.missing")]);
       }
-      return ok("instances", `${plural(expanded.length, "account")}, each with its own instance`);
+      return ok("instances", part("doctor.say.instances.ok", { n: expanded.length }));
     });
 
     await run("instance-home-drift", async () => {
       if (live === null) return needApi("instance-home-drift");
       const def = (await claudeInstances()).find((i) => i.instanceId === "claudeAgent");
-      if (!def) return ok("instance-home-drift", "T3 Code has no default Claude instance (claudeAgent)");
-      if (def.homePath === null) return ok("instance-home-drift", "claudeAgent's home is not reported yet");
-      if (sameCwd(def.homePath, `${home}/.claude`, platform)) return ok("instance-home-drift", "claudeAgent reads ~/.claude");
+      if (!def) return ok("instance-home-drift", part("doctor.say.defaultInstance.none"));
+      if (def.homePath === null) return ok("instance-home-drift", part("doctor.say.homeDrift.unreported"));
+      if (sameCwd(def.homePath, `${home}/.claude`, platform)) return ok("instance-home-drift", part("doctor.say.homeDrift.ok"));
       if (Object.hasOwn((await (live as T3Api).getConfig()).settings.providerInstances, "claudeAgent")) {
-        return { id: "instance-home-drift", status: "fail", message: `T3 Code's default Claude instance is configured to read ${t(def.homePath)} instead of ~/.claude (T3 Code settings, Providers)`,
-          fix: "Change it in T3 Code settings (Providers), or run t3sm accounts --apply" };
+        return said("instance-home-drift", "fail", [part("doctor.say.homeDrift.configured", { home: t(def.homePath) })], [part("doctor.fix.homeDrift.configured")]);
       }
-      return { id: "instance-home-drift", status: "fail", message: `T3 Code's default Claude instance reads ${t(def.homePath)} instead of ~/.claude (T3 Code was started from a shell with CLAUDE_CONFIG_DIR set)`,
-        fix: platform === "win32" ? "Close T3 Code and open it from the Start menu" : "Close T3 Code and open it from your desktop launcher" };
+      return said("instance-home-drift", "fail", [part("doctor.say.homeDrift.shell", { home: t(def.homePath) })], [part(win ? "doctor.fix.homeDrift.win" : "doctor.fix.homeDrift.other")]);
     });
 
     await run("instance-unpinned", async () => {
       if (live === null) return needApi("instance-unpinned");
       const def = (await claudeInstances()).find((i) => i.instanceId === "claudeAgent");
-      if (!def) return ok("instance-unpinned", "T3 Code has no default Claude instance (claudeAgent)");
+      if (!def) return ok("instance-unpinned", part("doctor.say.defaultInstance.none"));
       const explicit = Object.hasOwn((await (live as T3Api).getConfig()).settings.providerInstances, "claudeAgent");
-      if (explicit) return ok("instance-unpinned", "claudeAgent has an explicit home in T3 Code's settings");
-      return { id: "instance-unpinned", status: "warn", message: "claudeAgent has no explicit home in T3 Code's settings: a T3 Code started with CLAUDE_CONFIG_DIR set would read another account",
-        fix: "Run t3sm accounts --apply" };
+      if (explicit) return ok("instance-unpinned", part("doctor.say.unpinned.ok"));
+      return said("instance-unpinned", "warn", [part("doctor.say.unpinned.warn")], [part("doctor.fix.unpinned")]);
     });
 
     await run("instance-accounts", async () => {
       if (live === null) return needApi("instance-accounts");
       const list = await claudeInstances();
-      if (list.length === 0) return { id: "instance-accounts", status: "warn", message: "T3 Code has no Claude instance", fix: "Enable Claude in T3 Code settings (Providers)" };
-      const issues: string[] = [];
-      const fixes: string[] = [];
+      if (list.length === 0) return said("instance-accounts", "warn", [part("doctor.say.instanceAccounts.none")], [part("doctor.fix.instanceAccounts.none")]);
+      const issues: SayPart[] = [];
+      const fixes: CliKey[] = [];
+      // Each account by its name (config.json's display name, else T3 Code's), never a bare id when it has one.
+      const baseName = (i: { instanceId: string; displayName: string }): string =>
+        shownAccountName(effective.accounts.find((a) => a.id === i.instanceId)?.displayName || i.displayName || i.instanceId);
+      // Two accounts with the same name are told apart by their id.
+      const nameCount = new Map<string, number>();
+      for (const i of list) nameCount.set(baseName(i), (nameCount.get(baseName(i)) ?? 0) + 1);
+      const nameOf = (i: { instanceId: string; displayName: string }): string => {
+        const n = baseName(i);
+        return (nameCount.get(n) ?? 0) > 1 && n !== i.instanceId ? `${n} (${shownText(i.instanceId, 40)})` : n;
+      };
       const byEmail = new Map<string, string[]>();
-      for (const i of list) if (i.email) byEmail.set(i.email.toLowerCase(), [...(byEmail.get(i.email.toLowerCase()) ?? []), i.instanceId]);
+      for (const i of list) if (i.email) byEmail.set(i.email.toLowerCase(), [...(byEmail.get(i.email.toLowerCase()) ?? []), nameOf(i)]);
+      const sep = (): string | undefined => (issues.length > 0 ? "; " : undefined);
       for (const [email, ids] of byEmail) {
         if (ids.length < 2) continue;
-        issues.push(`${ids.join(" and ")} share ${maskEmail(email)} (one subscription)`);
-        fixes.push("sign one of them in to the other subscription (`claude` with CLAUDE_CONFIG_DIR set to its home, then /login)");
+        issues.push(part("doctor.say.instanceAccounts.shared", { ids: ids.join(" and "), email: maskEmail(email) }, sep()));
+        fixes.push("doctor.fix.instanceAccounts.shared");
       }
       for (const i of list) {
-        if (i.authStatus === "unauthenticated") { issues.push(`${i.instanceId} is signed out`); fixes.push("sign it in from T3 Code"); }
-        else if (i.availability === "unavailable") { issues.push(`${i.instanceId} is unavailable`); fixes.push("check it in T3 Code settings (Providers)"); }
+        if (i.authStatus === "unauthenticated") { issues.push(part("doctor.say.instanceAccounts.signedOut", { id: nameOf(i) }, sep())); fixes.push("doctor.fix.instanceAccounts.signedOut"); }
+        else if (i.availability === "unavailable") { issues.push(part("doctor.say.instanceAccounts.unavailable", { id: nameOf(i) }, sep())); fixes.push("doctor.fix.instanceAccounts.unavailable"); }
       }
-      const summary = list.map((i) => `${i.instanceId} ${i.email ? maskEmail(i.email) : i.authStatus === "unauthenticated" ? "(signed out)" : "(no email)"}`).join(", ");
-      if (issues.length) return { id: "instance-accounts", status: "warn", message: `${issues.join("; ")} [${summary}]`, fix: [...new Set(fixes)].join("; ").replace(/^./, (c) => c.toUpperCase()) };
-      return ok("instance-accounts", summary);
+      const summary = list.map((i, n) => part(
+        i.email ? "doctor.say.instanceAccounts.email" : i.authStatus === "unauthenticated" ? "doctor.say.instanceAccounts.signedOutShort" : "doctor.say.instanceAccounts.noEmail",
+        { id: nameOf(i), ...(i.email ? { email: maskEmail(i.email) } : {}) }, n > 0 ? ", " : undefined,
+      ));
+      if (issues.length) {
+        const fix = [...new Set(fixes)].map((k, n): SayPart => ({ ...part(k, undefined, n > 0 ? "; " : undefined), ...(n === 0 ? { cap: true } : {}) }));
+        return said("instance-accounts", "warn", [...issues, part("doctor.say.instanceAccounts.summary", { summary })], fix);
+      }
+      return said("instance-accounts", "ok", summary);
     });
   } finally {
     // Revoke the session as soon as T3 is no longer needed: an open one within closeTimeoutMs; a connect that outlived
@@ -451,10 +512,10 @@ export async function runDoctor(deps: DoctorDeps): Promise<{ checks: Check[] }> 
     const instHomes = instancesP ? (await (instancesP as Promise<ProviderInstanceInfo[]>).catch(() => [] as ProviderInstanceInfo[])).filter((i) => i.driver === "claudeAgent" && i.homePath !== null).map((i) => i.homePath!) : [];
     const found = await deps.discover(instHomes);
     const missing = found.filter((f) => !expanded.some((a) => sameCwd(a.home, f.home, platform)));
-    if (missing.length === 0) return ok("accounts-undiscovered", `${plural(found.length, "account")} found on this machine, all ${config ? "in config.json" : "detected"}`);
+    if (missing.length === 0) return ok("accounts-undiscovered", part(config ? "doctor.say.undiscovered.ok" : "doctor.say.undiscovered.okDetected", { n: found.length }));
     const list = missing.map((f) => `${t(f.home)} (${formatSources(f)})`).join(", ");
-    return { id: "accounts-undiscovered", status: "warn", message: `found ${list} but ${missing.length === 1 ? "it is" : "they are"} not ${config ? "in config.json" : "detected by default"}`,
-      fix: config ? "Add it to config.json, or rewrite the file with `t3sm accounts --init --force`" : "Run `t3sm accounts --init` to write config.json with every discovered account" };
+    return said("accounts-undiscovered", "warn", [part(config ? "doctor.say.undiscovered.missing" : "doctor.say.undiscovered.missingDetected", { list, n: missing.length })],
+      [part(config ? "doctor.fix.undiscovered" : "doctor.fix.undiscovered.init")]);
   });
 
   await run("backups-present", async () => {
@@ -464,16 +525,15 @@ export async function runDoctor(deps: DoctorDeps): Promise<{ checks: Check[] }> 
       const dirs = await deps.findBackupDirs(a.home);
       if (dirs.length) { n += dirs.length; per.push(`${t(a.home)}: ${dirs.length}`); }
     }
-    if (n === 0) return ok("backups-present", "no backup folders inside projects/");
-    return { id: "backups-present", status: "warn", message: `${plural(n, "backup folder")} inside projects/ (${per.join(", ")}); they can show up as duplicate sessions`, fix: "Run t3sm quarantine (reversible)" };
+    if (n === 0) return ok("backups-present", part("doctor.say.backups.none"));
+    return said("backups-present", "warn", [part("doctor.say.backups.found", { n, per: per.join(", ") })], [part("doctor.fix.backups")]);
   });
 
   await run("quarantine-orphans", async () => {
     const items = await deps.findOrphanedQuarantine(expanded, journal);
-    if (items.length === 0) return ok("quarantine-orphans", "every quarantined item is in the journal");
+    if (items.length === 0) return ok("quarantine-orphans", part("doctor.say.quarantine.ok"));
     const homes = [...new Set(items.map((i) => t(i.accountHome)))];
-    return { id: "quarantine-orphans", status: "warn", message: `${plural(items.length, "item")} in ${homes.map((h) => `${h}/${QUARANTINE_DIR}`).join(", ")} with no journal record (moved by hand, or the journal was lost)`,
-      fix: "Review them by hand: t3sm rollback cannot move them back" };
+    return said("quarantine-orphans", "warn", [part("doctor.say.quarantine.orphans", { n: items.length, dirs: homes.map((h) => `${h}/${QUARANTINE_DIR}`).join(", ") })], [part("doctor.fix.quarantine")]);
   });
 
   // ---------- harnesses ----------
@@ -486,79 +546,110 @@ export async function runDoctor(deps: DoctorDeps): Promise<{ checks: Check[] }> 
       const bin = deps.findBin(HARNESS_BIN[h.id]);
       const version = bin !== null ? await deps.binVersion(bin) : null;
       const name = HARNESS_BIN[h.id];
-      const ver = version ? `; ${version.toLowerCase().startsWith(name) ? version : `${name} ${version}`}` : bin !== null ? `; ${name} on PATH` : "";
+      const versionText = version ? (version.toLowerCase().startsWith(name) ? version : `${name} ${version}`) : null;
+      const ver: SayPart[] = versionText !== null ? [part("doctor.say.harness.version", { version: versionText })] : bin !== null ? [part("doctor.say.harness.onPath", { name })] : [];
+      const counted0 = h.importable !== undefined && h.convertible !== undefined;
+      const sessions = counted0 ? h.importable! + h.convertible! : h.available ? null : 0;
+      const data = (noInstance: boolean): CheckData => ({ harness: h.id, sessions, readErrors: h.readErrors ?? 0, noInstance });
       if (h.problem) {
-        return { id, status: "warn", message: `${h.problem}${ver}; its sessions are not converted`, fix: `Check for a t3sm update that supports this ${name} version (docs/harnesses.md lists the tested one)` };
+        return said(id, "warn", [part("doctor.say.harness.problem", { problem: h.problem }), ...ver, part("doctor.say.harness.notConverted")], [part("doctor.fix.harness.problem", { name })], data(false));
       }
-      if (!h.available) return ok(id, `no sessions on this machine${ver}`);
+      if (!h.available) return said(id, "ok", [part("doctor.say.harness.none"), ...ver], undefined, data(false));
       // Codex: sessions by how they reach T3 (native import, conversion of compressed rollouts, skipped).
       const counted = h.importable !== undefined && h.convertible !== undefined && h.skipped !== undefined;
       const readErrors = h.readErrors ?? 0;
       const inT3 = counted && h.sessionIds && threadIdsP ? await (threadIdsP as Promise<Set<string> | null>) : null;
       const already = inT3 ? (h.sessionIds ?? []).filter((x) => sessionForms(h.id, x).some((f) => inT3.has(f))).length : null;
-      const counts = counted
-        ? `${version ? ver.slice(2) : bin !== null ? `${name} on PATH` : "sessions found"} · ${h.importable} importable natively, ${h.convertible} convertible (compressed), ${h.skipped} skipped`
-          + (readErrors > 0 ? `, ${plural(readErrors, "read error")}` : "") + (already !== null ? `; ${already} already in T3 Code` : "")
+      const counts: SayPart[] | null = counted
+        ? [
+          versionText !== null ? part("doctor.say.harness.countsVersion", { version: versionText }) : bin !== null ? part("doctor.say.harness.countsOnPath", { name }) : part("doctor.say.harness.countsFound"),
+          part("doctor.say.harness.counts", { importable: h.importable!, convertible: h.convertible!, skipped: h.skipped! }),
+          ...(readErrors > 0 ? [part("doctor.say.harness.readErrors", { n: readErrors })] : []),
+          ...(already !== null ? [part("doctor.say.harness.already", { n: already })] : []),
+        ]
         : null;
       const driver = HARNESS_DRIVER[h.id];
       // Converted sessions become Claude threads: only native imports need the harness's own T3 instance.
       const needsDriver = !counted || (h.importable ?? 0) > 0;
       const noDriver = driver !== undefined && needsDriver && providerDrivers !== null && !providerDrivers.some((p) => p.driver === driver && p.enabled);
-      const enableFix = `Enable ${driver === "codex" ? "Codex" : "Pi"} in T3 Code settings (Providers), then run t3sm plan again`;
-      if (noDriver && counts === null) {
-        return { id, status: "warn", message: `sessions found but T3 Code has no ${driver} instance; they will be skipped`, fix: enableFix };
-      }
+      const enableFix = part("doctor.fix.harness.enable", { agent: driver === "codex" ? "Codex" : "Pi" });
+      if (noDriver && counts === null) return said(id, "warn", [part("doctor.say.harness.noDriver", { driver: driver! })], [enableFix], data(true));
       if (counts !== null && (noDriver || readErrors > 0)) {
         // Every problem is reported: one warn, messages and fixes combined.
         const fixes = [
           ...(noDriver ? [enableFix] : []),
-          ...(readErrors > 0 ? ["Some Codex files could not be read (corrupt, cut short or unsupported); `t3sm scan` counts them as read errors. See docs/troubleshooting.md"] : []),
+          ...(readErrors > 0 ? [part("doctor.fix.harness.readErrors", undefined, noDriver ? ". " : undefined)] : []),
         ];
-        const message = noDriver ? `${counts}; T3 Code has no ${driver} instance, so the ${h.importable} native sessions will be skipped` : counts;
-        return { id, status: "warn", message, fix: fixes.join(". ") };
+        const message = noDriver ? [...counts, part("doctor.say.harness.noDriverCounts", { driver: driver!, n: h.importable! })] : counts;
+        return said(id, "warn", message, fixes, data(noDriver));
       }
-      const unchecked = driver && providerDrivers === null ? " (T3 instance not checked: T3 Code unreachable)" : "";
-      return ok(id, counts !== null ? `${counts}${unchecked}` : `sessions found${ver}${unchecked}`);
+      const unchecked = driver && providerDrivers === null ? [part("doctor.say.harness.unchecked")] : [];
+      return said(id, "ok", counts !== null ? [...counts, ...unchecked] : [part("doctor.say.harness.found"), ...ver, ...unchecked], undefined, data(false));
     });
   }
+
+  // ---------- the /t3sm commands inside T3 Code ----------
+  await run("t3sm-plugin", async () => {
+    const read = deps.pluginState, version = deps.packageVersion;
+    if (!read || !version) return skip("t3sm-plugin", part("doctor.say.plugin.unchecked"));
+    const states = await Promise.all(effective.accounts.map(async (a) => ({ id: shownAccountName(a.displayName || a.id), state: await read(expandHome(a.home, home)) })));
+    if (states.length === 0) return skip("t3sm-plugin", part("doctor.say.plugin.noAccounts"));
+    const stateWords = (s: PluginState): SayPart => s.state === "installed" ? part("status.plugin.installed", { version: s.version })
+      : s.state === "outdated" ? part("status.plugin.outdated", { version: s.version, expected: version, id: PLUGIN_ID }) : part("status.plugin.missing");
+    const line = states.map((x, n) => part("doctor.say.plugin.account", { id: x.id, state: [stateWords(x.state)] }, n > 0 ? "; " : undefined));
+    if (states.some((x) => x.state.state === "outdated")) return said("t3sm-plugin", "warn", line, [part("doctor.fix.plugin", { id: PLUGIN_ID })]);
+    const missing = states.some((x) => x.state.state === "missing");
+    return said("t3sm-plugin", "ok", missing ? [...line, part("doctor.say.plugin.optional")] : line);
+  });
 
   // ---------- background sync ----------
   await run("schedule", async () => {
     const s = await deps.scheduleStatus();
-    if (!s.installed) return ok("schedule", "not installed (optional: `t3sm schedule install` syncs in the background)");
+    if (!s.installed) return ok("schedule", part("doctor.say.schedule.none"));
     if (s.missing && s.missing.length > 0) {
-      return { id: "schedule", status: "warn", message: `installed (${s.kind}), but its command points at ${s.missing.map(t).join(", ")}, which no longer ${s.missing.length === 1 ? "exists" : "exist"}; the scheduled sync cannot start`,
-        fix: "Run t3sm schedule install again from the current t3sm" };
+      return said("schedule", "warn", [part("doctor.say.schedule.missing", { kind: s.kind, paths: s.missing.map(t).join(", "), n: s.missing.length })], [part("doctor.fix.schedule")]);
     }
-    return ok("schedule", `installed (${s.kind})${s.nextRun ? `, next run ${s.nextRun}` : ""}${s.detail && s.kind !== "cron" ? `, ${s.detail}` : ""}`);
+    return said("schedule", "ok", [
+      part("doctor.say.schedule.ok", { kind: s.kind }),
+      ...(s.nextRun ? [part("doctor.say.schedule.next", { next: s.nextRun })] : []),
+      ...(s.detail && s.kind !== "cron" ? [part("doctor.say.schedule.detail", { detail: s.detail })] : []),
+    ]);
   });
 
   await run("sync-watcher", async () => {
     const hb = await deps.readHeartbeat();
-    if (hb === null) return ok("sync-watcher", "no watcher (sync runs on the schedule or by hand)");
-    if (hb.stoppedAt) return ok("sync-watcher", `stopped cleanly at ${hb.stoppedAt}`);
-    const watcherFix = "Start it again with `t3sm sync --watch` (or `t3sm schedule install --watch`)";
-    if (!deps.pidAlive(hb.pid)) return { id: "sync-watcher", status: "warn", message: `watcher pid ${hb.pid} is gone without a clean stop (last cycle ${hb.lastCycleAt ?? "never"})`, fix: watcherFix };
     const now = deps.now();
-    const every = effective.schedule.everyMinutes * 60_000;
-    const slack = 10 * 60_000;
-    const next = hb.nextCycleAt ? Date.parse(hb.nextCycleAt) : NaN;
-    const last = Date.parse(hb.lastCycleAt ?? hb.startedAt);
-    const fresh = Number.isFinite(next) ? now <= next + slack : Number.isFinite(last) && now - last <= 2 * every + slack;
-    const lastTxt = hb.lastCycleAt ? `last cycle ${ago(now - Date.parse(hb.lastCycleAt))} ago` : "no cycle yet";
-    if (fresh) return ok("sync-watcher", `running (pid ${hb.pid}), ${lastTxt}`);
-    if (!reachable) return ok("sync-watcher", `running (pid ${hb.pid}), ${lastTxt}; waiting for T3 Code`);
-    return { id: "sync-watcher", status: "warn", message: `running (pid ${hb.pid}) but stale: ${lastTxt}, next cycle was due ${hb.nextCycleAt ?? "-"}`, fix: `End pid ${hb.pid} and ${watcherFix.replace(/^Start/, "start")}` };
+    // The same classification as `t3sm status` (src/ops/watcherHealth.ts): the two never disagree.
+    const h = watcherHealth(hb, { now, pidAlive: deps.pidAlive, install: (r) => deps.installStamp?.(r) ?? null, everyMinutes: effective.schedule.everyMinutes });
+    const watcherFix = [part("doctor.fix.watcher.start")];
+    if (h.state === "none") return ok("sync-watcher", part("doctor.say.watcher.none"));
+    if (h.state === "stopped") return ok("sync-watcher", part("doctor.say.watcher.stopped", { at: h.stoppedAt }));
+    const restartFix = [part("doctor.fix.watcher.restart", { pid: h.pid })];
+    if (h.state === "restart-lost") return said("sync-watcher", "warn", [part("doctor.say.watcher.restartLost", { at: h.stoppedAt })], [part("doctor.fix.watcher.restartLost")]);
+    if (h.state === "gone") return said("sync-watcher", "warn", [part("doctor.say.watcher.gone", { pid: h.pid, last: h.lastCycleAt ?? [part("doctor.say.watcher.never")] })], watcherFix);
+    if (h.state === "no-version") return said("sync-watcher", "warn", [part("doctor.say.watcher.noVersion", { pid: h.pid })], restartFix);
+    if (h.state === "no-stamp") return said("sync-watcher", "warn", [part("doctor.say.watcher.noStamp", { pid: h.pid, version: h.version })], restartFix);
+    if (h.state === "stale-version") {
+      return said("sync-watcher", "warn", [part(h.rebuilt ? "doctor.say.watcher.staleRebuilt" : "doctor.say.watcher.stale", { pid: h.pid, version: h.version, installed: h.installed })], restartFix);
+    }
+    const pending = h.pendingVersion !== null ? [part("doctor.say.watcher.pending", { version: h.pendingVersion })] : [];
+    const last = [h.lastCycleAt ? part("doctor.say.watcher.lastCycle", { ageMs: now - Date.parse(h.lastCycleAt) }) : part("doctor.say.watcher.noCycle")];
+    if (h.fresh) return said("sync-watcher", "ok", [part("doctor.say.watcher.running", { pid: h.pid, last }), ...pending]);
+    if (!reachable) return said("sync-watcher", "ok", [part("doctor.say.watcher.running", { pid: h.pid, last }), part("doctor.say.watcher.waitingT3"), ...pending]);
+    return said("sync-watcher", "warn", [part("doctor.say.watcher.late", { pid: h.pid, last, due: h.nextCycleAt ?? "-" })], [part("doctor.fix.watcher.late", { pid: h.pid })]);
   });
 
   await run("merge-pending", async () => {
     const p = deps.mergePending ? await deps.mergePending() : null;
-    if (p === null) return ok("merge-pending", "not counted yet (t3sm sync or t3sm merge counts sessions continued in a terminal)");
-    const orphaned = p.orphaned > 0 ? `${plural(p.orphaned, "session")} ${p.orphaned === 1 ? "has" : "have"} terminal work on a side branch that T3 Code cannot show` : "";
-    if (p.count === 0 && orphaned === "") return ok("merge-pending", `no session continued in a terminal waits for a merge (as of ${p.at})`);
-    const parts = [p.count > 0 ? `${plural(p.count, "session")} continued in a terminal since t3sm imported ${p.count === 1 ? "it" : "them"}; T3 Code does not show that work` : "", orphaned].filter((x) => x !== "");
-    return { id: "merge-pending", status: "warn", message: `${parts.join("; ")} (as of ${p.at})`,
-      fix: p.count > 0 ? "Run t3sm merge to list them, then t3sm merge --all (reversible with t3sm rollback)" : "Run t3sm merge to list them; recover side-branch work in a terminal with claude --resume <id>" };
+    if (p === null) return ok("merge-pending", part("doctor.say.merge.uncounted"));
+    const data: CheckData = { continued: p.count, sideBranch: p.orphaned, at: p.at };
+    if (p.count === 0 && p.orphaned === 0) return said("merge-pending", "ok", [part("doctor.say.merge.none", { at: p.at })], undefined, data);
+    const parts: SayPart[] = [
+      ...(p.count > 0 ? [part("doctor.say.merge.continued", { n: p.count })] : []),
+      ...(p.orphaned > 0 ? [part("doctor.say.merge.sideBranch", { n: p.orphaned }, p.count > 0 ? "; " : undefined)] : []),
+      part("doctor.say.merge.asOf", { at: p.at }),
+    ];
+    return said("merge-pending", "warn", parts, [part(p.count > 0 ? "doctor.fix.merge.continued" : "doctor.fix.merge.sideBranch")], data);
   });
 
   return { checks: checks.map((c) => scrub(c, home)) };
@@ -569,9 +660,17 @@ function scrub(c: Check, home: string): Check {
   const h = home.replace(/[\\/]+$/, "");
   const variants = [...new Set([h, h.replace(/\\/g, "/"), h.replace(/\//g, "\\")])].map((v) => v.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
   const re = new RegExp(`(?:${variants.join("|")})(?=[\\\\/]|\\b|$)`, "gi");
-  const clean = (s: string) => redact(s.replace(EMAIL_RE, (_m, a: string, d: string) => `${a}***@${d}`)).replace(re, "~");
+  // Control and format characters go first, so an invisible character inside an address cannot hide it from the mask.
+  const clean = (s: string) => redact(maskEmailsIn(s.replace(/[\p{Cc}\p{Cf}]/gu, (c) => (c === "\n" ? c : "")))).replace(re, "~");
+  // The screen's wording carries the same values: cleaned the same way.
+  const cleanParts = (ps: SayPart[]): SayPart[] => ps.map((x) => ({
+    ...x, ...(x.vars ? { vars: Object.fromEntries(Object.entries(x.vars).map(([k, v]) => [k, typeof v === "string" ? clean(v) : Array.isArray(v) ? cleanParts(v) : v])) } : {}),
+  }));
   const out: Check = { id: c.id, status: c.status, message: clean(c.message) };
   if (c.fix !== undefined) out.fix = clean(c.fix);
+  if (c.data !== undefined) out.data = c.data;
+  if (c.say !== undefined) out.say = cleanParts(c.say);
+  if (c.sayFix !== undefined) out.sayFix = cleanParts(c.sayFix);
   return out;
 }
 
@@ -673,6 +772,12 @@ export function defaultDoctorDeps(o: DoctorOptions): DoctorDeps {
       return { kind: spec.kind, ...(await scheduleStatus(spec, realRunner)) };
     },
     readHeartbeat: () => readHeartbeat(dir),
+    installStamp: (root) => {
+      const r = root ?? installRoot();
+      try { return { ...installStamp(r), changedAtMs: installChangedAt(r) }; } catch { return null; }
+    },
+    packageVersion: packageVersion(),
+    pluginState: (h) => readPluginState(h, packageVersion()),
     mergePending: () => readMergePending(dir),
     async *futureMtimes(config) {
       // The harnesses t3sm parks files of (native transcripts). Stat only: no transcript is opened, nothing written.

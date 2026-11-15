@@ -28,7 +28,11 @@ npm run release:check          # versions (lockfile too), install pins, repo URL
 ```
 
 Point `T3SM_HOME` at a scratch folder while you experiment, so your real state folder (journal, plans, config) is
-not touched: `T3SM_HOME=$PWD/.spike/state node bin/t3sm.mjs plan`. `.spike/` is ignored by git.
+not touched, and point `HOME` and `USERPROFILE` at a scratch home too: `status`, `doctor` and discovery read
+`~/.claude*` and the other agents' folders from your home. Bash:
+`T3SM_HOME=$PWD/.spike/state HOME=$PWD/.spike/home USERPROFILE=$PWD/.spike/home node bin/t3sm.mjs status`.
+`.spike/` is ignored by git. To check a release live on your own machine, follow
+[docs/testing-0.3.md](docs/testing-0.3.md).
 
 **A checkout always runs `src/`.** `bin/t3sm.mjs` runs the TypeScript sources when `src/cli/main.ts` is next to it
 and the package is not inside `node_modules`, so a stale `dist/` never shadows your changes; an installed package
@@ -45,6 +49,7 @@ import `src/`.
 | `apply.live.test.ts` | The full apply path: 3 synthetic old transcripts plus one that must be parked, one wave, mtimes restored, re-apply is a no-op (Windows) |
 | `convert.live.test.ts` | One synthetic OpenCode-style session converted, imported, and resumed with `claude --resume -p` (Windows; spends a few tokens) |
 | `merge.live.test.ts` | Import, a hand-made terminal continuation, merge, rollback (Windows) |
+| `organize.live.test.ts` | Imports 3 synthetic threads (human, human with a technical title, automated), then organize (archive, show, retitle, pin; limited to that project) and its undo; a faithful copy of a synthetic home-folder conversation imported and resumed with `claude --resume -p`; `project.delete` on an empty project (Windows). Writes synthetic transcripts into `~/.claude` and three disposable projects into T3 Code (`.spike/organize-e2e*`), spends a few tokens, run it with `--test-timeout=480000` |
 
 Rules, because these write to your real Claude account folder and your real T3 Code:
 
