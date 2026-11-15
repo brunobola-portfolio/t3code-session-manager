@@ -8,7 +8,7 @@ import type { CopyRelation } from "../../src/plan/dedupe.ts";
 import type { Config, DiscoveredSession, InstanceSpec, JournalEntry, OrganizeConfig, Plan, PlanItem, SessionFlag } from "../../src/core/types.ts";
 import type { T3Project, T3Thread } from "../../src/t3/api.ts";
 import type { FolderEnv } from "../../src/plan/folders.ts";
-import { DAY, HOME, NOW, cfg, sess, uuid } from "./helpers.ts";
+import { DAY, HOME, NOW, cfg, projectScratch, sess, uuid } from "./helpers.ts";
 
 const personal: InstanceSpec = { id: "claudeAgent", driver: "claudeAgent", displayName: "Claude", accentColor: null, homePath: `${HOME}/.claude`, environment: [] };
 const org: InstanceSpec = { id: "claude-org", driver: "claudeAgent", displayName: "Org", accentColor: null, homePath: `${HOME}/.claude-org`, environment: [] };
@@ -484,7 +484,7 @@ test("buildPlan: 5000 synthetic sessions plan in under 2 s of CPU (compare injec
 
 // ---------- review fixes ----------
 test("buildPlan (I2): session only in personal, project pinned to org via .vscode/settings.json", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "t3sm-pin-"));
+  const dir = projectScratch("t3sm-pin-"); // a project folder: on Linux one under /tmp would be a temp one
   try {
     await mkdir(join(dir, ".vscode"));
     await writeFile(join(dir, ".vscode", "settings.json"), `{
