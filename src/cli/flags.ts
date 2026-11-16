@@ -16,6 +16,7 @@ export const FLAG_SPECS = {
   sync: { bool: ["--quiet", "--allow-untested", "--watch", "--dry-run", "--verbose"], valued: [] },
   schedule: { bool: ["--watch", "--dry-run", "--yes"], valued: [] },
   merge: { bool: ["--all", "--dry-run", "--yes", "--allow-untested"], valued: ["--session"] },
+  recover: { bool: ["--yes", "--dry-run", "--allow-untested"], valued: [] },
   projects: { bool: ["--json", "--allow-untested", "--yes", "--dry-run", "--force", "--suggest"], valued: [] },
   start: { bool: [], valued: [] },
   update: { bool: ["--yes", "--dry-run", "--check", "--auto-run"], valued: ["--from", "--source", "--auto"] },

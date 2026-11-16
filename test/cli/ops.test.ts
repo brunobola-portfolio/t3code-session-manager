@@ -306,3 +306,21 @@ test("rollback lists organize changes in organize's words (titles, never ids or 
   assert.match(b.out(), /Revert organize changes \(2\)\n {2}[-•] Unpin project 'demo'\n {2}[-•] Unarchive 'Mine \[31mred\[0m' \(demo\)\n/);
   for (const out of [a.out(), b.out()]) assert.doesNotMatch(out, /import:claudeAgent|pin p3|"|\u001b/);
 });
+
+test("rollback asks T3 Code for settings:write only to put T3 Code's own option back (a real run of an organize run that changed it)", async () => {
+  const { t, f } = await organizeRunOn020();
+  const counts = Object.fromEntries(["archive", "title", "unsettle", "pin", "unpin", "project-delete", "project-title", "auto-settle"].map((k) => [k, 0])) as Record<OrganizeKind, number>;
+  await applyOrganize({ runId: "org3", actions: [{ kind: "auto-settle", target: "sidebarAutoSettleAfterDays", projectId: null, previous: 7, next: 30, reason: "test" }], counts, byProject: [] },
+    { api: f.api, journal: t.journal, runId: "org3", allowUntested: true });
+  assert.equal(f.autoSettleDays, 30);
+  const seen: string[] = [];
+  const connect = async (_h: string, o: { manageProviders: boolean; writeSettings?: boolean }): Promise<T3Api> => { seen.push(`${o.manageProviders}/${o.writeSettings === true}`); return f.api; };
+  assert.equal(await rollbackCommand(["--dry-run", "--run", "org3"], fakeIo(t.state).io, { home: t.root, connect }), 0);
+  assert.deepEqual(seen.splice(0), ["false/false"], "a preview never writes");
+  assert.equal(await rollbackCommand(["--yes", "--run", "org1"], fakeIo(t.state).io, { home: t.root, connect }), 0);
+  assert.deepEqual(seen.splice(0), ["false/false"], "an organize run without a settings change");
+  const b = fakeIo(t.state);
+  assert.equal(await rollbackCommand(["--yes", "--run", "org3"], b.io, { home: t.root, connect }), 0, b.err());
+  assert.deepEqual(seen.splice(0), ["false/true"]);
+  assert.equal(f.autoSettleDays, 7);
+});

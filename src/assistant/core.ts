@@ -47,6 +47,8 @@ export interface OrganizePreview {
   autoSettleDays?: number | null;
   /** The history rule the plan was built with (config.json's, the default when it is off there); undefined: the default. */
   history?: HistoryRule | null;
+  /** organize.history as 0.2 stored it, when the 0.3 history question was never answered (legacyHistory). */
+  legacyHistory?: "all" | "off" | `days:${number}`;
   /** Parts config.json has turned off: the plan still counts them, so the assistant can say what turning them on does. */
   off?: { history: boolean; titles: boolean; archiveAutomated: boolean; pinRecent: boolean };
 }
@@ -89,7 +91,7 @@ export interface AssistantDeps {
    * Read-only: what `t3sm organize` would change now, with T3 Code's conversations and projects; null: nothing imported
    * to organize. `rule`: plan the history with these numbers (null: the rule off) instead of config.json's.
    */
-  organizePreview(allowUntested: boolean, rule?: HistoryRule | null): Promise<OrganizePreview | null>;
+  organizePreview(allowUntested: boolean, rule?: HistoryRule | null, autoSettle?: number | null): Promise<OrganizePreview | null>;
   /** t3sm's version and how many Claude accounts it knows (config.json's, else the detected ones), for the app header. */
   about(): Promise<{ version: string; accounts: number }>;
   /** Read-only: the configured Claude accounts and the t3sm plugin in each. No child process, no network. */

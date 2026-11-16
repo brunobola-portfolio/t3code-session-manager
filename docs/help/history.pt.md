@@ -13,7 +13,12 @@ projeto). Abrange todas as conversas importadas (uma thread cujo id começa por 
 importação do próprio T3 Code a trazê-las; uma conversa que começaste no T3 Code só é mexida pela opção do próprio
 T3 Code. O `t3sm organize` aplica a regra; a sincronização em segundo plano aplica-a logo a seguir a uma importação aos
 projetos que receberam conversas novas, e uma vez por dia a todos os projetos. A passagem automática para Settled do
-próprio T3 Code não muda.
+próprio T3 Code não muda. Enquanto essa opção estiver ligada, as conversas que um projeto mantém à vista para o seu
+mínimo ficam marcadas como visíveis no T3 Code (uma semana antes de a opção do T3 Code lhes chegar), para que a opção do
+próprio T3 Code nunca as arrume. Se mantiveres a opção do T3 Code mais curta do que a regra, o t3sm traz essas
+conversas de volta na passagem seguinte. Uma
+marca muda o lugar da conversa na ordenação da prateleira de trabalho do T3 Code e não se desfaz: o
+`t3sm organize --undo` lista-a como mantida (o T3 Code mantém-na à vista e fora da sua própria opção).
 
 ## O que fazer
 

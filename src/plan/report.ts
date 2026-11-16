@@ -37,7 +37,7 @@ export const SKIP_EXPLANATION: Record<SkipReason, string> = {
   "t3-refused": "its folder is one T3 Code refuses to import (the home folder, Downloads, Documents/Codex, T3 Code's own); it is not moved to another project (`organize.folders` is \"skip\", or t3sm cannot copy Pi sessions)",
   "undecided": "in a category whose question was never answered (see Decisions pending); run `t3sm start` to choose",
   "orphaned-in-t3": "started in T3 Code, and its thread there was deleted, so T3 Code will not import it again; `organize.sessions.orphaned` is \"skip\" in config.json (set it to \"copy\", or answer the question in `t3sm start`, to bring it back as a copy)",
-  "t3-native-unknown": "started in T3 Code, but the transcript does not say which T3 thread it belongs to, so t3sm never copies it; if T3 Code no longer shows it, resume it in a terminal with `claude --resume`",
+  "t3-native-unknown": "started in T3 Code, but the transcript does not say which T3 thread it belongs to, so t3sm never copies it by itself; if T3 Code no longer shows it, bring it back with `t3sm recover <id>`",
 };
 
 /** What each `organize.decided` question is about (plan.md's Decisions pending table). */
@@ -62,6 +62,7 @@ export const NOTE_EXPLANATION: Record<PlanNote, string> = {
   "in-t3-under-other-account": "already in T3 Code under another account; not imported a second time",
   "in-t3-as-other-form": "already in T3 Code in its other form (a Codex thread, or a converted Claude thread); not imported a second time",
   "started-in-t3": "started in T3 Code and its thread is still there (active or archived); nothing to import",
+  "recovered": "started in T3 Code and brought back by `t3sm recover`: its copy is in T3 Code; nothing to import",
 };
 
 /** Per-harness detail for a skip reason, shown under that reason when the plan skips sessions of that harness for it. */
@@ -312,7 +313,7 @@ export function renderPlanMarkdown(plan: Plan, opts: RenderOptions = {}): string
 }
 
 /** Each skip reason's short name on screen (plan.md keeps the codes and the long explanations). */
-const SKIP_WORDS: Record<SkipReason, CliKey> = {
+export const SKIP_WORDS: Record<SkipReason, CliKey> = {
   "already-in-t3": "plan.skip.alreadyInT3", "cwd-missing": "plan.skip.cwdMissing", "duplicate": "plan.skip.duplicate",
   "mirror-copy": "plan.skip.mirrorCopy", "backup-copy": "plan.skip.backupCopy", "active": "plan.skip.active",
   "non-uuid-id": "plan.skip.nonUuidId", "no-session-id": "plan.skip.noSessionId", "subagent": "plan.skip.subagent",

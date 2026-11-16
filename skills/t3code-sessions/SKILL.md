@@ -14,7 +14,7 @@ and can undo a run. This skill runs it for the user. It never decides for them.
 Use `t3sm` if `t3sm --version` works. Otherwise use the pinned release:
 
 ```bash
-npx -y github:brunobola-portfolio/t3code-session-manager#v0.3.0 <command>
+npx -y github:brunobola-portfolio/t3code-session-manager#v0.3.1 <command>
 ```
 
 Below, `t3sm` means whichever of the two works. T3 Code must be open (exit code 3 means
@@ -64,7 +64,7 @@ conversation a new title or show it inside its project.
 ## The rule that matters most
 
 These commands change files or T3 Code: `apply`, `dedupe`, `quarantine`, `merge --all`,
-`merge --session <id>`, `rollback`, `accounts --apply`, `accounts --rename`,
+`merge --session <id>`, `recover <session id>`, `rollback`, `accounts --apply`, `accounts --rename`,
 `accounts --init`, `schedule install`, `schedule remove`, `schedule restart`, `sync` (without `--dry-run`),
 `organize`, `organize --undo`, `projects rename --suggest`, `projects set`, `projects unset`,
 `doctor --repair` and `update` without `--check` or `--dry-run` (it reinstalls t3sm itself with npm;
@@ -76,7 +76,7 @@ but still ask first).
 - Your shell is not a terminal, so they need `--yes` to proceed. Add `--yes` only after
   that explicit yes. `--allow-untested` only hides the untested-version warning; add it
   only if the user asks.
-- Before `dedupe`, `quarantine`, `rollback`, `organize`, `organize --undo` or
+- Before `dedupe`, `quarantine`, `recover`, `rollback`, `organize`, `organize --undo` or
   `projects rename --suggest`, run the same command with `--dry-run` and show the user
   what would move, change or be undone.
 - `rollback --yes` needs `--run <id>` and `organize --undo --yes` needs the run id
@@ -84,7 +84,7 @@ but still ask first).
   run it is.
 
 Read-only, safe to run without asking: `doctor`, `scan`, `plan`, `apply --dry-run`,
-`accounts` (no option; emails are masked, do not add `--show-emails` unless asked), `runs`, `status` (or `status --json`), `merge` (no option) or `merge --dry-run`, `sync --dry-run`,
+`accounts` (no option; emails are masked, do not add `--show-emails` unless asked), `runs`, `status` (or `status --json`), `merge` (no option) or `merge --dry-run`, `recover <session id> --dry-run`, `sync --dry-run`,
 `organize --dry-run`, `organize --undo --dry-run`, `projects` (no option),
 `projects rename --suggest --dry-run`, `schedule status`, `schedule install|remove|restart --dry-run`, `update --check`, `update --dry-run`, `changelog`
 (or `changelog --since <version>`), `help` (or `help <topic>`: what a message means and what to do, in the user's
@@ -153,7 +153,9 @@ change journaled and undone with `t3sm rollback --run <id>`:
   the previous version runs again, and the automatic check skips that version (`t3sm update` can still install it).
 
 Conversations started in T3 Code are never imported again; one whose thread the user deleted comes back as a copy
-only after a yes in `t3sm start` (`organize.sessions.orphaned`).
+only after a yes in `t3sm start` (`organize.sessions.orphaned`). When its transcript names no T3 thread, t3sm cannot
+tell that the thread is gone (`t3sm status` lists it under Worth knowing): `t3sm recover <session id>` brings that one
+back, after `--dry-run` and the user's yes. Say that if the thread still exists in T3 Code, this makes a duplicate.
 
 ## Tell the user about the limits
 

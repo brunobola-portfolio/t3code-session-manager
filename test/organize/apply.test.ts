@@ -7,6 +7,7 @@ import { after } from "node:test";
 import { THREAD_BATCH, applyOrganize, failureText, undoOrganize } from "../../src/organize/apply.ts";
 import { JournalWriteError } from "../../src/ops/quarantine.ts";
 import { buildOrganizePlan } from "../../src/organize/plan.ts";
+import { SHOWN_NO_OVERRIDE } from "../../src/organize/history.ts";
 import type { OrganizeAction, OrganizeKind, OrganizePlan } from "../../src/organize/types.ts";
 import { Journal, organizeFailures } from "../../src/core/journal.ts";
 import type { JournalEntry } from "../../src/core/types.ts";
@@ -663,4 +664,46 @@ test("failureText cuts by code points: never half a surrogate pair, at most 200 
   assert.ok(t.endsWith("…"));
   assert.ok(!/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(t), "no lone surrogate");
   assert.equal(failureText("  short \n reason "), "short reason");
+});
+
+test("a mark of a thread already shown (no override) applies, is journaled, and its undo leaves it shown", async () => {
+  const f = world();
+  f.threads.set(A, thread(A, { settledOverride: null, settledAt: null }));
+  const j = journal();
+  const r = await applyOrganize(plan([act("unsettle", A, SHOWN_NO_OVERRIDE, "active")]), { api: f.api, journal: j, runId: "org-run-1", now: () => NOW });
+  assert.deepEqual([r.done, r.skippedChanged, r.failed.length], [1, 0, 0], "not stale: no override is what the mark expects");
+  assert.equal(f.threads.get(A)!.settledOverride, "active");
+  assert.ok((await j.readAll()).some((e) => e.t === "organize-change" && e.previous === SHOWN_NO_OVERRIDE && e.next === "active"));
+  // A mark cannot be undone: the thread was shown and stays shown, and T3 Code cannot remove an override. Reported as
+  // kept, never as reverted or already back; nothing is written.
+  const u = await undoOrganize("org-run-1", { api: f.api, journal: j, now: () => NOW });
+  assert.equal(u.reverted, 0);
+  assert.equal(u.alreadyRestored, 0);
+  assert.equal(u.kept, 1);
+  assert.deepEqual(u.items.map((x) => x.status), ["kept"]);
+  assert.equal(u.runId, null, "nothing journaled");
+  assert.equal(f.threads.get(A)!.settledOverride, "active");
+  assert.equal(f.threads.get(A)!.settledAt, null);
+  // Settled by hand since: the undo leaves it alone.
+  const j2 = journal();
+  f.threads.set(B, thread(B, { settledOverride: null, settledAt: null }));
+  await applyOrganize(plan([act("unsettle", B, SHOWN_NO_OVERRIDE, "active")], "org-run-2"), { api: f.api, journal: j2, runId: "org-run-2", now: () => NOW });
+  f.threads.set(B, { ...f.threads.get(B)!, settledOverride: "settled", settledAt: "2026-11-14T11:00:00.000Z" });
+  const u2 = await undoOrganize("org-run-2", { api: f.api, journal: j2, now: () => NOW });
+  assert.equal(u2.skippedUserChanged, 1);
+});
+
+test("a mark is skipped as changed when the thread is no longer shown with no override right before the write", async () => {
+  const f = world();
+  // Planned shown with no override; since then: put on the Settled shelf (by T3 Code's own option: no override), settled
+  // by hand (override "settled"), archived.
+  f.threads.set(A, thread(A, { settledOverride: null, settledAt: "2026-11-14T11:00:00.000Z" }));
+  f.threads.set(B, thread(B, { settledOverride: "settled", settledAt: "2026-11-14T11:00:00.000Z" }));
+  f.threads.set(C, thread(C, { settledOverride: null, settledAt: null, archived: true }));
+  const j = journal();
+  const r = await applyOrganize(plan([act("unsettle", A, SHOWN_NO_OVERRIDE, "active"), act("unsettle", B, SHOWN_NO_OVERRIDE, "active"), act("unsettle", C, SHOWN_NO_OVERRIDE, "active")]),
+    { api: f.api, journal: j, runId: "org-run-1", now: () => NOW });
+  assert.deepEqual([r.done, r.skippedChanged, r.failed.length], [0, 3, 0]);
+  assert.ok(!f.calls.some((c) => c.startsWith("unsettle:")), "nothing written");
+  assert.equal(f.threads.get(A)!.settledAt, "2026-11-14T11:00:00.000Z", "left on the shelf");
 });

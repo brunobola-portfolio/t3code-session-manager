@@ -9,6 +9,15 @@
 //   4. While the projected visible count is below the minimum, unsettle the most recent movable settled threads.
 //   5. Settle every movable visible thread that is not recent, except the keep set: the `minPerProject` most recent
 //      threads of the projected visible ones, native and pinned threads included (they count, but never move).
+//   6. While T3 Code's own auto-settle is on (HistoryOptions.t3AutoSettleDays), mark the ones the rule keeps for
+//      the minimum per project (recent or not): movable, shown without an override, with a date t3sm can read, and
+//      within MARK_AHEAD_DAYS of that option's days. A mark is an unsettle (previous SHOWN_NO_OVERRIDE): it gives the thread
+//      the "active" override, which T3 Code's own auto-settle never touches (S6: `settledOverride !== null` is never
+//      auto-settled). T3 Code 0.1.10's `thread.unsettle` on a thread not archived returns it with `settledOverride:
+//      "active"`, `settledAt: null`, and `unsettledAt` set to now unless it was "active" already: that only moves it in
+//      the sidebar's sort. Without the mark, T3 Code's option would put it away once it is older than its days, and
+//      the project would drop below its minimum (spec §5.2: the kept imported threads are protected from it by
+//      settledOverride "active"; owner-approved). A thread without a date is not marked: no evidence.
 // Actions come oldest activity first, unsettle and settle alike; every unsettle before any settle, so a project never
 // dips below its minimum while the plan is applied.
 //
@@ -74,9 +83,22 @@ export function changeKind(kind: OrganizeKind, next: unknown): OrganizeKind {
  */
 export function settleShown(kind: OrganizeKind, value: unknown): unknown {
   if (kind !== "settle" && kind !== "unsettle") return value;
+  if (kind === "unsettle" && value === SHOWN_NO_OVERRIDE) return null;
   if (isObj(value) && typeof value.settledAt === "string") return "settled";
   if (value === null) return kind === "settle" ? "active" : "settled";
   return value;
+}
+
+/**
+ * `previous` of an unsettle that only marks a thread already shown without an override (step 6): the thread shows the
+ * same before and after; undoing it leaves it shown (T3 Code cannot remove an override). The override T3 shows before it
+ * is none (settleShown).
+ */
+export const SHOWN_NO_OVERRIDE = "shown";
+
+/** An unsettle that marks a thread already shown (step 6), not one that brings a thread back from the Settled shelf. */
+export function isShownMark(a: { kind: OrganizeKind; previous: unknown }): boolean {
+  return a.kind === "unsettle" && a.previous === SHOWN_NO_OVERRIDE;
 }
 
 export interface HistoryOptions {
@@ -84,7 +106,15 @@ export interface HistoryOptions {
   movable(t: T3Thread): boolean;
   /** Settle with the activity date (`next: { settledAt }`) instead of "now" (`next: "settled"`). */
   backdate: boolean;
+  /**
+   * T3 Code's own auto-settle days as they will be after this run (null: off; undefined: unknown). The marks (step 6)
+   * are planned only while it is on, and only for a kept thread it could reach within a week (age >= its days - 7).
+   */
+  t3AutoSettleDays?: number | null;
 }
+
+/** How long before T3 Code's own auto-settle could reach a kept thread the mark is planned (the daily pass's margin). */
+export const MARK_AHEAD_DAYS = 7;
 
 interface Row { t: T3Thread; at: number }
 
@@ -101,6 +131,7 @@ export function historyActions(threads: T3Thread[], rule: HistoryRule, now: numb
   const recentWhy = all ? "history: all" : `history: last ${days} days`;
   const minWhy = `history: at least ${min} per project`;
   const settleWhy = `history: older than ${days} days`;
+  const keepWhy = `history: kept visible, at least ${min} per project`;
 
   const byProject = new Map<string, Row[]>();
   for (const t of threads) {
@@ -110,7 +141,7 @@ export function historyActions(threads: T3Thread[], rule: HistoryRule, now: numb
     byProject.set(t.projectId, rows);
   }
 
-  const unsettle: { row: Row; reason: string }[] = [];
+  const unsettle: { row: Row; reason: string; mark?: true }[] = [];
   const settle: Row[] = [];
   for (const rows of byProject.values()) {
     const recent = (r: Row): boolean => since === null || r.at >= since;
@@ -134,13 +165,24 @@ export function historyActions(threads: T3Thread[], rule: HistoryRule, now: numb
       if (keep.has(r) || recent(r) || !isVisibleInProject(r.t) || !o.movable(r.t)) continue;
       settle.push(r);
     }
+    // 6. mark the kept ones shown without an override, so T3 Code's own auto-settle leaves them shown; only
+    // while that option is on, and only once it could reach the thread within MARK_AHEAD_DAYS.
+    const t3 = o.t3AutoSettleDays;
+    for (const r of t3 == null ? [] : keep) {
+      if (now - r.at < (t3! - MARK_AHEAD_DAYS) * DAY_MS) continue;
+      // Only on evidence: a thread with no date t3sm can read (activity 0) may not be old to T3 Code either.
+      // A kept one is marked even while recent: with T3 Code's option at the rule's days (the defaults), it reaches a
+      // kept conversation a week after the mark, while the rule still counts it as recent.
+      if (r.at === 0 || !isVisibleInProject(r.t) || !o.movable(r.t) || r.t.settledOverride != null) continue;
+      unsettle.push({ row: r, reason: keepWhy, mark: true });
+    }
   }
 
   unsettle.sort((a, b) => oldestFirst(a.row, b.row));
   settle.sort(oldestFirst);
   return [
-    ...unsettle.map(({ row: { t }, reason }): OrganizeAction => ({
-      kind: "unsettle", target: t.id, projectId: t.projectId, previous: t.settledOverride ?? null, next: "active", reason,
+    ...unsettle.map(({ row: { t }, reason, mark }): OrganizeAction => ({
+      kind: "unsettle", target: t.id, projectId: t.projectId, previous: mark ? SHOWN_NO_OVERRIDE : t.settledOverride ?? null, next: "active", reason,
     })),
     ...settle.map(({ t, at }): OrganizeAction => ({
       kind: "settle", target: t.id, projectId: t.projectId, previous: t.settledOverride ?? null,

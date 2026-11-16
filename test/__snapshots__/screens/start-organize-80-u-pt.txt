@@ -59,8 +59,8 @@ Apagar este projeto vazio? [S/n/?/v/q] s
   Para as conversas começadas no T3 Code: passa-as para Settled passados alguns
   dias sem uso. Agora: passados 7 dias. O t3sm pode pô-la em 90 dias, como a
   regra acima. Por omissão: sim. Desfazer: t3sm organize --undo.
-Deixar também o T3 Code passar para Settled as conversas começadas no T3
-Code passados 90 dias? [S/n/?/v/q] s
+Deixar também o T3 Code arrumar as conversas começadas no T3 passados 90
+dias? Agora: passados 7 dias. [S/n/?/v/q] s
 
 ╭─ Isto é o que vou fazer ──────────────────────────────────────────────╮
 │ Histórico               os últimos 90 dias, pelo menos 10 por projeto │

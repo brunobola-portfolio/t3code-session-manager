@@ -1,6 +1,7 @@
 ● ● ● ● ◉ ○ ○ ○ ○ ○ ○  Step 5 of 11 · Decisions
 3 questions before the import. Until you answer, those conversations stay out of
-T3 Code. Nothing is lost.
+T3 Code. Nothing is lost. Your answers are saved in config.json once you have
+answered the last one.
 
 ╭─ 1 of 3 · Your home folder ──────────────────────────────────────────────────╮
 │ 5 conversations were started in your home folder. T3 Code does not accept it │

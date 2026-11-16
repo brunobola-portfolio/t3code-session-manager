@@ -216,6 +216,9 @@ async function newestPlan(dir: string): Promise<Plan | null> {
 
 const sessionKey = (harness: string, nativeId: string): string => `${harness}:${nativeId}`;
 
+/** Plan skip reasons that are failures themselves: such a session still counts as failing to import. */
+const FAILURE_SKIPS: ReadonlySet<string> = new Set(["compare-failed"]);
+
 /** Sessions whose import failed in two or more runs since they were last imported, grouped by reason. */
 function repeatedFailures(entries: JournalEntry[]): Map<string, { harness: string; nativeId: string }[]> {
   const failing = new Map<string, { harness: string; nativeId: string; reason: string; runs: Set<string> }>();
@@ -429,8 +432,12 @@ export async function collectStatus(dir: string, home: string, d: Required<Statu
   // The plan's items with a readable session (plan.json is read as written, item by item it may hold anything).
   const planItems = (plan?.items ?? []).filter((i) => i && typeof i === "object" && i.session && typeof i.session.harness === "string"
     && typeof i.session.nativeId === "string" && i.action && typeof i.action === "object");
-  // Only sessions the newest plan still has (one deleted since, or no plan at all, is nothing to act on).
-  const inPlan = new Set(planItems.map((i) => sessionKey(i.session.harness, i.session.nativeId)));
+  // Only sessions the newest plan still tries to import (one deleted since, or no plan at all, is nothing to act on). A
+  // session it skips for a reason other than a failure (started in T3 Code, already in T3 Code, in use, ...) is not
+  // failing now, whatever earlier runs journaled: the plan's own item says why it stays out.
+  const inPlan = new Set(planItems
+    .filter((i) => i.action.kind !== "skip" || FAILURE_SKIPS.has(i.action.reason))
+    .map((i) => sessionKey(i.session.harness, i.session.nativeId)));
   for (const [reason, all] of repeatedFailures(entries)) {
     const sessions = all.filter((x) => inPlan.has(sessionKey(x.harness, x.nativeId)));
     if (sessions.length === 0) continue;

@@ -6,7 +6,7 @@ A hands-on guide to check the 0.3 release yourself, live, on your own PC and on 
 setup, answer the guided set-up's questions, look at the result in T3 Code and in Claude Code, run the gated live
 tests, watch a self-update and a rollback, and know what to send back when something looks wrong.
 
-Every command here exists in 0.3.0; run `t3sm <command> --help` for the details. Everything t3sm writes is journaled
+Every command here exists in 0.3.1 (`t3sm recover` is new in it); run `t3sm <command> --help` for the details. Everything t3sm writes is journaled
 and can be undone (`t3sm runs`, `t3sm rollback --run <id>`). The examples use placeholders:
 `D:\Work\t3code-session-manager` is your checkout of the repository (named like the repository, so its T3 Code project
 is `t3code-session-manager`), `~` your home folder; on macOS or Linux use a path such as
@@ -15,7 +15,7 @@ is `t3code-session-manager`), `~` your home folder; on macOS or Linux use a path
 | Part | What it checks | Time |
 | :-- | :-- | :-- |
 | [A](#a-a-fresh-pc) | A fresh install and the guided set-up | 20-40 min |
-| [B](#b-migrating-a-pc-from-021) | Moving a PC with 0.2.1 and a running watcher to 0.3.0, then T3 Code and Claude Code | 30-60 min |
+| [B](#b-migrating-a-pc-from-021) | Moving a PC with 0.2.1 and a running watcher to 0.3.1, then T3 Code and Claude Code | 30-60 min |
 | [C](#c-the-gated-live-tests) | The live tests that decide two settings in `src/t3/compat.ts` | 10 min |
 | [D](#d-the-self-update-cycle) | An update, the watcher's restart, a forced rollback | 20 min |
 | [E](#e-other-pcs-and-systems) | What differs on another Windows PC, macOS and Linux | - |
@@ -29,14 +29,14 @@ is `t3code-session-manager`), `~` your home folder; on macOS or Linux use a path
 - **A shell without `CLAUDE_CONFIG_DIR`.** PowerShell: `Remove-Item Env:CLAUDE_CONFIG_DIR -ErrorAction SilentlyContinue`.
   Bash: `unset CLAUDE_CONFIG_DIR`. Run every command below from that shell, as your normal user (not "Run as
   administrator": t3sm then warns that what it installs is for that user only).
-- **The release, merged and tagged.** At the end of the build Claude merges 0.3 into `main` and tags it `v0.3.0`, so
+- **The release, merged and tagged.** At the end of the build Claude merges 0.3 into `main` and tags it `v0.3.1`, so
   it is there before you start. Check, in this order:
 
   ```powershell
   git -C D:\Work\t3code-session-manager status --short     # prints nothing: no local changes
   git -C D:\Work\t3code-session-manager switch main
-  git -C D:\Work\t3code-session-manager tag --list v0.3.0  # prints v0.3.0
-  node D:\Work\t3code-session-manager\bin\t3sm.mjs --version   # 0.3.0
+  git -C D:\Work\t3code-session-manager tag --list v0.3.1  # prints v0.3.1
+  node D:\Work\t3code-session-manager\bin\t3sm.mjs --version   # 0.3.1
   ```
 
   If one of these says something else, stop here and ask before going on.
@@ -66,10 +66,10 @@ is `t3code-session-manager`), `~` your home folder; on macOS or Linux use a path
 
 ### A1. Install
 
-From GitHub, once `v0.3.0` is published there:
+From GitHub, once `v0.3.1` is published there:
 
 ```bash
-npm install -g --install-links github:brunobola-portfolio/t3code-session-manager#v0.3.0
+npm install -g --install-links github:brunobola-portfolio/t3code-session-manager#v0.3.1
 ```
 
 (Use the tag of the release you test: the line in the README always names the current one.)
@@ -79,7 +79,7 @@ network path):
 
 ```powershell
 npm install -g --install-links D:\Work\t3code-session-manager
-t3sm --version                      # 0.3.0
+t3sm --version                      # 0.3.1
 ```
 
 npm builds the package with Node alone (`prepare` writes `dist/` inside the folder; it is git-ignored).
@@ -106,11 +106,11 @@ On a Portuguese system it speaks Portuguese; `--lang en` or `--lang pt` chooses.
 
 | Step | What you see | Answer |
 | :-- | :-- | :-- |
-| 1 Welcome | A header with the version (0.3.0) and how many Claude accounts t3sm found; on a second run, a checklist of the steps (✓ done, ◉ next, ○ later) | `y` |
+| 1 Welcome | A header with the version (0.3.1) and how many Claude accounts t3sm found; on a second run, a checklist of the steps (✓ done, ◉ next, ○ later) | `y` |
 | 2 Check | Every doctor check in a compact grid, then "Worth knowing" only for what concerns you | `y` |
 | 3 Accounts | A table of your Claude accounts (emails masked) and their T3 Code instances | `y` if the names are right |
 | 4 Plan | A panel with the counts aligned (to import, to convert, skipped), then the projects and their accounts | Enter (or `c`) to continue |
-| 5 Decisions | One panel per question, with the real numbers, the default and the `config.json` key to change it later | see B5 |
+| 5 Decisions | One panel per question, with the real numbers, the default and the `config.json` key to change it later; the answers are saved as soon as you answer the last one | see B5 |
 | 6 Clean-up | Only when the plan found backup folders or mirror copies | your choice |
 | 7 Pilot | Small projects to try first, then "Here is what I will do" | pick one, `y` |
 | 8 Full import | "Here is what I will do", then one progress bar, then a result panel | `y` |
@@ -133,6 +133,11 @@ t3sm schedule status # the scheduler entry, its command, the watcher heartbeat, 
 This is the full move of a PC that runs 0.2.1 with a background watcher, home-folder conversations, conversations
 started in T3 Code and at least one whose T3 Code thread was deleted.
 
+> **If you already ran 0.3.0:** install 0.3.1 (as in B2, or `t3sm update --from D:\Work\t3code-session-manager`),
+> then run `t3sm start` again (B5). The questions come back: 0.3.0 asked "save the answers?" after the decisions, and
+> its default No kept every answer (and those conversations) out; and the history question returns once for a 0.2.1
+> `config.json`. Answer them as in B5; the import then brings the conversations that stayed out.
+
 ### B1. Note where you are
 
 ```powershell
@@ -143,11 +148,11 @@ t3sm runs               # note the newest run id
 
 Take a screenshot of T3 Code's sidebar if you want a before/after.
 
-### B2. Install 0.3.0 from the folder
+### B2. Install 0.3.1 from the folder
 
 ```powershell
 npm install -g --install-links D:\Work\t3code-session-manager
-t3sm --version          # 0.3.0
+t3sm --version          # 0.3.1
 ```
 
 The 0.2.1 watcher keeps running the old code from memory meanwhile; the next step replaces it. (0.2.1 has no
@@ -177,11 +182,11 @@ again.
 
 ```powershell
 t3sm status
-t3sm status --json      # "watcher": { "running": true, "pid": <n>, "version": "0.3.0", "stale": false }
+t3sm status --json      # "watcher": { "running": true, "pid": <n>, "version": "0.3.1", "stale": false }
 t3sm doctor             # ✓ Scheduled sync, ✓ Watcher
 ```
 
-`t3sm status` shows `Watcher  running (pid <n>, t3sm 0.3.0)`. If it says the watcher "still runs t3sm 0.2.1" or
+`t3sm status` shows `Watcher  running (pid <n>, t3sm 0.3.1)`. If it says the watcher "still runs t3sm 0.2.1" or
 "runs an older t3sm that does not restart itself after an upgrade", B3 did not replace it: run `t3sm schedule restart --yes`.
 
 Then restart it twice in a row, and check that one watcher is left and nothing needs you:
@@ -189,7 +194,7 @@ Then restart it twice in a row, and check that one watcher is left and nothing n
 ```powershell
 t3sm schedule restart --yes   # Stopped the running watcher (pid <n>) and started the new one.
 t3sm schedule restart --yes   # the same line, with the pid of the watcher the first restart started
-t3sm status                   # ✓ All good; Watcher  running (pid <m>, t3sm 0.3.0), the pid of the second restart
+t3sm status                   # ✓ All good; Watcher  running (pid <m>, t3sm 0.3.1), the pid of the second restart
 ```
 
 Task Manager (Details, `node.exe`, the Command line column) shows one `t3sm ... sync --watch`, with that pid.
@@ -210,7 +215,10 @@ Then:
    - *Iniciadas por programas* (automated, Agent SDK) — "Importar estas conversas?" → `n`.
    - *Apagadas no T3 Code* (orphaned) — "Trazer de volta estas conversas como cópias?" → `s`.
    - Other questions (refused, temp, system folders): the defaults are fine.
-   - "Guardar as respostas no config.json para não voltarem a ser perguntadas?" → `s`.
+
+   There is no "save the answers?" question: the answers are saved in `config.json` as soon as you answer the last
+   one, with one line, "Respostas guardadas no config.json; podes mudá-las depois em organize." `q` before the last
+   answer saves nothing.
 
    Then "Para onde vão as cópias": one row per folder the copies come from, with where t3sm will put them and why
    ("63 de 80 caminhos em ..."). Check that your home folder's conversations about t3sm go to the
@@ -221,10 +229,15 @@ Then:
    project held because a conversation in it is in use (this terminal's own conversation, for example) waits and is
    imported once idle for 10 minutes; the panel says so.
 3. **Passo 9 · Arrumar.** A table per project (shown now → after). Then:
-   - "Mostrar os últimos 90 dias, e pelo menos 10 por projeto?" → Enter or `s` (90 / 10).
+   - "Mostrar os últimos 90 dias, e pelo menos 10 por projeto?" → Enter or `s` (90 / 10). After the upgrade from
+     0.2.1 the panel also says what you had, "Até agora: todas as conversas visíveis." (0.2.1 kept every conversation
+     visible): it is asked once more, with the 0.3 rule, even when nothing would change.
    - Titles, automated, pins, empty projects: the defaults are fine.
-   - If asked, "Deixar também o T3 Code arrumar as conversas começadas no T3 Code passados 90 dias?" → `s` (T3
-     Code's own option set to 90; it is not asked when it is already at 90).
+   - If asked, "Deixar também o T3 Code arrumar as conversas começadas no T3 passados 90 dias? Agora: passados 15
+     dias." → `s` (T3 Code's own option set to 90; `n` leaves it as it is, never off; it is not asked when it is
+     already at 90). With a rule longer than 90 days or all of it, a numbered menu instead; pick by its label, the
+     numbers depend on what applies: "Manter (...)" (Enter), "Pôr em 90 dias", "Desligar". `?` explains why the order
+     is safe.
    - "Aplicar estas alterações ao T3 Code agora?" → `s`.
 4. **Passo 10-11.** The watcher is already installed (B3). For each Claude account without the `/t3sm` commands,
    step 11 offers "Instalar o plugin em <conta> (<pasta>)?" (default no). `s` runs `claude plugin marketplace add`
@@ -244,7 +257,18 @@ Open T3 Code (from the Start menu) and check:
 - [ ] **No duplicates of conversations started in T3 Code**: each still appears once. `t3sm plan` lists them in
   `plan.md` under "Skipped by reason" as `already-in-t3` with the note `started-in-t3`.
 - [ ] **The deleted one is back**: a conversation whose thread you had deleted in T3 Code is a thread again, in its
-  project, with its history.
+  project, with its history. When its transcript names no T3 Code thread, t3sm cannot tell it was deleted:
+  `t3sm status` lists it under Worth knowing ("... bring one back with t3sm recover <id>"). Then
+  `t3sm recover <id> --dry-run` shows what it would do, and `t3sm recover <id>` asks and brings it back as a copy
+  with a new id (a duplicate if the thread still exists; undo with `t3sm rollback --run <id> --archive-threads`).
+- [ ] **No conversation keeps failing for nothing**: `t3sm status` does not list conversations started in T3 Code
+  under "keep failing to import".
+- [ ] **The conversations kept for the minimum are marked** (only while T3 Code's own option is on, a week before it
+  could reach them): before the apply, `t3sm organize --dry-run` lists "Keep N conversations shown in P projects,
+  marked so T3 Code's own auto-settle never puts them away" for a project that keeps such conversations. After the apply,
+  `t3sm status` is clean and those conversations stay shown in their project. A mark sets T3 Code's `unsettledAt`, so
+  they may move in T3 Code's working-shelf sort; that is expected. `t3sm organize --undo --dry-run` lists them as kept
+  (a mark cannot be undone).
 - [ ] **T3 Code's own option**: in T3 Code's settings, the auto-settle option for its own conversations is at 90 days.
 - [ ] **Undo is there**: `t3sm runs` lists the runs of B5; `t3sm organize --undo --dry-run` shows what the organize
   run would put back (do not run it unless you want to).
@@ -308,7 +332,7 @@ What to change in `src/t3/compat.ts`:
 
 If you change one: run `npm run typecheck` and `npm test`, write the lines into the "Results" section of
 `docs/spikes/S7-followup-and-backdate.md`, add a line to `CHANGELOG.md` under `## [Unreleased]`, and release it as a
-patch (0.3.1). Your watcher then installs it by itself (part D shows how).
+patch (0.3.2). Your watcher then installs it by itself (part D shows how).
 
 ### Reading `organize.live`
 
@@ -331,9 +355,9 @@ cd D:\Work\t3sm-update-test
 git switch main
 git config user.name "t3sm test"           # only in this clone; needed on a machine where git has no name yet
 git config user.email "test@example.com"
-node scripts/release.js 0.3.1      # edits the version files only; it may say "Still to fix": fine for a test
-git commit -am "test release 0.3.1"
-git tag -a v0.3.1 -m v0.3.1
+node scripts/release.js 0.3.2      # edits the version files only; it may say "Still to fix": fine for a test
+git commit -am "test release 0.3.2"
+git tag -a v0.3.2 -m v0.3.2
 ```
 
 ### D2. Look, then update
@@ -344,27 +368,27 @@ t3sm update --from D:\Work\t3sm-update-test --dry-run
 t3sm update --from D:\Work\t3sm-update-test
 ```
 
-- `--check` shows the installed version (0.3.0), the newest release of the current source (GitHub until a folder is
+- `--check` shows the installed version (0.3.1), the newest release of the current source (GitHub until a folder is
   remembered), the kind, whether automatic updates are on, and the last check. Read-only.
-- The dry run shows a panel `t3sm 0.3.0 -> 0.3.1 (patch)`, `from the folder D:\Work\t3sm-update-test`, then that
+- The dry run shows a panel `t3sm 0.3.1 -> 0.3.2 (patch)`, `from the folder D:\Work\t3sm-update-test`, then that
   tag's CHANGELOG section under "What's new", and ends with
-  `Would install t3sm 0.3.1 from the folder D:\Work\t3sm-update-test. Nothing changed.` Nothing is installed.
-- The real run asks `Install t3sm 0.3.1?` (`y`), then: `Installing t3sm 0.3.1 with npm...`,
-  `Restarting the background watcher...`, `Waiting for the watcher to start on 0.3.1 (up to 2 minutes)...`,
-  `Updated t3sm 0.3.0 -> 0.3.1.` Exit 0.
+  `Would install t3sm 0.3.2 from the folder D:\Work\t3sm-update-test. Nothing changed.` Nothing is installed.
+- The real run asks `Install t3sm 0.3.2?` (`y`), then: `Installing t3sm 0.3.2 with npm...`,
+  `Restarting the background watcher...`, `Waiting for the watcher to start on 0.3.2 (up to 2 minutes)...`,
+  `Updated t3sm 0.3.1 -> 0.3.2.` Exit 0.
 
 Then:
 
 ```powershell
-t3sm --version                   # 0.3.1
-t3sm status                      # Watcher  running (pid <n>, t3sm 0.3.1); worth knowing: "Updated to 0.3.1 today"
+t3sm --version                   # 0.3.2
+t3sm status                      # Watcher  running (pid <n>, t3sm 0.3.2); worth knowing: "Updated to 0.3.2 today"
 t3sm update --check              # Source: the folder D:\Work\t3sm-update-test (now remembered)
 Select-String '"t":"update"' ~\.t3code-session-manager\journal.jsonl   # pending, then installed
-t3sm status --json               # "watcher": { "running": true, "version": "0.3.1", ... } and a new pid
+t3sm status --json               # "watcher": { "running": true, "version": "0.3.2", ... } and a new pid
 ```
 
-The update ends `installed` only once the new watcher wrote its heartbeat on 0.3.1: the journal's last update entry
-says `installed`, and `t3sm status --json` shows the watcher running 0.3.1 under a pid other than the one before.
+The update ends `installed` only once the new watcher wrote its heartbeat on 0.3.2: the journal's last update entry
+says `installed`, and `t3sm status --json` shows the watcher running 0.3.2 under a pid other than the one before.
 
 ### D3. Watch the watcher restart itself
 
@@ -372,15 +396,15 @@ This is the path for an install the watcher did not do itself.
 
 ```powershell
 cd D:\Work\t3sm-update-test
-node scripts/release.js 0.3.2
-git commit -am "test release 0.3.2"
-git tag -a v0.3.2 -m v0.3.2
+node scripts/release.js 0.3.3
+git commit -am "test release 0.3.3"
+git tag -a v0.3.3 -m v0.3.3
 npm install -g --install-links D:\Work\t3sm-update-test
 ```
 
-Within one cycle (at most `schedule.everyMinutes`, 15 by default) plus 30 seconds, the running 0.3.1 watcher sees the
-new install, stops cleanly and starts the new one. `logs/sync.log` gets `restart from=0.3.1 to=0.3.2`, and
-`t3sm status` shows the watcher on 0.3.2. If it says "t3sm 0.3.2 is installed; the background watcher switches to it
+Within one cycle (at most `schedule.everyMinutes`, 15 by default) plus 30 seconds, the running 0.3.2 watcher sees the
+new install, stops cleanly and starts the new one. `logs/sync.log` gets `restart from=0.3.2 to=0.3.3`, and
+`t3sm status` shows the watcher on 0.3.3. If it says "t3sm 0.3.3 is installed; the background watcher switches to it
 after its next cycle", wait for that cycle.
 
 ### D4. Force a rollback
@@ -393,21 +417,21 @@ if (process.argv.includes("--watch")) process.exit(1);
 ```
 
 ```powershell
-node scripts/release.js 0.3.3
-git commit -am "test release 0.3.3 (broken watcher)"
-git tag -a v0.3.3 -m v0.3.3
+node scripts/release.js 0.3.4
+git commit -am "test release 0.3.4 (broken watcher)"
+git tag -a v0.3.4 -m v0.3.4
 t3sm update --yes
 ```
 
-It installs 0.3.3, restarts the watcher, waits 2 minutes for a heartbeat that never comes, then
-`The new version did not start: putting 0.3.2 back...` and ends with
-`t3sm 0.3.3 did not start properly, so 0.3.2 was put back (...)` (exit 1). t3sm recovered by itself, so it does not
+It installs 0.3.4, restarts the watcher, waits 2 minutes for a heartbeat that never comes, then
+`The new version did not start: putting 0.3.3 back...` and ends with
+`t3sm 0.3.4 did not start properly, so 0.3.3 was put back (...)` (exit 1). t3sm recovered by itself, so it does not
 need you. Check:
 
-- [ ] `t3sm --version` is 0.3.2 and `t3sm status` shows the watcher running on 0.3.2.
+- [ ] `t3sm --version` is 0.3.3 and `t3sm status` shows the watcher running on 0.3.3.
 - [ ] `t3sm status` says "All good" (exit 0) and lists under "Worth knowing":
-  "t3sm 0.3.3 was rolled back; 0.3.2 is running (the automatic check skips 0.3.3)", with `t3sm update --check`.
-- [ ] `t3sm update --check` still shows 0.3.3 as the newest release, marked "it was rolled back before, so the
+  "t3sm 0.3.4 was rolled back; 0.3.3 is running (the automatic check skips 0.3.4)", with `t3sm update --check`.
+- [ ] `t3sm update --check` still shows 0.3.4 as the newest release, marked "it was rolled back before, so the
   automatic check skips it". The automatic check never installs it again; `t3sm update` would still install it on
   purpose (do not, here).
 - [ ] The journal has an `update` entry with `"outcome":"rolled-back"`.
@@ -416,41 +440,41 @@ need you. Check:
 
 With `update.auto` on (the default), the watcher looks once a day; a newer patch or minor release on the remembered
 source is installed by a hidden `t3sm update --auto-run --yes`, with the same health check. To see it, make a good
-0.3.4 in the test clone:
+0.3.5 in the test clone:
 
 ```powershell
 cd D:\Work\t3sm-update-test
-git revert --no-edit HEAD                  # takes the broken line out of bin/t3sm.mjs (and 0.3.3's version bump)
-node scripts/release.js 0.3.4
-git commit -am "test release 0.3.4"
-git tag -a v0.3.4 -m v0.3.4
+git revert --no-edit HEAD                  # takes the broken line out of bin/t3sm.mjs (and 0.3.4's version bump)
+node scripts/release.js 0.3.5
+git commit -am "test release 0.3.5"
+git tag -a v0.3.5 -m v0.3.5
 ```
 
-Leave the PC on, with the watcher running, for up to a day. Then `t3sm --version` is 0.3.4, `t3sm status` says
-"Updated to 0.3.4 today - what's new: t3sm changelog" and `logs/sync.log` has the update. `t3sm update --auto off`
+Leave the PC on, with the watcher running, for up to a day. Then `t3sm --version` is 0.3.5, `t3sm status` says
+"Updated to 0.3.5 today - what's new: t3sm changelog" and `logs/sync.log` has the update. `t3sm update --auto off`
 turns automatic updates off.
 
 ### D6. Clean up
 
-t3sm never downgrades, so it will not go back to 0.3.0 by itself, and the remembered source still points at the test
+t3sm never downgrades, so it will not go back to 0.3.1 by itself, and the remembered source still points at the test
 clone. Put things back by hand:
 
 ```powershell
 t3sm schedule remove --yes
-git clone --depth 1 --branch v0.3.0 file:///D:/Work/t3code-session-manager $env:TEMP\t3sm-v0.3.0
-npm install -g --install-links $env:TEMP\t3sm-v0.3.0
+git clone --depth 1 --branch v0.3.1 file:///D:/Work/t3code-session-manager $env:TEMP\t3sm-v0.3.1
+npm install -g --install-links $env:TEMP\t3sm-v0.3.1
 Remove-Item ~\.t3code-session-manager\update.json      # forget the test source and the skipped version
-Remove-Item -Recurse -Force D:\Work\t3sm-update-test, $env:TEMP\t3sm-v0.3.0
+Remove-Item -Recurse -Force D:\Work\t3sm-update-test, $env:TEMP\t3sm-v0.3.1
 t3sm schedule install --watch --yes
-t3sm --version                                         # 0.3.0
+t3sm --version                                         # 0.3.1
 ```
 
 Without `update.json` t3sm follows GitHub again. For the next real release from your checkout, run
 `t3sm update --from D:\Work\t3code-session-manager` once; from then on the watcher follows that folder.
 
 `t3sm status` then says "All good" (exit 0). If you skipped D5, it also lists one line under "Worth knowing":
-"t3sm 0.3.3 was rolled back; 0.3.0 is running (the automatic check skips 0.3.3)". That line stays until a release newer
-than 0.3.3 is installed; it never needs you.
+"t3sm 0.3.4 was rolled back; 0.3.1 is running (the automatic check skips 0.3.4)". That line stays until a release newer
+than 0.3.4 is installed; it never needs you.
 
 ## E. Other PCs and systems
 

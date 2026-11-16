@@ -182,7 +182,8 @@ export function buildOrganizePlan(i: OrganizeInput): OrganizePlan {
   const rule = normalizeHistory(cfg.history);
   const history = rule === null ? [] : historyActions(
     i.threads.map((t) => (archived.has(t.id) ? { ...t, archived: true } : t)), rule, i.now,
-    { movable, backdate: i.backdate ?? SETTLE_BACKDATE },
+    // T3 Code's own auto-settle as it will be after this run (this run's change, else its current value): the marks.
+    { movable, backdate: i.backdate ?? SETTLE_BACKDATE, t3AutoSettleDays: i.autoSettle ? i.autoSettle.want : i.t3AutoSettleDays },
   );
   const unsettle = history.filter((a) => a.kind === "unsettle");
   const settle = history.filter((a) => a.kind === "settle");

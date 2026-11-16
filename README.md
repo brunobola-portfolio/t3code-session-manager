@@ -31,7 +31,7 @@ desktop launcher, not from a terminal that sets `CLAUDE_CONFIG_DIR`.
 **1. Install once.** The same line on Windows, macOS and Linux:
 
 ```bash
-npm install -g --install-links github:brunobola-portfolio/t3code-session-manager#v0.3.0
+npm install -g --install-links github:brunobola-portfolio/t3code-session-manager#v0.3.1
 ```
 
 **2. Run it:**
@@ -77,7 +77,7 @@ subscription each project will use. Step by step, with every check:
 
 </details>
 
-No install at all? `npx -y github:brunobola-portfolio/t3code-session-manager#v0.3.0 <command>`
+No install at all? `npx -y github:brunobola-portfolio/t3code-session-manager#v0.3.1 <command>`
 runs any command (background sync needs the installed one). To be strict about what you
 run, pin a commit instead of the tag (`#<commit sha>`). Other sources:
 [docs/migrate/](docs/migrate/claude-code.md). In Claude Code you can also ask for it in
@@ -441,6 +441,7 @@ Every change is journaled and undoable.
 | `t3sm scan` | Counts the sessions per agent and account, without T3 Code; it writes only t3sm's discovery cache. **Flagged** counts sessions with a remark (in use, a corrupt line, no folder, a backup or compressed copy, a sub-agent…); `plan.md` says what happens to each |
 | `t3sm runs` | Lists the runs in the journal (sample above) |
 | `t3sm rollback --run <id>` | Undoes a run; `--dry-run` lists what it would undo. `--yes` requires `--run` |
+| `t3sm recover <session id>` | Brings back a conversation started in T3 Code whose thread you deleted, when t3sm cannot tell by itself (`t3sm status` lists them): a faithful copy with a new id, imported into its project. If the thread still exists in T3 Code, this makes a duplicate. Asks first; `--dry-run`; undone by `rollback` |
 | `t3sm doctor --repair` | Puts back file times an interrupted run left moved; the only write `doctor` makes |
 | `t3sm accounts` | Accounts found and their T3 Code instances |
 | `t3sm projects` | Every project folder with its account and why; `projects set "<folder>" <account>` changes it (a route, and the T3 Code project's default, reversible); `projects unset` removes the route; `projects rename --suggest` proposes clean names for the projects t3sm created (before -> after, asks first, undone by `organize --undo`) |

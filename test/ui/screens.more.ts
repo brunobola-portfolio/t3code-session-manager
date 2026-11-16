@@ -184,7 +184,7 @@ export const MORE_SCREENS: Screen[] = [
         ["pin\u0000p1", { t: "organize-change", runId: "r", kind: "pin", target: "p1", previous: false, next: true }],
       ]) as never;
       return renderUndo(ui(caps, lang), {
-        runId: null, reverted: 2, skippedUserChanged: 1, alreadyRestored: 0, failed: [],
+        runId: null, reverted: 2, skippedUserChanged: 1, alreadyRestored: 0, kept: 0, failed: [],
         items: [{ kind: "archive", target: "t1", status: "reverted" }, { kind: "title", target: "t2", status: "reverted" }, { kind: "pin", target: "p1", status: "user-changed" }],
       }, "20261115-090000-a1b2", true, changes, namesOf(threads, projects, HOME, lang));
     },

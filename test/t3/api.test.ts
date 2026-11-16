@@ -680,3 +680,16 @@ test("settle sends settledAt only when backdating is supported", async () => {
     ["orchestration.dispatchCommand", JSON.stringify({ type: "thread.settle", commandId: "d", threadId: UID })],
   ]);
 });
+
+test("connectT3: writeSettings adds settings:write (and only that); without it the session never has it", async () => {
+  const h = await connectHarness();
+  try {
+    const api = await connectT3(h.home, { allowUntested: false, writeSettings: true, fetchImpl: h.ff.fetch, run: h.run, transportFactory: h.transportFactory });
+    const scopes = (args: string[]): string[] => args.flatMap((a, i) => (args[i - 1] === "--scope" ? [a] : []));
+    assert.deepEqual(scopes(h.runs[0]!.args).sort(), ["orchestration:operate", "orchestration:read", "settings:write"]);
+    await api.close();
+    const both = await connectT3(h.home, { allowUntested: false, writeSettings: true, manageProviders: true, fetchImpl: h.ff.fetch, run: h.run, transportFactory: h.transportFactory });
+    assert.deepEqual(scopes(h.runs.filter((r) => r.args.includes("issue"))[1]!.args).sort(), ["orchestration:operate", "orchestration:read", "providers:manage", "settings:write"]);
+    await both.close();
+  } finally { await h.cleanup(); }
+});

@@ -526,7 +526,8 @@ test("random answers from every state: each write comes right after a yes to its
     [/^run rollback/, /Undo the pilot|Desfazer o piloto/],
     [/^run schedule install/, /Install the background watcher|Instalar agora o vigilante/],
     [/^saveLanguage/, /Save English|Guardar o português/],
-    [/^saveOrganize/, /Save your answers in config\.json|Save these destinations|Guardar as respostas no config\.json|Guardar estes destinos/],
+    // The decisions' own save follows their panels (each names its organize.folders / organize.sessions setting).
+    [/^saveOrganize/, /organize\.(?:folders|sessions)|Save these destinations|Guardar estes destinos/],
   ];
   const TOK = ["", "", "y", "y", "n", "q", "b", "?", "s", "1", "2", "c", "7", "#123456", "x", "\u0003", "yes", "sim", "Personal"];
   const states: Parameters<typeof harness>[0][] = [
@@ -554,8 +555,10 @@ test("random answers from every state: each write comes right after a yes to its
       writes++;
       const rule = own.find(([w]) => w.test(e.name));
       assert.ok(rule, e.name);
-      // The question as shown: everything printed after the previous answer, up to the prompt line that got the yes.
-      const question = h.out.slice(prevAt + 1, lastAsk!.at + 1).join("").replace(/\s+/g, " ");
+      // The question as shown: everything printed after the previous answer, up to the prompt line that got the yes. The
+      // decisions' save follows their last answer, whose panel may lie before a re-asked question: the step's output.
+      const decided = /^saveOrganize \{"decided":\["(?:home|t3-refused|temp|system|automated|orphaned)"/.test(e.name);
+      const question = h.out.slice(decided ? 0 : prevAt + 1, lastAsk!.at + 1).join("").replace(/\s+/g, " ").slice(decided ? -4000 : 0);
       assert.match(question, rule[1], `${e.name} after: ${question.slice(-300)}`);
     }
   }
@@ -603,15 +606,15 @@ test("no pending decisions: no detour", async () => {
   assert.match(h.flat(), /Step 8 of 11/);
 });
 
-test("a declined save is not asked again in the same session (no gate loop)", async () => {
+test("the decisions are asked once per session (no gate loop) and saved once answered", async () => {
   const h = harness({
-    answers: ["y", "y", "y", "n", "n", "n"], // 5: home y, refused y, automated n, save NO; back at 8: import no
+    answers: ["y", "y", "y", "n", "n"], // 5: home y, refused y, automated n (saved); back at 8: import no
     config: { exists: true, language: null, hasPlan: true }, runs: [runOf("a", "apply P0", { status: "partial" })], pending: GATE_PENDING,
   });
   await h.run();
   assert.equal(h.flat().match(/Step 5 of 11 · Decisions/g)?.length, 1);
-  assert.deepEqual(h.saved, []);
-  assert.match(h.flat(), /nothing saved/i);
+  assert.equal(h.saved.length, 1);
+  assert.doesNotMatch(h.flat(), /nothing saved/i);
 });
 
 test("orphaned decision saved as sessions.orphaned (copy / skip), in both languages", async () => {
@@ -646,15 +649,16 @@ test("resume at the clean-up with new pending decisions: decisions first, then t
 
 test("Back from the decisions drops the gate's return point: a later normal visit goes on to the next step", async () => {
   const h = harness({
-    // resume at 8; 5: home y, refused y, automated n, save prompt: b (back to 8, keys already asked: no gate);
-    // 8: import no (ends at 10/11...). Nothing is saved.
-    answers: ["y", "y", "y", "n", "b", "n"],
+    // resume at 8; 5: home y, refused y, b at the last question (back to the step shown before the gated one, the
+    // check, not into the decisions again); then q. Nothing is saved: the last question was never answered.
+    answers: ["y", "y", "y", "b", "q"],
     config: { exists: true, language: null, hasPlan: true }, runs: [runOf("a", "apply P0", { status: "partial" })], pending: GATE_PENDING,
   });
   await h.run();
   assert.deepEqual(h.saved, []);
-  assert.equal(h.flat().match(/Step 5 of 11 · Decisions/g)?.length, 1, "not sent back to the decisions again");
-  assert.match(h.flat(), /Step 8 of 11/);
+  const t = h.flat();
+  assert.equal(t.match(/Step 5 of 11 · Decisions/g)?.length, 1, "not sent back to the decisions again");
+  assert.match(t.slice(t.indexOf("Step 5 of 11 · Decisions")), /Step 2 of 11 · Check/);
 });
 
 test("Back out of the decisions step clears the gate's return point (a later visit goes on to step 6, not to the gated step)", async () => {

@@ -76,7 +76,9 @@ export type PlanNote = "duplicate-in-window" | "diverged-fork" | "truncated-over
   // never a second thread.
   | "in-t3-as-other-form"
   // Started in T3 Code and its thread is still there (active or archived, any instance): nothing to import.
-  | "started-in-t3";
+  | "started-in-t3"
+  // Started in T3 Code with no thread id in it, and brought back by `t3sm recover`: its copy's thread is in T3 Code.
+  | "recovered";
 export type AccountSource = "route" | "vscode-pin" | "recent-activity" | "default";
 export interface PlanItem { session: DiscoveredSession; action: Action; notes: PlanNote[] }
 export interface InstanceSpec { id: string; driver: "claudeAgent"; displayName: string; accentColor: string | null; homePath: string; environment: { name: string; value: string; sensitive: boolean }[] }

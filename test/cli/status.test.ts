@@ -480,7 +480,7 @@ test("info items never raise the level", async () => {
   assert.equal(upd.command, "t3sm changelog");
   assert.match(r.j.items.find((i) => i.key === "held:demo")!.text, /demo is waiting: 'Fix' is in use \(first held 30 min ago\)/);
   assert.match(r.j.items.find((i) => i.key === "orphaned-in-t3")!.text, /1 conversation .*deleted.*old-app \(claude s-1\)/);
-  assert.match(r.j.items.find((i) => i.key === "t3-native-unknown")!.text, /lost-app \(claude s-2\).*claude --resume/);
+  assert.match(r.j.items.find((i) => i.key === "t3-native-unknown")!.text, /lost-app \(claude s-2\).*if T3 Code no longer shows it, bring it back with t3sm recover <id>$/);
   assert.deepEqual(r.j["update"], { installed: "0.3.0", available: null, failure: null, lastInstalled: { from: "0.2.9", to: "0.3.0", at: "2026-11-13T12:00:00.000Z" } });
   await s.run();
   assert.match(s.out(), /All good/);
@@ -574,6 +574,25 @@ test("repeated import failures by reason, with names; follow conflicts name both
   assert.equal(fc.command, null);
   assert.match(fc.text, /'Plan the API'.*'Plan the API \(copy\)'/);
   assert.match(fc.text, /archive the copy's thread in T3 Code to stop following, or keep continuing it there; the work done outside T3 Code stays in 'Plan the API'$/);
+});
+
+test("keep failing: a session the newest plan skips for another reason (started in T3 Code, already in T3, ...) is not listed", async () => {
+  const s = setup();
+  s.status(LIVE);
+  const skip = (id: string, reason: string) => ({ session: { harness: "claude", nativeId: id, cwd: "C:/work/demo" }, action: { kind: "skip", reason }, notes: [] });
+  writePlan(s.state, "20261114-110000-aaaa", { createdAt: ago(10 * MIN), items: [
+    { session: { harness: "claude", nativeId: "s-1", cwd: "C:/work/demo" }, action: { kind: "import" }, notes: [] },
+    skip("s-2", "t3-native-unknown"), skip("s-3", "already-in-t3"), skip("s-4", "orphaned-in-t3"), skip("s-5", "active"),
+    skip("s-6", "compare-failed"),
+  ] });
+  const j = new Journal(join(s.state, "journal.jsonl"));
+  for (const run of ["r1", "r2"]) for (const id of ["s-1", "s-2", "s-3", "s-4", "s-5", "s-6"]) {
+    await j.append({ t: "import-failed", runId: run, harness: "claude", nativeId: id, reason: "not-imported" } as never);
+  }
+  const fails = (await report(s)).j.items.filter((i) => i.key.startsWith("import-failing"));
+  assert.equal(fails.length, 1);
+  // s-1 the plan still imports; s-6 it skips because comparing failed (a failure too). The others are not failing now.
+  assert.match(fails[0]!.text, /^2 conversations keep failing to import \(not-imported\): demo \(claude s-1\), demo \(claude s-6\)$/);
 });
 
 test("organize failures of the last run need you; an earlier run's do not", async () => {

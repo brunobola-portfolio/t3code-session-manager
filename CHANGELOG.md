@@ -6,6 +6,55 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-11-16
+
+Fixes from the first real run of 0.3.0, and a way to bring back a conversation whose T3 Code thread you deleted. If you
+already ran `t3sm start` with 0.3.0, run it again: the questions come back.
+
+### Added
+
+- **`t3sm recover <session id>`** brings back one conversation started in T3 Code whose thread is gone, when t3sm
+  cannot tell by itself (its transcript names no T3 Code thread: `t3sm status` lists it under Worth knowing, now with
+  "bring one back with t3sm recover <id>"). It refuses unless the conversation was started in T3 Code and no T3 Code
+  thread t3sm can see holds it, says that a thread still in T3 Code makes a duplicate, and asks first (`--yes` without
+  a terminal, `--dry-run` writes nothing). The conversation comes back as a faithful copy with a new session id,
+  imported into its project and journaled: `t3sm rollback --run <id> --archive-threads` undoes it. A short id (8
+  characters or more) is enough. Once it is back, the plan counts the original as in T3 Code (note `recovered`) and
+  `t3sm status` no longer lists it.
+
+### Fixed
+
+- **The decisions apply when you answer them.** `t3sm start` asked "Save your answers in config.json?" after the
+  decision questions, with No as the default: pressing Enter saved nothing, and the pilot and the full import then left
+  out every conversation those questions were about. The answers are saved now as soon as you answer the last one, with
+  one line saying so; `q` before the last answer still saves nothing.
+- **The history question after an upgrade from 0.2.** A 0.2.1 `config.json` keeps `organize.history` as `"all"`,
+  `"off"` or `"days:N"`. With every conversation already visible, step 9 had nothing to change and never asked about
+  the 0.3 rule (90 days, at least 10 per project). Such a value is now asked once more, as you had it, saying so
+  ("Until now: every conversation visible"): `"all"` with the 0.3 default, `"days:N"` with those days (at least 10 per
+  project), `"off"` in its off form (Enter keeps it off). The answer is recorded as `history-v2` in `organize.decided`,
+  also when you keep it off and choose nothing else (then only `config.json` is written), so it does not come back.
+- **T3 Code's own auto-settle option, in clearer words.** With a history rule of at most 90 days: "Also let T3 Code put
+  away conversations started in T3 after N days? Now: ..." (default yes; `n` leaves it as it is, never off). With a
+  longer rule or all of it: keep it, set it to 90 days, or turn it off (default keep). `?` explains why the order is
+  safe: organize applies the history rule before it changes T3 Code's option.
+- **Changing T3 Code's option failed** with `missing required scope: settings:write`: t3sm's session never had that
+  permission. Only the runs that change one of T3 Code's settings ask for it now (`organize --yes --auto-settle`, and
+  the undo or rollback of an organize run that changed it); every other connection keeps the least-privilege scopes.
+  A refusal for a missing permission is now said in plain words instead of T3 Code's raw error.
+- **The minimum per project holds against T3 Code's own auto-settle.** An older imported conversation a project keeps
+  shown for its minimum, shown without an override, could be put away by T3 Code's own auto-settle option once older
+  than its days. While that option is on, `t3sm organize` and the background sync's daily pass now mark the
+  conversations the rule keeps for the minimum per project, a week before that option could reach them (recent ones
+  included): an unsettle, which gives them T3 Code's "active" override (never
+  auto-settled; spec §5.2). A mark also sets T3 Code's `unsettledAt`, which moves the conversation in T3 Code's
+  working-shelf sort. `t3sm organize` lists the marks on their own line ("Keep N conversations shown ..."), the
+  guided set-up shows them before its yes (planned with T3 Code's option as you set it there), and they cannot be undone: `organize --undo` and `rollback` report them as
+  "kept: T3 Code keeps it shown and outside its own option; a mark cannot be undone". The `organize --undo` of 0.3.0
+  does not know a mark: run with 0.3.0, it reports one as failed, which is harmless (nothing changes).
+- **`t3sm status` no longer lists conversations as "keep failing to import"** when the newest plan skips them for
+  another reason (started in T3 Code, already in T3 Code, deleted there, in use).
+
 ## [0.3.0] - 2026-11-15
 
 t3sm 0.3 brings every conversation into T3 Code and keeps it there: the ones you start in T3 Code are recognised, the

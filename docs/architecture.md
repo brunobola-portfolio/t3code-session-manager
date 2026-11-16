@@ -266,8 +266,14 @@ asks a question. Sessions of a category nobody has answered yet are not imported
 `needsAttention` says so. A new project folder is created as before, with its clean name. After an import it archives and
 retitles **only the threads that import just made**, and applies the history rule to every imported thread of the
 projects that got new ones; once a day (24 h after `lastHistoryAt` in `sync-status.json`) it applies the rule to every
-project, also on a cycle with nothing to import. At most 200 history changes per cycle (`HISTORY_PER_CYCLE`): the
-first pass after an upgrade continues over the next cycles. All of it in the cycle's run and under the same lock, so
+project, also on a cycle with nothing to import. While T3 Code's own auto-settle option is on (read, never changed),
+the rule also marks the imported conversations it keeps for the minimum per project, once T3 Code's option could reach
+them within a week (recent ones included): an unsettle that gives them the "active" override, so T3 Code's option never
+puts them away (spec §5.2, owner-approved). A recent conversation beyond the minimum is not marked: if T3 Code's option
+is shorter than the rule and puts one away, the next pass shows it again. A mark sets T3 Code's
+`unsettledAt`, which moves the conversation in its working-shelf sort; it cannot be undone (an undo reports it as kept).
+At most 200 history changes per cycle (`HISTORY_PER_CYCLE`): the first pass after an upgrade continues over the next
+cycles. All of it in the cycle's run and under the same lock, so
 `t3sm rollback <run>` undoes the import and the organize changes together. It writes a copy of a conversation from a folder T3 Code refuses **only to a destination that
 already exists in T3 Code**; it never creates the General folder or a project for such a copy (those sessions wait as
 `rehome-target-missing` until `t3sm start` or `t3sm organize` creates it). It never pins or unpins a project, never

@@ -20,7 +20,7 @@ where.
 One line, the same on Windows, macOS and Linux:
 
 ```bash
-npm install -g --install-links github:brunobola-portfolio/t3code-session-manager#v0.3.0
+npm install -g --install-links github:brunobola-portfolio/t3code-session-manager#v0.3.1
 t3sm
 ```
 
@@ -105,7 +105,7 @@ hand ([Upgrading from 0.2.x](#upgrading-from-02x)).
 ## Run it with npx (no install)
 
 ```bash
-npx -y github:brunobola-portfolio/t3code-session-manager#v0.3.0 doctor
+npx -y github:brunobola-portfolio/t3code-session-manager#v0.3.1 doctor
 ```
 
 Every command works this way: replace `doctor` with `plan`, `apply`, and so on. The first run downloads and builds

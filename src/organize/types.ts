@@ -57,6 +57,8 @@ export interface OrganizeInput {
   projectCategory?: Map<string, FolderCategory>;
   /** A title T3 derived from a technical first message. Default: starts with "<" or "[external". */
   isTechnicalTitle?: (title: string) => boolean;
+  /** T3 Code's own auto-settle days now (null: off; undefined: not reported): whether the history rule marks (history.ts step 6). */
+  t3AutoSettleDays?: number | null;
   /** Asked change of T3's global auto-settle (days, null = off): one action when want !== current. */
   autoSettle?: { want: number | null; current: number | null };
   /**

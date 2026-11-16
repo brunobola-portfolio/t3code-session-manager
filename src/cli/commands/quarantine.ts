@@ -24,7 +24,7 @@ import { shownText } from "../../plan/names.ts";
 export interface OpsDeps {
   home?: string;
   now?: () => number;
-  connect?: (home: string, opts: { allowUntested: boolean; manageProviders: boolean; onNotice: (l: string) => void }) => Promise<T3Api>;
+  connect?: (home: string, opts: { allowUntested: boolean; manageProviders: boolean; writeSettings?: boolean; onNotice: (l: string) => void }) => Promise<T3Api>;
 }
 
 export interface Parsed { flags: Set<string>; values: Map<string, string> }

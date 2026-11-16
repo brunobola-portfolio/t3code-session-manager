@@ -50,6 +50,8 @@ export interface FreshPlanOptions {
   onNotice?: (line: string) => void;
   /** Discovery writes nothing (no cache save): `sync --dry-run`. */
   readOnly?: boolean;
+  /** Claude session ids `t3sm recover` brings back (PlanInput.recover). */
+  recover?: { has(nativeId: string): boolean };
 }
 
 export interface FreshPlan {
@@ -92,6 +94,7 @@ export async function freshPlan(api: T3Api, o: FreshPlanOptions): Promise<FreshP
     sessions, config, journal, now: o.now(), runId, home: o.home,
     t3: { version: api.version, projects, threads, instances, providers },
     existsDir: o.existsDir ?? isDir, lang: o.lang ?? resolveLang(null, o.env, config.language),
+    ...(o.recover ? { recover: o.recover } : {}),
   });
   // Implicit default instance (no settings entry) + a config account for ~/.claude: apply pins it there.
   const defHome = defaultClaudeHome(o.home);

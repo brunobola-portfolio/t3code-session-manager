@@ -6,7 +6,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { main, type Io } from "../../src/cli/main.ts";
-import { keepChecked, namesOf, organizeCommand, reviewItems, type OrganizeDeps } from "../../src/cli/commands/organize.ts";
+import { failureWords, keepChecked, namesOf, organizeCommand, reviewItems, type OrganizeDeps } from "../../src/cli/commands/organize.ts";
 import type { OrganizeKind, OrganizePlan } from "../../src/organize/types.ts";
 import type { Term } from "../../src/ui/terminal.ts";
 import { acquireLock } from "../../src/core/lock.ts";
@@ -15,7 +15,7 @@ import { normalizeCwd } from "../../src/core/paths.ts";
 import type { JournalEntry } from "../../src/core/types.ts";
 import type { T3Api, T3Project, T3Thread } from "../../src/t3/api.ts";
 import { compatGate } from "../../src/t3/compat.ts";
-import { T3NotRunning } from "../../src/t3/errors.ts";
+import { RpcError, T3NotRunning } from "../../src/t3/errors.ts";
 import { fakeT3, inst, type FakeT3 } from "../apply/fake-t3.ts";
 import { uuid } from "../plan/helpers.ts";
 
@@ -741,4 +741,87 @@ test("organize --help documents --history, --min and --auto-settle <1..90|off>",
   await main(["organize", "--help"], h.io);
   for (const s of ["--history <days|all|off>", "--min <n>", "--auto-settle <days|off>", "t3sm organize --history 90 --min 10"]) assert.ok(h.out().includes(s), s);
   assert.doesNotMatch(h.out(), /"days:N"/, "the help describes the 0.3 rule");
+});
+
+// ---------------- 0.3.1: settings:write only for a change of T3 Code's own option ----------------
+
+test("the T3 Code session asks for settings:write only when organize (or its undo) changes T3 Code's own option", async () => {
+  const w = world();
+  const seen: { args: string; writeSettings: boolean }[] = [];
+  const connect = async (_h: string, c: { allowUntested: boolean; manageProviders: boolean; writeSettings?: boolean; onNotice: (l: string) => void }): Promise<T3Api> => {
+    seen.push({ args: current, writeSettings: c.writeSettings === true });
+    assert.equal(c.manageProviders, false, "never providers:manage");
+    return w.f.api;
+  };
+  let current = "";
+  const run = async (args: string[]): Promise<number> => { current = args.join(" "); const c = io(w.state); const code = await organizeCommand(args, c.io, w.deps({ connect })); assert.ok(code === 0, c.err()); return code; };
+  await run(["--dry-run", "--auto-settle", "30"]);
+  await run(["--yes", "--no-delete"]);
+  const first = changes(await w.journal.readAll())[0]!.runId;
+  w.f.threads.set(tid(H2), { ...w.f.threads.get(tid(H2))!, settledOverride: "settled" });
+  await run(["--yes", "--auto-settle", "30"]);
+  assert.equal(w.f.autoSettleDays, 30);
+  const second = changes(await w.journal.readAll()).find((e) => e.kind === "auto-settle")!.runId;
+  await run(["--undo", second, "--dry-run"]);
+  await run(["--undo", second, "--yes"]);
+  assert.equal(w.f.autoSettleDays, 7, "the undo put T3 Code's option back");
+  await run(["--undo", first, "--yes"]);
+  assert.deepEqual(seen.map((s) => `${s.args}: ${s.writeSettings}`), [
+    "--dry-run --auto-settle 30: false", "--yes --no-delete: false", "--yes --auto-settle 30: true",
+    `--undo ${second} --dry-run: false`, `--undo ${second} --yes: true`, `--undo ${first} --yes: false`,
+  ]);
+});
+
+test("a change of T3 Code's option that T3 Code refuses for a missing permission says so in plain words", async () => {
+  const w = world();
+  w.f.opts.writeError = (call) => (call.startsWith("auto-settle:")
+    ? { error: new RpcError("server.updateSettings", { _tag: "EnvironmentAuthorizationError", message: "The authenticated token is missing required scope: settings:write" }) }
+    : undefined);
+  for (const lang of ["en", "pt"] as const) {
+    const c = io(w.state, { lang });
+    assert.equal(await organizeCommand(["--yes", "--no-delete", "--auto-settle", "30"], c.io, w.deps()), 5);
+    const out = flat(c.out());
+    assert.doesNotMatch(out, /EnvironmentAuthorizationError|missing required scope/);
+    // The table cuts the cell to the screen's width: its start says it.
+    assert.match(out, lang === "en" ? /T3 Code refused: no permission/ : /O T3 Code recusou: sem permissão/);
+    assert.equal(w.f.autoSettleDays, 7);
+  }
+});
+
+test("failureWords: a missing permission in plain words, any other error as worded", () => {
+  assert.equal(failureWords("server.updateSettings failed: EnvironmentAuthorizationError: The authenticated token is missing required scope: settings:write", "en"),
+    "T3 Code refused: no permission for this setting. Update t3sm, then run t3sm organize again.");
+  assert.equal(failureWords("socket closed", "en"), "socket closed");
+});
+
+test("summaryLines and actionLine: a mark of a thread already shown is its own line, never counted as shown again", async () => {
+  const { summaryLines, actionLine } = await import("../../src/cli/commands/organize.ts");
+  const { SHOWN_NO_OVERRIDE } = await import("../../src/organize/history.ts");
+  const counts = Object.fromEntries(["archive", "title", "unsettle", "settle", "pin", "unpin", "project-delete", "project-title", "auto-settle"].map((k) => [k, 0]));
+  const mark = (id: string, p: string) => ({ kind: "unsettle", target: id, projectId: p, previous: SHOWN_NO_OVERRIDE, next: "active", reason: "history: kept visible, at least 10 per project" }) as never;
+  const lines = summaryLines({ runId: "r", counts: counts as never, byProject: [], actions: [
+    { kind: "unsettle", target: "s1", projectId: "p1", previous: "settled", next: "active", reason: "history: last 90 days" } as never,
+    mark("k1", "p1"), mark("k2", "p2"),
+  ] });
+  assert.deepEqual(lines, [
+    "Show 1 conversation inside 1 project (from the last 90 days; T3 Code's own auto-settle setting does not change) — undo: t3sm organize --undo",
+    "Keep 2 conversations shown in 2 projects, marked so T3 Code's own auto-settle never puts them away (the minimum per project) — undo: t3sm organize --undo",
+  ]);
+  const names = namesOf([], [], "C:/home-demo", "en");
+  assert.match(actionLine(mark("k1", "p1"), names), /^Keep .* shown inside its project$/);
+});
+
+test("an undo names the marks under their own heading: kept shown, a mark cannot be undone (EN and PT)", async () => {
+  const { renderUndo, undoLines } = await import("../../src/cli/commands/organize.ts");
+  const { makeCliUi } = await import("../../src/i18n/cli.ts");
+  const items = [{ kind: "unsettle" as const, target: "import:claudeAgent:k1", status: "kept" as const }];
+  const changes = new Map([["unsettle\u0000import:claudeAgent:k1", { t: "organize-change" as const, runId: "r1", kind: "unsettle" as const, target: "import:claudeAgent:k1", previous: "shown", next: "active" }]]);
+  const names = namesOf([{ id: "import:claudeAgent:k1", projectId: "p1", instanceId: "claudeAgent", archived: false, title: "Plan the API" }], [], "C:/home-demo", "en");
+  assert.deepEqual(undoLines(items, changes, names).kept, ["'Plan the API': kept: T3 Code keeps it shown and outside its own option; a mark cannot be undone"]);
+  const r = { runId: null, reverted: 0, skippedUserChanged: 0, alreadyRestored: 0, kept: 1, failed: [], items };
+  for (const lang of ["en", "pt"] as const) {
+    const ui = makeCliUi({ color: 0, unicode: true, isTTY: false, columns: 120 } as never, lang);
+    const out = flat(renderUndo(ui, r, "r1", true, changes, { ...names, lang }).join("\n"));
+    assert.match(out, lang === "en" ? /Kept shown \(cannot be undone\)/ : /Mantidas à vista \(não se desfaz\)/);
+  }
 });

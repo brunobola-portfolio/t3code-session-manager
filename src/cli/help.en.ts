@@ -38,6 +38,7 @@ Keep in sync
   t3sm sync              Import what is new since the last run (--watch keeps going)
   t3sm schedule          Run sync in the background: install [--watch], remove, restart, status
   t3sm merge             Bring sessions continued in a terminal into T3 Code
+  t3sm recover <id>      Bring back a conversation started in T3 Code whose thread is gone
 
 Tidy T3 Code
   t3sm organize          Tidy the imported history: archive, retitle, show, pin (--undo)
@@ -188,6 +189,24 @@ Examples:
   t3sm merge
   t3sm merge --session 1a2b3c4d
   t3sm merge --all
+`,
+  recover: `Usage: t3sm recover <session id> [--yes | --dry-run] [--allow-untested]
+
+Bring back one conversation started in T3 Code whose T3 Code thread is gone. t3sm cannot tell that by itself when the
+transcript names no T3 Code thread (\`t3sm status\` lists such conversations under Worth knowing), so you name it. It
+refuses unless the conversation was started in T3 Code and no T3 Code thread t3sm can see holds it. The conversation
+comes back as a faithful copy with a new session id, imported into its project (journaled; undo with \`t3sm rollback
+--run <id> --archive-threads\`). The original file stays as it is. If the thread still exists in T3 Code, this makes
+a duplicate. On a terminal it shows what it will do and asks first.
+
+Options:
+  --yes              Skip the confirmation (required when not on a terminal)
+  --dry-run          Only show what it would do
+  --allow-untested   No warning on a T3 Code version t3sm was not tested with (it never blocks)
+
+Examples:
+  t3sm recover 1a2b3c4d --dry-run
+  t3sm recover 1a2b3c4d
 `,
   rollback: `Usage: t3sm rollback [--run <id>] [--yes | --dry-run] [--instances] [--archive-threads] [--allow-untested]
 

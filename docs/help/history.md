@@ -12,7 +12,11 @@ That is the history rule, `organize.history` in config.json (default: the last 9
 It covers every imported conversation (a thread whose id starts with `import:`), whether t3sm or T3 Code's own import
 brought it in; a conversation you started in T3 Code is only ever moved by T3 Code's own auto-settle option.
 `t3sm organize` applies the rule; the background sync applies it right after an import to the projects that got new
-conversations, and once a day to every project. T3 Code's own auto-settle setting is not changed.
+conversations, and once a day to every project. T3 Code's own auto-settle setting is not changed. While that setting is
+on, the conversations a project keeps shown for its minimum are marked as shown in T3 Code (a week before T3 Code's
+option would reach them), so T3 Code's own option never puts them away. If you keep T3 Code's option shorter than the
+rule, t3sm brings such conversations back on its next pass. A mark moves the conversation in T3 Code's working-shelf sort, and it cannot be undone:
+`t3sm organize --undo` lists it as kept (T3 Code keeps it shown and outside its own option).
 
 ## What to do
 

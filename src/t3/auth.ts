@@ -130,9 +130,11 @@ export const defaultRunner: Runner = (file, args, opts) =>
   });
 
 /**
- * Default least-privilege scopes (S1 2.1: `--scope` REPLACES the default 16-permission set). No settings:write: t3sm sends
- * only empty patches with a providerInstanceMutation, which need providers:manage alone (RpcAuthorization.ts 244-250).
- * Add "providers:manage" only for instance mutations.
+ * Default least-privilege scopes (S1 2.1: `--scope` REPLACES the default 16-permission set). No settings:write by default:
+ * instance changes send an empty patch with a providerInstanceMutation, which needs providers:manage alone
+ * (RpcAuthorization.ts 244-250). Add "providers:manage" only for instance mutations, and "settings:write" only for a
+ * connection that changes one of T3 Code's own settings (`connectT3`'s writeSettings: organize's auto-settle change and
+ * its undo; T3 Code refuses a settings patch without it).
  */
 export const DEFAULT_SCOPES = ["orchestration:read", "orchestration:operate"] as const;
 

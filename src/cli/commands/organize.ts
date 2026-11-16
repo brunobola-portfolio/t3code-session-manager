@@ -28,6 +28,7 @@ import { normalizeFolder } from "../../ops/projects.ts";
 import { applyOrganize, assertOrganizeOnly, undoOrganize, type UndoOrganizeResult } from "../../organize/apply.ts";
 import { STOP_SIGNALS, type SignalSource } from "../../apply/apply.ts";
 import { AUTO_SETTLE_TARGET, buildOrganizePlan } from "../../organize/plan.ts";
+import { SHOWN_NO_OVERRIDE, isShownMark } from "../../organize/history.ts";
 import { matchSessions } from "../../organize/sessions.ts";
 import { proposeTitle } from "../../organize/titles.ts";
 import type { OrganizeAction, OrganizeKind, OrganizePlan } from "../../organize/types.ts";
@@ -49,7 +50,8 @@ import { organizePreviewTable, type OrganizePreviewWords } from "../../ui/organi
 import { progressBar } from "../../ui/progress.ts";
 import { discoverAll, makeEnv } from "./scan.ts";
 
-export type ConnectFn = (home: string, opts: { allowUntested: boolean; manageProviders: boolean; onNotice: (l: string) => void }) => Promise<T3Api>;
+/** writeSettings: the session may change T3 Code's own settings (settings:write), only for a run that changes one. */
+export type ConnectFn = (home: string, opts: { allowUntested: boolean; manageProviders: boolean; writeSettings?: boolean; onNotice: (l: string) => void }) => Promise<T3Api>;
 
 export interface OrganizeDeps {
   home?: string;
@@ -94,11 +96,11 @@ export function noticeOnce(io: Io): (l: string) => void {
  * dropped; organizeGate then gives the one warning (none with --allow-untested). Notices after connecting (a failed
  * revoke at close) still show.
  */
-export async function connectForOrganize(connect: ConnectFn, home: string, allowUntested: boolean, onNotice: (l: string) => void): Promise<T3Api> {
+export async function connectForOrganize(connect: ConnectFn, home: string, allowUntested: boolean, onNotice: (l: string) => void, writeSettings = false): Promise<T3Api> {
   let connecting = true;
   let api: T3Api;
   try {
-    api = await connect(home, { allowUntested: true, manageProviders: false, onNotice: (l) => { if (!connecting) onNotice(l); } });
+    api = await connect(home, { allowUntested: true, manageProviders: false, ...(writeSettings ? { writeSettings } : {}), onNotice: (l) => { if (!connecting) onNotice(l); } });
   } finally {
     connecting = false;
   }
@@ -294,6 +296,7 @@ export async function buildOrganize(api: T3Api, j: Journal, config: Config, p: B
       ? { onlyThreads, ...(historyThreads ? { historyThreads } : {}), allowPins: false, allowDeletes: false }
       : { allowPins: true, allowDeletes: p.noDelete !== true },
     ...(p.autoSettle !== undefined && autoSettleDays !== undefined ? { autoSettle: { want: p.autoSettle, current: autoSettleDays } } : {}),
+    ...(autoSettleDays !== undefined ? { t3AutoSettleDays: autoSettleDays } : {}),
   });
   const skipPin = p.noPin ?? new Set<string>();
   const plan = skipPin.size === 0 ? built : keepChecked(built, built.actions.map((a, i): ListItem => ({ id: String(i), label: "", detail: "", checked: !(a.kind === "pin" && skipPin.has(a.target)) })));
@@ -345,6 +348,15 @@ const quoted = (t: string): string => `'${shownText(t, TITLE_SHOWN)}'`;
 const ERROR_SHOWN = 200;
 const shownError = (e: unknown): string => shownText(e, ERROR_SHOWN);
 
+/**
+ * Why a change failed, for the screen: T3 Code's refusal for a missing permission (an EnvironmentAuthorizationError, a
+ * session without the scope the change needs) in plain words; any other error as T3 Code or t3sm worded it.
+ */
+export function failureWords(error: string, lang: "en" | "pt"): string {
+  if (/EnvironmentAuthorizationError|missing required scope/i.test(error)) return cliT(lang, "organize.why.noPermission");
+  return shownError(error);
+}
+
 export function namesOf(threads: T3Thread[], projects: T3Project[], home: string, lang: Lang = "en"): Names {
   const p = new Map(projects.map((x) => [x.id, x.title] as const));
   const t = new Map(threads.map((x) => [x.id, x] as const));
@@ -365,12 +377,12 @@ const days = (x: unknown, lang: Lang): string => (x === null ? cliT(lang, "organ
 const str = (x: unknown): string => (typeof x === "string" ? x : JSON.stringify(x));
 
 /** One planned change, in words ("Archive 'Fix the login form' (demo)"), in the language of `n`. */
-export function actionLine(a: { kind: OrganizeKind; target: string; next: unknown }, n: Names): string {
+export function actionLine(a: { kind: OrganizeKind; target: string; next: unknown; previous?: unknown }, n: Names): string {
   const t = (k: CliKey, v: Record<string, string | number> = {}): string => cliT(n.lang, k, v);
   switch (a.kind) {
     case "archive": return t("organize.act.archive", { thread: n.thread(a.target) });
     case "title": return t("organize.act.title", { thread: n.thread(a.target), title: quoted(str(a.next)) });
-    case "unsettle": return t("organize.act.show", { thread: n.thread(a.target) });
+    case "unsettle": return t(a.previous === SHOWN_NO_OVERRIDE ? "organize.act.keep" : "organize.act.show", { thread: n.thread(a.target) });
     case "settle": return t("organize.act.settle", { thread: n.thread(a.target) });
     case "pin": return t("organize.act.pin", { project: n.project(a.target) });
     case "unpin": return t("organize.act.unpin", { project: n.project(a.target) });
@@ -440,6 +452,8 @@ function historyWhy(lang: Lang, r: string): string {
   if (last) return cliT(lang, "organize.why.last", { days: last[1]! });
   const min = /^history: at least (\d+) per project$/.exec(r);
   if (min) return cliT(lang, "organize.why.min", { min: min[1]! });
+  const kept = /^history: kept visible, at least (\d+) per project$/.exec(r);
+  if (kept) return cliT(lang, "organize.why.kept", { min: kept[1]! });
   const older = /^history: older than (\d+) days$/.exec(r);
   return older ? cliT(lang, "organize.why.older", { days: older[1]! }) : r;
 }
@@ -468,11 +482,17 @@ export function summaryLines(plan: OrganizePlan, o: OrganizeSummaryOptions = {})
     const why = reasons.length === 1 ? word(reasons[0]![0]) : reasons.map(([r, n]) => `${num(n)} ${word(r)}`).join(", ");
     L.push(t("organize.sum.title", { n: num(title.length), why }) + undo);
   }
-  const show = of("unsettle");
+  const show = of("unsettle").filter((a) => !isShownMark(a));
   if (show.length > 0) {
     const projects = new Set(show.map((a) => a.projectId)).size;
     const why = tally(show, (a) => a.reason).map(([r]) => historyWhy(lang, r)).join(", ");
     L.push(t("organize.sum.show", { n: num(show.length), p: num(projects), why }) + undo);
+  }
+  // Already shown: marked so T3 Code's own auto-settle leaves them shown (src/organize/history.ts, step 6).
+  const kept = of("unsettle").filter((a) => isShownMark(a));
+  if (kept.length > 0) {
+    const projects = new Set(kept.map((a) => a.projectId)).size;
+    L.push(t("organize.sum.keep", { n: num(kept.length), p: num(projects) }) + undo);
   }
   const settle = of("settle");
   if (settle.length > 0) {
@@ -613,7 +633,8 @@ async function organize(p: Parsed, io: Io, deps: OrganizeDeps): Promise<number> 
   const j = new Journal(join(dir, "journal.jsonl"));
   const config = (await loadConfig(dir, home)) ?? defaultConfig(await resolveAccounts(home, [], io.env));
   const onNotice = noticeOnce(io);
-  const connect = (): Promise<T3Api> => connectForOrganize(deps.connect ?? connectT3, home, p.allowUntested, onNotice);
+  // settings:write only for a run that may change T3 Code's own auto-settle option (--auto-settle); a dry run never writes.
+  const connect = (): Promise<T3Api> => connectForOrganize(deps.connect ?? connectT3, home, p.allowUntested, onNotice, !p.dryRun && p.autoSettle !== undefined);
 
   const ui = cliUi(io, { now });
   const plan = async (api: T3Api): Promise<Built> => {
@@ -695,7 +716,7 @@ async function organize(p: Parsed, io: Io, deps: OrganizeDeps): Promise<number> 
 /** The changes that could not be made: the change in words and the error, as a table (at most 20 rows). */
 function failedTable(ui: CliUi, failed: { action: OrganizeAction; error: string }[], names: Names, width: number = ui.width): string[] {
   const { s } = ui;
-  const rows = failed.slice(0, 20).map((f) => [actionLine(f.action, names), shownError(f.error)] as const);
+  const rows = failed.slice(0, 20).map((f) => [actionLine(f.action, names), failureWords(f.error, ui.lang)] as const);
   const out = [...fitLine(`${s("err", s.sym.err)} ${s("title", ui.t("organize.failedTitle", { n: failed.length }))}`, width, 2),
     ...uiTable(s, [
       { header: ui.t("organize.col.change"), get: (r) => (r as readonly [string, string])[0], priority: 5, min: 24 },
@@ -742,7 +763,7 @@ export function changesOf(entries: JournalEntry[], target: string): Map<string, 
  * An undo's items in organize's words (shared with `t3sm rollback`): what is reverted, what is left alone and why, what
  * could not be reverted. Titles come from `names` (T3 Code as it was before the undo); never ids or raw JSON.
  */
-export function undoLines(items: UndoItem[], changes: Map<string, Change>, names: Names): { reverted: string[]; userChanged: string[]; failed: string[] } {
+export function undoLines(items: UndoItem[], changes: Map<string, Change>, names: Names): { reverted: string[]; userChanged: string[]; kept: string[]; failed: string[] } {
   const entry = (x: UndoItem) => changes.get(`${x.kind}\u0000${x.target}`) ?? { kind: x.kind, target: x.target, previous: null, next: null };
   const of = (status: UndoItem["status"], line: (x: UndoItem) => string): string[] => items.filter((x) => x.status === status).map(line);
   const why = (x: UndoItem): string => cliT(names.lang,
@@ -750,7 +771,8 @@ export function undoLines(items: UndoItem[], changes: Map<string, Change>, names
   return {
     reverted: of("reverted", (x) => revertLine(entry(x), names)),
     userChanged: of("user-changed", (x) => `${subjectOf(entry(x), names)}: ${why(x)}`),
-    failed: of("failed", (x) => `${revertLine(entry(x), names)}: ${shownError(x.note ?? "failed")}`),
+    kept: of("kept", (x) => `${subjectOf(entry(x), names)}: ${cliT(names.lang, "organize.undo.kept")}`),
+    failed: of("failed", (x) => `${revertLine(entry(x), names)}: ${failureWords(x.note ?? "failed", names.lang)}`),
   };
 }
 
@@ -770,6 +792,7 @@ export function renderUndo(ui: CliUi, r: UndoOrganizeResult, target: string, dry
   };
   list(dry ? "organize.undo.willRevert" : "organize.undo.reverted", u.reverted);
   list("organize.undo.leftAlone", u.userChanged);
+  list("organize.undo.keptTitle", u.kept);
   if (r.alreadyRestored > 0) out.push("", ...textLines(s, t("organize.undo.alreadyBack", { n: r.alreadyRestored }), width));
   list("organize.undo.couldNot", u.failed);
   return out;
@@ -799,9 +822,11 @@ async function undo(p: Parsed, run: string | null, io: Io, deps: OrganizeDeps): 
   }
   assertOrganizeOnly(entries, target); // a sync run that imported too: rollback undoes it whole (exit 2)
   const onNotice = noticeOnce(io);
-  const connect = (): Promise<T3Api> => connectForOrganize(deps.connect ?? connectT3, home, p.allowUntested, onNotice);
-  const base = { journal: j, now, allowUntested: true, onNotice }; // organizeGate already spoke
   const changes = changesOf(entries, target);
+  // settings:write only when the undo may put T3 Code's own auto-settle option back (never for a preview).
+  const settingBack = [...changes.values()].some((c) => c.kind === "auto-settle");
+  const connect = (): Promise<T3Api> => connectForOrganize(deps.connect ?? connectT3, home, p.allowUntested, onNotice, !p.dryRun && settingBack);
+  const base = { journal: j, now, allowUntested: true, onNotice }; // organizeGate already spoke
   // Titles as T3 Code shows them before anything is reverted.
   const names = async (api: T3Api): Promise<Names> => namesOf(await api.listThreads(), await api.listProjects(), home, ui.lang);
   const say = (l: string[]): void => io.stdout(l.join("\n") + "\n");

@@ -152,7 +152,11 @@ Each names where it is enforced, then the test that pins it.
     and it applies the history rule to imported threads only (every `import:` thread, whether t3sm or T3 Code's own
     import made it; a conversation started in T3 Code is only ever moved by T3 Code's own auto-settle option), after an
     import to the projects that got new threads and once a day to every project (at most `HISTORY_PER_CYCLE` changes,
-    never a thread the user changed by hand; spec §5.1.4 and §5.2). The watcher may also, once a day, start the update child (`t3sm update --auto-run --yes`, a
+    never a thread the user changed by hand; spec §5.1.4 and §5.2). While T3 Code's own auto-settle option is on (read,
+    never changed), that daily pass also marks the imported threads the rule keeps for the minimum per project, once
+    T3 Code's option could reach them within a week (an unsettle: the "active" override, which T3 Code's option never
+    settles; it also sets T3 Code's `unsettledAt`, which moves the thread in the working-shelf sort; a mark cannot be
+    undone). The watcher may also, once a day, start the update child (`t3sm update --auto-run --yes`, a
     separate detached process: never inside the watcher) for a newer patch or minor release when `update.auto` is on,
     and restart itself into a new install. Approved by the owner on 2026-11-14 and, for following, the history rule and
     automatic updates, on 2026-11-15. `src/ops/sync.ts` (`filterForSync`, `DEFAULT_MAX_UNATTENDED_IMPORTS`),

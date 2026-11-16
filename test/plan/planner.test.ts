@@ -1068,6 +1068,42 @@ test("no thread id: t3-native-unknown, never copied", async () => {
   }
 });
 
+test("recover: a T3-native session without a known thread comes back as a faithful copy, whatever organize.sessions.orphaned says", async () => {
+  const { uuidV5 } = await import("../../src/core/uuid.ts");
+  const s = t3sess(undefined);
+  const u = uuidV5(`claude-orphan:${s.nativeId}`);
+  for (const config of [undefined, ORPHAN_YES, { organize: { decided: ["orphaned"], sessions: { automated: "skip" as const, orphaned: "skip" as const } } }]) {
+    const p = await buildPlan({ ...input({ sessions: [s], ...(config ? { config } : {}) }), recover: new Set([s.nativeId]) });
+    const a = only(p).action;
+    if (a.kind !== "convert-import") throw new Error(`expected convert-import, got ${JSON.stringify(a)}`);
+    assert.deepEqual([a.uuid, a.copy, a.projectRoot, a.expectedThreadId], [u, "faithful", "C:/work/demo", `import:claudeAgent:${u}`]);
+    assert.equal(p.decisionsPending, undefined, "an explicit recover is no pending question");
+  }
+  // Only the named session: another one without a thread id stays out.
+  const other = t3sess(undefined, { nativeId: uuid(7031) });
+  const both = await buildPlan({ ...input({ sessions: [s, other] }), recover: new Set([s.nativeId]) });
+  assert.deepEqual(both.items.find((i) => i.session === other)!.action, { kind: "skip", reason: "t3-native-unknown" });
+  // A thread T3 Code still holds of it (its native ref) wins: already in T3, never copied.
+  const held = only(await buildPlan({ ...input({ sessions: [s], threads: [thread(uuid(7032), { nativeSessionId: s.nativeId })] }), recover: new Set([s.nativeId]) }));
+  assert.deepEqual(held.action, { kind: "skip", reason: "already-in-t3" });
+  // Brought back already: its copy's thread is there.
+  const back = only(await buildPlan({ ...input({ sessions: [s], threads: [thread(`import:claudeAgent:${u}`)] }), recover: new Set([s.nativeId]) }));
+  assert.deepEqual(back.action, { kind: "skip", reason: "already-in-t3" });
+});
+
+test("recovered: a T3-native session without a thread id whose recovered copy is in T3 Code is already in T3 (note recovered)", async () => {
+  const { uuidV5 } = await import("../../src/core/uuid.ts");
+  const s = t3sess(undefined);
+  const copy = `import:claudeAgent:${uuidV5(`claude-orphan:${s.nativeId}`)}`;
+  const it = only(await plan({ sessions: [s], threads: [thread(copy, { archived: true })] }));
+  assert.deepEqual([it.action, it.notes], [{ kind: "skip", reason: "already-in-t3" }, ["recovered"]], "archived counts too");
+  // Under another account's instance as well.
+  const other = only(await plan({ sessions: [s], threads: [thread(`import:claude-org:${uuidV5(`claude-orphan:${s.nativeId}`)}`, { instanceId: "claude-org" })] }));
+  assert.deepEqual(other.notes, ["recovered"]);
+  // No copy: still t3-native-unknown.
+  assert.deepEqual(only(await plan({ sessions: [s] })).action, { kind: "skip", reason: "t3-native-unknown" });
+});
+
 test("copy of an orphan is not re-detected as T3-native", async () => {
   const { uuidV5 } = await import("../../src/core/uuid.ts");
   const tid = uuid(7020);

@@ -57,8 +57,8 @@ Delete this empty project? [Y/n/?/b/q] y
   For conversations started in T3 Code: it puts them away after some days
   without use. Now: after 7 days. t3sm can set it to 90 days, like the rule
   above. Default: yes. Undo: t3sm organize --undo.
-Also let T3 Code settle conversations started in T3 Code after 90
-days? [Y/n/?/b/q] y
+Also let T3 Code put away conversations started in T3 after 90 days? Now:
+after 7 days. [Y/n/?/b/q] y
 
 ╭─ Here is what I will do ─────────────────────────────────────────╮
 │ History                the last 90 days, at least 10 per project │

@@ -26,6 +26,8 @@ Keep in sync
   t3sm schedule          Run sync in the background: install [--watch], remove,
                          restart, status
   t3sm merge             Bring sessions continued in a terminal into T3 Code
+  t3sm recover <id>      Bring back a conversation started in T3 Code whose
+                         thread is gone
 
 Tidy T3 Code
   t3sm organize          Tidy the imported history: archive, retitle, show, pin

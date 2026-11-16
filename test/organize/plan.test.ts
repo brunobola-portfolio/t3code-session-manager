@@ -32,7 +32,7 @@ interface Over {
   threads?: T3Thread[]; projects?: T3Project[]; journal?: JournalEntry[];
   config?: Partial<OrganizeConfig>; sessions?: Record<string, Partial<Sess>>;
   scope?: Partial<OrganizeInput["scope"]>; projectCategory?: Record<string, FolderCategory>;
-  isTechnicalTitle?: (t: string) => boolean; autoSettle?: OrganizeInput["autoSettle"]; backdate?: boolean;
+  isTechnicalTitle?: (t: string) => boolean; autoSettle?: OrganizeInput["autoSettle"]; backdate?: boolean; t3AutoSettleDays?: number | null;
 }
 
 function input(o: Over = {}): OrganizeInput {
@@ -52,6 +52,7 @@ function input(o: Over = {}): OrganizeInput {
   if (o.projectCategory) i.projectCategory = new Map(Object.entries(o.projectCategory));
   if (o.isTechnicalTitle) i.isTechnicalTitle = o.isTechnicalTitle;
   if (o.autoSettle) i.autoSettle = o.autoSettle;
+  if (o.t3AutoSettleDays !== undefined) i.t3AutoSettleDays = o.t3AutoSettleDays;
   if (o.backdate !== undefined) i.backdate = o.backdate;
   return i;
 }
@@ -669,6 +670,23 @@ test("auto-settle only when asked and different", () => {
   }]);
 });
 
+test("auto-settle comes after every history change: T3 Code's option changes only once the rule marked what stays visible", () => {
+  // 30 days, at least 1 per project: a recent settled one is shown again, an old visible one is settled.
+  const p = buildOrganizePlan(input({
+    config: { ...quiet, history: { days: 30, minPerProject: 1 } },
+    threads: [
+      thread("import:recent", { latestUserMessageAt: iso(NOW - 2 * DAY) }),
+      thread("import:old", { latestUserMessageAt: iso(NOW - 200 * DAY), settledOverride: null, settledAt: null }),
+    ],
+    autoSettle: { want: 30, current: 15 },
+  }));
+  const kinds = p.actions.map((a) => a.kind);
+  assert.ok(kinds.includes("unsettle") && kinds.includes("settle"), kinds.join(","));
+  const auto = kinds.indexOf("auto-settle");
+  assert.equal(auto, kinds.length - 1, "the setting is the last change");
+  assert.ok(kinds.every((k, i) => (k !== "unsettle" && k !== "settle") || i < auto));
+});
+
 // ---- plan shape ----
 
 test("runId, counts for every kind, project-title never planned", () => {
@@ -760,4 +778,15 @@ test("5 000 threads with a 5 000-change journal: t3sm's own settles are shown ag
   assert.equal(un.length, 2500);
   assert.ok(un.every((id) => Number(/-t(\d+)$/.exec(id)![1]) % 2 === 0), "only t3sm's own settles are undone");
   assert.equal(of(p.actions, "settle").length, 0);
+});
+
+test("marks follow T3 Code's own auto-settle as it will be after this run: the planned value, else its current one", () => {
+  const bare = { settledOverride: null, settledAt: null };
+  const threads = [thread("import:old1", { ...bare, latestUserMessageAt: iso(NOW - 200 * DAY) }), thread("import:old2", { ...bare, latestUserMessageAt: iso(NOW - 300 * DAY) })];
+  const marks = (o: Over): string[] => targets(buildOrganizePlan(input({ config: { ...quiet, history: { days: 90, minPerProject: 10 } }, threads, ...o })).actions, "unsettle");
+  assert.deepEqual(marks({}), [], "T3 Code's value unknown");
+  assert.deepEqual(marks({ t3AutoSettleDays: null }), [], "off");
+  assert.deepEqual(marks({ t3AutoSettleDays: 15 }), ["import:old2", "import:old1"]);
+  assert.deepEqual(marks({ t3AutoSettleDays: 15, autoSettle: { want: null, current: 15 } }), [], "turned off by this run");
+  assert.deepEqual(marks({ t3AutoSettleDays: null, autoSettle: { want: 30, current: null } }), ["import:old2", "import:old1"], "turned on by this run");
 });

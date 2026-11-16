@@ -16,6 +16,7 @@ import { syncCommand } from "./commands/sync.ts";
 import { scheduleCommand } from "./commands/schedule.ts";
 import { doctorCommand } from "./commands/doctor.ts";
 import { mergeCommand } from "./commands/merge.ts";
+import { recoverCommand } from "./commands/recover.ts";
 import { projectsCommand } from "./commands/projects.ts";
 import { startCommand } from "./commands/start.ts";
 import { updateCommand } from "./commands/update.ts";
@@ -60,6 +61,7 @@ export const commands: Record<string, CommandHandler> = {
   sync: (a, io) => syncCommand(a, io),
   schedule: (a, io) => scheduleCommand(a, io),
   merge: (a, io) => mergeCommand(a, io),
+  recover: (a, io) => recoverCommand(a, io),
   projects: (a, io) => projectsCommand(a, io),
   start: (a, io) => startCommand(a, io, { main }),
   update: (a, io) => updateCommand(a, io),
