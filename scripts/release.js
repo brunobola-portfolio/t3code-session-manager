@@ -402,14 +402,23 @@ function main(argv) {
     const problems = check();
     process.stdout.write(`Bumped ${current} -> ${next}:\n${changed.map((c) => `  ${c}`).join("\n")}\n`);
     if (problems.length) process.stdout.write(`\nStill to fix before tagging:\n${problems.map((p) => `  - ${p}`).join("\n")}\n`);
+    const name = JSON.parse(read("package.json")).name;
     process.stdout.write(`
-Next steps (not run for you):
-  git switch -c release/v${next}
-  git commit -am "chore: release ${next}"
-  git push -u origin release/v${next} && gh pr create --fill
-  # after the PR is merged into main:
-  git switch main && git pull && git tag -a v${next} -m v${next} && git push origin v${next}
-  # the Release workflow checks the tag, runs the tests and publishes the GitHub release.
+Next steps (not run for you; docs/launch.md has the details):
+  1. A pull request, for CI only:
+       git switch -c release/v${next}
+       git commit -am "chore(release): ${next}"
+       git push -u origin release/v${next} && gh pr create --title "t3sm ${next}" --body-file <notes>
+  2. Once ci-ok is green, land it by fast-forward (never GitHub's merge: main only takes commits whose ci-ok passed):
+       git push origin release/v${next}:main
+  3. Tag the commit now on main; the Release workflow tests it, stages it on npm with provenance and writes the
+     GitHub release from this CHANGELOG section:
+       git tag -a v${next} -m v${next} && git push origin v${next}
+  4. Approve it on npmjs.com with 2FA: ${name} -> Staged Packages -> Approve. Nothing is installable before that.
+  5. Check what users get:
+       npm view ${name}@${next} version
+       npm install -g ${name} && t3sm --version && t3sm update --check
+       (in a scratch folder that depends on it) npm audit signatures
 `);
     return problems.length ? 1 : 0;
   } catch (err) {

@@ -234,3 +234,22 @@ test("release --check: the package can be published to npm, and the README shows
     assert.match(run(root, "--check").stderr, /README\.md has no `npm install -g t3code-session-manager`/);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
+
+test("release <X.Y.Z>: prints the real release routine (CI-gated fast-forward, tag, npm approval, checks), never a GitHub merge", () => {
+  const root = fixture();
+  try {
+    writeFileSync(join(root, "CHANGELOG.md"), "# Changelog\n\n## [Unreleased]\n\nOne line on the release.\n\n### Fixed\n\n- **A fix.** In a sentence.\n\n## [0.1.0] - 2026-11-11\n\n### Added\n\n- **First release.**\n");
+    const r = run(root, "0.2.0");
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    for (const want of [
+      /git switch -c release\/v0\.2\.0/,
+      /ci-ok/,
+      /git push origin release\/v0\.2\.0:main/,
+      /git tag -a v0\.2\.0 -m v0\.2\.0/,
+      /Staged Packages/,
+      /npm view t3code-session-manager@0\.2\.0 version/,
+      /npm audit signatures/,
+    ]) assert.match(r.stdout, want);
+    assert.doesNotMatch(r.stdout, /gh pr merge|merge button|git pull/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});

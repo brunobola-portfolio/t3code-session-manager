@@ -10,6 +10,7 @@
   <a href="LICENSE"><img alt="Licença: MIT" src="https://img.shields.io/badge/license-MIT-3451D1"></a>
   <img alt="Node 22.18 ou mais recente" src="https://img.shields.io/badge/node-%E2%89%A5%2022.18-3451D1">
   <img alt="Windows, macOS, Linux" src="https://img.shields.io/badge/os-Windows%20%7C%20macOS%20%7C%20Linux-3451D1">
+  <a href="https://www.npmjs.com/package/t3code-session-manager"><img alt="Versão no npm" src="https://img.shields.io/npm/v/t3code-session-manager?color=3451D1&label=npm"></a>
   <img alt="Zero dependências em runtime" src="https://img.shields.io/badge/runtime%20dependencies-0-3451D1">
   ·&nbsp;<a href="README.md">English</a>
 </p>

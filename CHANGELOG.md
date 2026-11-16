@@ -6,6 +6,15 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+Every release is now staged on npm with provenance and goes live only after a maintainer approves it with 2FA. The
+README shows the version on npm.
+
+### Changed
+
+- **Releases are staged on npm and approved with 2FA.** GitHub Actions builds each one from its tag with provenance,
+  through npm's Trusted Publisher and no stored token; `npm audit signatures` verifies what you install.
+- **The README shows the version on npm.** A badge links to the package page.
+
 ## [0.4.0] - 2026-11-16
 
 t3sm is on npm: `npm install -g t3code-session-manager` installs it without git, and it keeps itself up to date from

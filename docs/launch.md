@@ -75,8 +75,11 @@ node scripts/release.js 0.2.0    # bumps package.json, package-lock.json, the pl
                                  # and prints the git commands below without running them
 ```
 
-1. Fill in the `CHANGELOG.md` entry if the script added a stub (`--check` fails while it says TODO).
-2. Commit on a `release/vX.Y.Z` branch, open a pull request, merge it once `ci-ok` is green.
+1. Fill in the `CHANGELOG.md` entry if the script added a stub (`--check` fails while it says TODO); it follows
+   [changelog-style.md](changelog-style.md), and `node scripts/release.js --notes` shows it as the release notes.
+2. Commit on a `release/vX.Y.Z` branch and open a pull request, for CI only. Once `ci-ok` is green, land it by
+   fast-forward: `git push origin release/vX.Y.Z:main`. Never GitHub's merge button or `gh pr merge`: `main` takes
+   only commits whose `ci-ok` passed (a repository ruleset), in a linear history.
 3. On `main`: `git tag -a vX.Y.Z -m vX.Y.Z && git push origin vX.Y.Z`.
 4. The [Release workflow](../.github/workflows/release.yml) checks that the tag matches every manifest and pin and is
    on `main`, runs the tests, **stages** the package on npm with provenance (skipped when that version is already
