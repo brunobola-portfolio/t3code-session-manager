@@ -48,7 +48,7 @@ GitHub accepts PNG, JPG or GIF (not SVG), at least 640×320, ideally 1280×640, 
       it shows as broken (404) until the repository exists and CI has run once; check that it renders after the
       first run. The other badges are static and render anywhere.
 - [ ] After pushing the tag, from a machine without a clone:
-      `npx -y github:brunobola-portfolio/t3code-session-manager#v0.3.0 --version` prints the release's version (`<version>`), and `doctor` runs.
+      `npx -y github:brunobola-portfolio/t3code-session-manager#v0.3.1 --version` prints the release's version (`<version>`), and `doctor` runs.
 - [ ] In Claude Code: `/plugin marketplace add brunobola-portfolio/t3code-session-manager`, then
       `/plugin install t3sm@t3code-session-manager`, then ask "check my T3 Code sessions": the skill runs
       `t3sm doctor`.
@@ -87,4 +87,4 @@ The package stays `"private": true`: it is distributed through `npx github:` and
 > Claude subscription it was run with. Review a plan, apply in waves, undo with one command. MIT.
 > New in 0.3.0: `t3sm organize` brings the imported history back into each project, archives the automated noise
 > and gives conversations readable titles. Every part is optional, and it never touches what you changed by hand.
-> `npx -y github:brunobola-portfolio/t3code-session-manager#v0.3.0 doctor`
+> `npx -y github:brunobola-portfolio/t3code-session-manager#v0.3.1 doctor`

@@ -150,16 +150,18 @@ test("organize: other numbers re-run the preview with that rule, so the counts a
   const h = harness({ answers: [...TO_ORGANIZE, "n", "30", "", ...PARTS_YES, "y", "y", "n"], preview: previewFixture(), previewFor });
   assert.equal(await h.run(), 0, h.text());
   assert.equal(h.left(), 0);
-  assert.deepEqual(rules, [{ days: 30, minPerProject: 10 }], "planned again with the numbers typed");
+  // Planned again with the numbers typed, then once more with T3 Code's option at 30 (the marks it would allow).
+  assert.deepEqual(rules, [{ days: 30, minPerProject: 10 }, { days: 30, minPerProject: 10 }], "planned again with the numbers typed");
+  assert.ok(h.calls().includes('organizePreview {"days":30,"minPerProject":10} auto-settle=30'));
   assert.ok(h.calls().includes('organizePreview {"days":30,"minPerProject":10}'));
   const panelText = (x: string): string => x.replace(/[│╭╮╰╯─]/g, " ").replace(/\s+/g, " ");
   assert.match(panelText(h.text()), /History the last 30 days, at least 10 per project shown again 1 settled 6/);
   assert.equal(h.writes().at(-1), "run organize --yes --auto-settle 30");
   assert.deepEqual(writesFollowYes(h.events), []);
-  // Same numbers (Enter): no second preview.
+  // Same numbers (Enter): no preview for the numbers; only the one for T3 Code's option, set to 90 by the y.
   const same = harness({ answers: [...TO_ORGANIZE, "", ...PARTS_YES, "y", "y", "n"], preview: previewFixture(), previewFor });
   await same.run();
-  assert.ok(!same.calls().some((c) => /^organizePreview \{/.test(c)));
+  assert.deepEqual(same.calls().filter((c) => /^organizePreview \{/.test(c)), ['organizePreview {"days":90,"minPerProject":10} auto-settle=90']);
   assert.match(panelText(same.text()), /History the last 90 days, at least 10 per project shown again 4 settled 0/);
 });
 

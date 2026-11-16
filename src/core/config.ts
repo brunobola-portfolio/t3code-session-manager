@@ -237,7 +237,7 @@ function validateOrganize(o: unknown, errors: string[], platform: NodeJS.Platfor
   }
 }
 
-export { DEFAULT_HISTORY, historyRule, normalizeHistory } from "./history.ts";
+export { DEFAULT_HISTORY, HISTORY_V2, historyRule, legacyHistory, normalizeHistory } from "./history.ts";
 
 /** `organize` with every omitted field filled from the spec defaults (nested objects per field). `lang` only picks the default `generalFolder`. */
 export function organizeSettings(c: Config, lang: "en" | "pt"): OrganizeConfig {

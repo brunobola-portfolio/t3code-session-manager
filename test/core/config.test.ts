@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  ConfigError, applyOrganizePatch, defaultConfig, detectAccounts, expandConfig, historyRule, isDecided, loadConfig, organizeSettings, resolveRemap, routeAccount, saveConfig, updateAuto, validateConfig,
+  ConfigError, HISTORY_V2, applyOrganizePatch, defaultConfig, detectAccounts, expandConfig, historyRule, isDecided, legacyHistory, loadConfig, organizeSettings, resolveRemap, routeAccount, saveConfig, updateAuto, validateConfig,
 } from "../../src/core/config.ts";
 import type { AccountConfig, Config, InstanceSpec, OrganizeConfig } from "../../src/core/types.ts";
 
@@ -612,4 +612,14 @@ test("rejects days 0, 3651, min -1, 1001", () => {
     assert.equal(r.ok, false, key);
     if (!r.ok) assert.ok(r.errors.some((e) => e.startsWith(key)), `${key}: ${r.errors.join("; ")}`);
   }
+});
+
+test("legacyHistory: a 0.2 string until the 0.3 history question is answered (history-v2); a 0.3 rule never", () => {
+  const c = (organize: Record<string, unknown> | undefined): Config => ({ ...defaultConfig([]), ...(organize ? { organize: organize as Config["organize"] } : {}) });
+  assert.equal(legacyHistory(c(undefined)), null);
+  assert.equal(legacyHistory(c({ history: "all", decided: ["history"] })), "all", "0.2.1: answered for 0.2 only");
+  assert.equal(legacyHistory(c({ history: "days:30" })), "days:30");
+  assert.equal(legacyHistory(c({ history: "off", decided: ["history"] })), "off");
+  assert.equal(legacyHistory(c({ history: "off", decided: ["history", HISTORY_V2] })), null, "0.3's own off");
+  assert.equal(legacyHistory(c({ history: { days: 90, minPerProject: 10 }, decided: ["history"] })), null);
 });

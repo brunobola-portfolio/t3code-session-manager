@@ -43,6 +43,9 @@ Manter sincronizado
   t3sm merge
     Traz para o T3 Code as sessões
     continuadas num terminal
+  t3sm recover <id>
+    Traz de volta uma conversa começada
+    no T3 Code cuja thread desapareceu
 
 Arrumar o T3 Code
   t3sm organize

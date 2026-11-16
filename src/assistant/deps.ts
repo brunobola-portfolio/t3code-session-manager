@@ -5,7 +5,7 @@
 import { readFile } from "node:fs/promises";
 import { homedir, hostname } from "node:os";
 import { join } from "node:path";
-import { ConfigError, applyOrganizePatch, defaultConfig, detectAccounts, loadConfig, saveConfig, type OrganizePatch } from "../core/config.ts";
+import { ConfigError, applyOrganizePatch, defaultConfig, detectAccounts, legacyHistory, loadConfig, saveConfig, type OrganizePatch } from "../core/config.ts";
 import { Journal } from "../core/journal.ts";
 import { acquireLock, lockInfo } from "../core/lock.ts";
 import { expandHome, sameCwd, stateDir, tildePath } from "../core/paths.ts";
@@ -203,14 +203,16 @@ export function realAssistantDeps(io: Io, o: RealDepsOptions): AssistantDeps {
     },
 
     // The dry run behind `t3sm organize`: reads T3 Code and the transcripts, writes nothing (no lock, journal or cache).
-    async organizePreview(allowUntested, rule): Promise<OrganizePreview | null> {
+    // autoSettle: T3 Code's option as the run will set it (planned in this dry run, so its marks are counted).
+    async organizePreview(allowUntested, rule, autoSettle): Promise<OrganizePreview | null> {
       const api = await connectForOrganize(connect, home, allowUntested, notice);
       try {
         const config = (await readConfig()) ?? defaultConfig(await resolveAccounts(home, [], io.env));
-        const b = await buildOrganize(api, journal, config, { only: null, dryRun: true, offerAll: true, ...(rule === undefined ? {} : { history: rule === null ? "off" as const : { days: rule.days, min: rule.minPerProject } }) }, { ...io, env: childEnv, stderr: notice },
+        const b = await buildOrganize(api, journal, config, { only: null, dryRun: true, offerAll: true, ...(rule === undefined ? {} : { history: rule === null ? "off" as const : { days: rule.days, min: rule.minPerProject } }), ...(autoSettle === undefined ? {} : { autoSettle }) }, { ...io, env: childEnv, stderr: notice },
           { home, now, connect, adapters: o.adapters, folderEnv: o.folderEnv, platform: o.folderEnv?.platform }, home, now);
         if (!b.threads.some((t) => t.id.startsWith("import:"))) return null;
-        return { plan: b.plan, projects: b.projects, threads: b.threads, autoSettleDays: b.autoSettleDays, history: b.history, off: b.off };
+        const legacy = legacyHistory(config);
+        return { plan: b.plan, projects: b.projects, threads: b.threads, autoSettleDays: b.autoSettleDays, history: b.history, off: b.off, ...(legacy !== null ? { legacyHistory: legacy } : {}) };
       } finally {
         await api.close();
       }

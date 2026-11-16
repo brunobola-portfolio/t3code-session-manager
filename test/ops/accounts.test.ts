@@ -413,3 +413,14 @@ test("B2: drift with a custom id for ~/.claude -> InstanceHomeDrift before any w
   assert.deepEqual(f.calls, []);
   assert.deepEqual(await entries(), []);
 });
+
+test("accounts --apply asks T3 Code for providers:manage, never settings:write (an instance change needs no settings scope)", async () => {
+  const s = setup();
+  await accountsCommand(["--init"], s.io, { home: s.home });
+  const f = fake([inst("claudeAgent", join(s.home, ".claude"))], ["claudeAgent"]);
+  const seen: { manageProviders: boolean; writeSettings: boolean }[] = [];
+  const connect = async (_h: string, o: { manageProviders: boolean; writeSettings?: boolean }) => { seen.push({ manageProviders: o.manageProviders, writeSettings: o.writeSettings === true }); return f.api; };
+  assert.equal(await accountsCommand(["--apply", "--yes"], s.io, { home: s.home, connect }), 0);
+  assert.ok(seen.length > 0 && seen.some((x) => x.manageProviders));
+  assert.ok(seen.every((x) => !x.writeSettings), JSON.stringify(seen));
+});

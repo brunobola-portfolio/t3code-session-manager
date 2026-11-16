@@ -165,7 +165,7 @@ export interface HarnessOptions {
   /** The accounts' names in the plan (default "Claude · Personal" and "Claude · Org"). */
   names?: Record<string, string>;
   /** What the organize dry run finds when asked with a history rule (the assistant re-plans with the numbers typed). */
-  previewFor?: (rule: HistoryRule | null) => OrganizePreview | null;
+  previewFor?: (rule: HistoryRule | null, autoSettle?: number | null) => OrganizePreview | null;
 }
 
 export interface Harness {
@@ -271,9 +271,9 @@ export function harness(o: HarnessOptions): Harness {
     },
     pluginAccounts: async () => (o.plugins ?? []).map((p) => ({ ...p })),
     installPlugin: async (id) => { call(`installPlugin ${id}`, true); return o.install ? o.install(id) : { ok: true, output: "" }; },
-    organizePreview: async (u, rule) => {
-      call(`organizePreview${u ? ":untested" : ""}${rule === undefined ? "" : ` ${JSON.stringify(rule)}`}`, false);
-      return rule !== undefined && o.previewFor ? o.previewFor(rule) : o.preview ?? null;
+    organizePreview: async (u, rule, autoSettle) => {
+      call(`organizePreview${u ? ":untested" : ""}${rule === undefined ? "" : ` ${JSON.stringify(rule)}`}${autoSettle === undefined ? "" : ` auto-settle=${autoSettle}`}`, false);
+      return rule !== undefined && o.previewFor ? o.previewFor(rule, autoSettle) : o.preview ?? null;
     },
     about: async () => ({ version: "0.3.0", accounts: accounts.length }),
     saveOrganize: async (patch) => {
@@ -314,16 +314,72 @@ export function harness(o: HarnessOptions): Harness {
   };
 }
 
+/** The keys of the decisions step's questions (step 5; src/assistant/steps.ts DECISIONS). */
+const DECISION_KEYS = new Set(["home", "t3-refused", "temp", "system", "automated", "orphaned"]);
+const YES_NO_ANSWERS = new Set(["", "y", "n", "s", "yes", "no", "sim", "nao", "não"]);
+
+/**
+ * The decisions step's own save: config.json "organize" with exactly the answered decision keys (and their folders /
+ * sessions values), right after the last of as many yes/no answers as it has keys. Allowed without a separate yes
+ * because each decision WAS an explicit answer: the answers are the decision (0.3.0 asked "save the answers?" after
+ * them, and its default No silently left every conversation of the answered questions out of T3 Code). It writes only
+ * config.json; every import, move or T3 Code change still waits for its own default-No question.
+ */
+function decisionSave(e: Extract<Event, { t: "call" }>, asks: Extract<Event, { t: "ask" }>[]): boolean {
+  const m = /^saveOrganize (.*)$/.exec(e.name);
+  if (!m) return false;
+  let patch: Record<string, unknown>;
+  try { patch = JSON.parse(m[1]!) as Record<string, unknown>; } catch { return false; }
+  const decided = patch["decided"];
+  if (!Array.isArray(decided) || decided.length === 0 || !decided.every((k) => typeof k === "string" && DECISION_KEYS.has(k))) return false;
+  if (!Object.keys(patch).every((k) => k === "decided" || k === "folders" || k === "sessions")) return false;
+  // A "?" or an answer the question did not understand asks the same question again: only the final answers count.
+  const answered = asks.filter((a) => YES_NO_ANSWERS.has(a.a.toLowerCase())).slice(-decided.length);
+  return answered.length === decided.length && answered.every((a) => /\[(?:Y\/n|y\/N|S\/n|s\/N)/.test(a.q))
+    && asks.at(-1) === answered.at(-1);
+}
+
+/** The history question's prompts (EN and PT): "turn it on?" (the off form) and the days asked after an n. */
+const HISTORY_ON_Q = /^(?:Turn it on: the last|Ligar: os últimos)/;
+const HISTORY_DAYS_Q = /^(?:Days each project shows|Dias que cada projeto mostra)/;
+const NO_ANSWERS = new Set(["n", "no", "não", "nao"]);
+const NONE_ANSWERS = new Set(["none", "off", "nada", "nenhum", "nenhuma"]);
+
+/**
+ * The organize step's save of the re-asked 0.2 history question answered "no rule" with nothing else chosen: exactly
+ * `{ history: "off", decided: ["history", "history-v2"] }`, after the history question was kept off (Enter or n to
+ * "turn it on?") or answered none (the days), and every question after it answered no (n, or Enter on a default-No
+ * question; "?" asks again). Allowed for the same reason as decisionSave: the answer itself is the decision, and only
+ * config.json is written (no T3 Code change).
+ */
+function historyOffSave(e: Extract<Event, { t: "call" }>, asks: Extract<Event, { t: "ask" }>[]): boolean {
+  if (e.name !== 'saveOrganize {"history":"off","decided":["history","history-v2"]}') return false;
+  const h = asks.findLastIndex((a) => HISTORY_ON_Q.test(a.q) || HISTORY_DAYS_Q.test(a.q));
+  if (h < 0) return false;
+  const q = asks[h]!;
+  const a = q.a.trim().toLowerCase();
+  const off = HISTORY_ON_Q.test(q.q) ? a === "" || NO_ANSWERS.has(a) : NONE_ANSWERS.has(a);
+  const no = (x: Extract<Event, { t: "ask" }>): boolean => {
+    const v = x.a.trim().toLowerCase();
+    return v === "?" || NO_ANSWERS.has(v) || (v === "" && /\[(?:y\/N|s\/N)/.test(x.q));
+  };
+  return off && asks.slice(h + 1).every(no);
+}
+
 /**
  * Every write call came right after a yes ("y", or "s" in Portuguese) to a yes/no question whose default is No: "[y/N"
- * in English, "[s/N" in Portuguese.
+ * in English, "[s/N" in Portuguese. The exceptions are the decisions step's save of its answers (decisionSave) and
+ * the re-asked history question's "no rule" (historyOffSave).
  */
 export function writesFollowYes(events: Event[]): string[] {
   const bad: string[] = [];
-  let last: Extract<Event, { t: "ask" }> | null = null;
+  const asks: Extract<Event, { t: "ask" }>[] = [];
   for (const e of events) {
-    if (e.t === "ask") { last = e; continue; }
+    if (e.t === "ask") { asks.push(e); continue; }
     if (!e.write) continue;
+    const last = asks.at(-1) ?? null;
+    if (decisionSave(e, asks)) continue;
+    if (historyOffSave(e, asks)) continue;
     const yes = last !== null && ["y", "s", "yes", "sim"].includes(last.a.toLowerCase());
     if (!yes || !["[y/N", "[s/N"].some((k) => last!.q.includes(k))) bad.push(`${e.name} after ${last ? JSON.stringify(`${last.q}${last.a}`) : "no answer"}`);
   }

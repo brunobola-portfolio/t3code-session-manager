@@ -33,6 +33,7 @@ Manter sincronizado
   t3sm sync              Importa o que é novo desde a última vez (--watch continua a vigiar)
   t3sm schedule          Sincroniza em segundo plano: install [--watch], remove, restart, status
   t3sm merge             Traz para o T3 Code as sessões continuadas num terminal
+  t3sm recover <id>      Traz de volta uma conversa começada no T3 Code cuja thread desapareceu
 
 Arrumar o T3 Code
   t3sm organize          Arruma o histórico importado: arquiva, muda títulos, mostra, fixa (--undo)
@@ -191,6 +192,24 @@ Exemplos:
   t3sm merge
   t3sm merge --session 1a2b3c4d
   t3sm merge --all
+`,
+  recover: `Uso: t3sm recover <id da sessão> [--yes | --dry-run] [--allow-untested]
+
+Traz de volta uma conversa começada no T3 Code cuja thread do T3 Code desapareceu. O t3sm não o consegue saber sozinho
+quando a transcrição não indica nenhuma thread do T3 Code (o \`t3sm status\` lista essas conversas em Bom saber), por
+isso és tu a indicá-la. Recusa a menos que a conversa tenha começado no T3 Code e nenhuma thread do T3 Code que o t3sm
+vê a tenha. A conversa volta como cópia fiel com um id de sessão novo, importada para o seu projeto (fica no diário;
+desfaz-se com \`t3sm rollback --run <id> --archive-threads\`). O ficheiro original fica como está. Se a thread ainda
+existir no T3 Code, isto cria um duplicado. Num terminal mostra o que vai fazer e pergunta primeiro.
+
+Opções:
+  --yes              Não pergunta (obrigatório quando não há terminal)
+  --dry-run          Só mostra o que faria
+  --allow-untested   Sem aviso numa versão do T3 Code que o t3sm não testou (nunca bloqueia)
+
+Exemplos:
+  t3sm recover 1a2b3c4d --dry-run
+  t3sm recover 1a2b3c4d
 `,
   rollback: `Uso: t3sm rollback [--run <id>] [--yes | --dry-run] [--instances] [--archive-threads] [--allow-untested]
 

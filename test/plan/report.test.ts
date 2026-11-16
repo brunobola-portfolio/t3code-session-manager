@@ -299,7 +299,7 @@ test("heldLine strips bidi and format characters from the title and the project"
 test("report explains each reason in one line with the next step", () => {
   const next: Record<"orphaned-in-t3" | "t3-native-unknown", RegExp> = {
     "orphaned-in-t3": /organize\.sessions\.orphaned.*t3sm start/,
-    "t3-native-unknown": /claude --resume/,
+    "t3-native-unknown": /t3sm recover <id>/,
   };
   for (const [r, re] of Object.entries(next) as [SkipReason, RegExp][]) {
     assert.ok(!/\n/.test(SKIP_EXPLANATION[r]), `${r}: one line`);

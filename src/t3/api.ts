@@ -423,6 +423,11 @@ export interface ConnectOptions {
   allowUntested: boolean;
   /** Adds providers:manage to the token (only for instance create/upsert). */
   manageProviders?: boolean;
+  /**
+   * Adds settings:write to the token: only for a connection that changes one of T3 Code's own settings (organize's
+   * auto-settle change and its undo). Instance mutations (providerInstanceMutation, empty patch) need providers:manage.
+   */
+  writeSettings?: boolean;
   onNotice?: (line: string) => void;
   fetchImpl?: typeof fetch;
   run?: Runner;
@@ -452,7 +457,7 @@ export async function connectT3(home: string, opts: ConnectOptions): Promise<T3A
 
   const cli = opts.cli ?? resolveT3Cli(home, process.platform, process.env.PATH ?? "");
   if (!cli) throw new T3AuthError("T3 Code CLI (t3) not found in ~/.t3/bin or PATH");
-  const scopes = opts.manageProviders ? [...DEFAULT_SCOPES, "providers:manage"] : DEFAULT_SCOPES;
+  const scopes = [...DEFAULT_SCOPES, ...(opts.manageProviders ? ["providers:manage"] : []), ...(opts.writeSettings ? ["settings:write"] : [])];
   const { token, sessionId } = await issueSessionToken(cli, { scopes, run: opts.run });
   const revoke = () => revokeSession(cli, sessionId, opts.run, token);
 

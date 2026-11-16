@@ -86,9 +86,9 @@ project? [Y/n/?/b/q] y
   can set it to 90 days, like the rule
   above. Default: yes. Undo: t3sm
   organize --undo.
-Also let T3 Code settle
-conversations started in T3 Code
-after 90 days? [Y/n/?/b/q] y
+Also let T3 Code put away
+conversations started in T3 after 90
+days? Now: after 7 days. [Y/n/?/b/q] y
 
 ╭─ Here is what I will do ─────────────╮
 │ History                the last 90   │

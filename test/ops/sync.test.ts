@@ -919,7 +919,11 @@ const shownThread = (id: string, projectId: string, now: number, daysAgo: number
   id, projectId, instanceId: "claudeAgent", archived: false, title: id, updatedAt: now - daysAgo * DAY,
   latestUserMessageAt: new Date(now - daysAgo * DAY).toISOString(), settledOverride: null, settledAt: null,
 });
-const settles = (f: FakeT3): string[] => f.calls.filter((c) => c.startsWith("settle:") || c.startsWith("unsettle:"));
+const settles = (f: FakeT3): string[] => f.calls.filter((c) => c.startsWith("settle:"));
+/** The unsettles: here only marks of conversations already shown, kept for the minimum (src/organize/history.ts, step 6). */
+const marks = (f: FakeT3): string[] => f.calls.filter((c) => c.startsWith("unsettle:"));
+/** `unsettle:` calls for `prefix` + the given numbers, in that order. */
+const marked = (prefix: string, ns: number[]): string[] => ns.map((n) => `unsettle:import:claudeAgent:${prefix}${n}`);
 const historyAt = (state: string): unknown => (JSON.parse(readFileSync(join(state, "sync-status.json"), "utf8")) as { lastHistoryAt?: unknown }).lastHistoryAt;
 
 test("sync applies the rule once per day, not every cycle (journaled in the cycle's own run, rolled back whole)", async () => {
@@ -931,22 +935,25 @@ test("sync applies the rule once per day, not every cycle (journaled in the cycl
   f.opts.instances = [inst("claudeAgent", join(e.home, ".claude"))];
   f.projects.push(project("p0", ROOT, "claudeAgent"));
   const base = Date.now();
-  // 12 imported conversations shown, all older than 90 days: the 10 most recent stay, the 2 oldest are settled.
+  // 12 imported conversations shown, all older than 90 days: the 10 most recent stay (marked, so T3 Code's own
+  // auto-settle never puts them away), the 2 oldest are settled.
   for (let i = 0; i < 12; i++) f.threads.set(`import:claudeAgent:h${i}`, shownThread(`import:claudeAgent:h${i}`, "p0", base, 100 + i));
   let clock = base;
   const deps = e.deps([], { now: () => clock });
   const first = await runSyncCycle(deps);
   assert.equal(first.kind, "ok", JSON.stringify(first));
   assert.deepEqual(settles(f), ["settle:import:claudeAgent:h11", "settle:import:claudeAgent:h10"], "oldest first");
+  assert.deepEqual(marks(f), marked("h", [9, 8, 7, 6, 5, 4, 3, 2, 1, 0]), "the kept ones marked, oldest first, before any settle");
+  assert.ok(f.calls.indexOf("unsettle:import:claudeAgent:h0") < f.calls.indexOf("settle:import:claudeAgent:h11"));
   assert.equal(historyAt(e.state), new Date(base).toISOString());
   const journal = readFileSync(join(e.state, "journal.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l));
   const runId = first.kind === "ok" ? first.runId : null;
   assert.ok(runId);
-  assert.deepEqual(journal.map((x) => x.t), ["run-start", "organize-change", "organize-change", "run-end"]);
+  assert.deepEqual(journal.map((x) => x.t), ["run-start", ...Array<string>(12).fill("organize-change"), "run-end"]);
   assert.equal(journal[0].command, `sync ${runId}`);
   assert.ok(journal.every((x) => x.runId === runId));
   assert.equal(journal.at(-1).status, "ok");
-  if (first.kind === "ok") assert.equal(first.counts.organized, 2);
+  if (first.kind === "ok") assert.equal(first.counts.organized, 12);
   assert.equal(f.autoSettleDays, 7, "sync never changes T3 Code's own setting");
   assert.ok(!f.calls.some((c) => /^(auto-settle|pin|archive|title|delete-project):/.test(c)));
 
@@ -960,11 +967,13 @@ test("sync applies the rule once per day, not every cycle (journaled in the cycl
   const third = await runSyncCycle(deps);
   assert.equal(third.kind, "ok", JSON.stringify(third));
   assert.deepEqual(settles(f).slice(2), ["settle:import:claudeAgent:h12"]);
+  assert.equal(marks(f).length, 10, "marked once");
   assert.equal(historyAt(e.state), new Date(clock).toISOString());
 
   const r = await rollbackRun(runId!, { journal: new Journal(join(e.state, "journal.jsonl")), accountHomes: [join(e.home, ".claude")], connect: async () => f.api, allowUntested: true });
   assert.deepEqual(r.errors, []);
-  assert.deepEqual(r.organize.map((x) => [x.kind, x.status]), [["settle", "reverted"], ["settle", "reverted"]]);
+  // The settles are undone; the marks have nothing to put back (the conversations were shown and stay shown).
+  assert.deepEqual(r.organize.map((x) => [x.kind, x.status]), [["settle", "reverted"], ["settle", "reverted"], ...Array.from({ length: 10 }, () => ["unsettle", "kept"])]);
   assert.equal(f.threads.get("import:claudeAgent:h11")?.settledOverride, "active", "the settle is undone");
 });
 
@@ -996,10 +1005,14 @@ test("sync applies it to projects that got new threads right after import (other
   assert.equal(o.counts.imported, 1);
   // p0 held 12 (11 old and the new one): the new one and the 9 most recent stay shown (at least 10 per project), the 2
   // oldest are settled; p1 got nothing new and waits for the daily pass.
+  // The 10 kept are marked (shown with no override, so T3 Code's own auto-settle, here at 7 days, leaves them): the 9
+  // old ones, and the new one too (3 days old: T3 Code would reach it within a week).
+  const freshId = `import:claudeAgent:${fresh.session.nativeId}`;
   assert.deepEqual(settles(f), ["settle:import:claudeAgent:a10", "settle:import:claudeAgent:a9"]);
+  assert.deepEqual(marks(f), [...marked("a", [8, 7, 6, 5, 4, 3, 2, 1, 0]), `unsettle:${freshId}`]);
   const journal = readFileSync(join(e.state, "journal.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l));
   assert.deepEqual(journal.filter((x) => x.t === "organize-change").map((x) => [x.kind, x.target, x.runId]),
-    [["settle", "import:claudeAgent:a10", o.runId], ["settle", "import:claudeAgent:a9", o.runId]]);
+    [...[8, 7, 6, 5, 4, 3, 2, 1, 0].map((n) => ["unsettle", `import:claudeAgent:a${n}`, o.runId]), ["unsettle", freshId, o.runId], ["settle", "import:claudeAgent:a10", o.runId], ["settle", "import:claudeAgent:a9", o.runId]]);
   assert.equal(journal.filter((x) => x.t === "run-start").length, 1, "inside the import's own run");
   assert.equal(historyAt(e.state), new Date(now - 3_600_000).toISOString(), "the daily pass is not marked by it");
 });
@@ -1013,9 +1026,11 @@ test("sync: the daily pass makes at most historyPerCycle changes; the rest conti
   const base = Date.now();
   for (let i = 0; i < 13; i++) f.threads.set(`import:claudeAgent:h${i}`, shownThread(`import:claudeAgent:h${i}`, "p0", base, 100 + i));
   let clock = base;
-  const deps = e.deps([], { now: () => clock, historyPerCycle: 2 });
+  // 10 marks (the kept ones) and 3 settles; 12 per cycle: the oldest settle waits.
+  const deps = e.deps([], { now: () => clock, historyPerCycle: 12 });
   const first = await runSyncCycle(deps);
   assert.equal(first.kind, "ok", JSON.stringify(first));
+  assert.equal(marks(f).length, 10);
   assert.equal(settles(f).length, 2);
   if (first.kind === "ok") assert.equal(first.counts.historyDeferred, 1);
   assert.equal(historyAt(e.state), undefined, "not done: the next cycle continues");

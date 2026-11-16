@@ -444,7 +444,9 @@ test("projects set: the refusal about other folders prints their paths without t
 
 test("projects rename --suggest uses the platform it is given (deps.platform), not the host's", async () => {
   const s = await renameWorld();
-  const root = "C:\\Work\\Demo\\src";
+  // On a drive that sorts after every temp folder (C:/Users/.../Temp, D:/tmp, /tmp), so the other "demo/src" keeps its
+  // name and this one takes its parent folder's, whatever the host's temp path is.
+  const root = "Z:\\Work\\Demo\\src";
   s.t3.projects.push({ id: "pw", title: "src", workspaceRoot: root, defaultModelSelection: null, archived: false, deleted: false, pinned: false, createdAt: null });
   await s.j.append({ t: "project-created", runId: "20261101-100000-aaaa", projectId: "pw", root, title: "src" });
   const before = s.out().length;
@@ -454,5 +456,5 @@ test("projects rename --suggest uses the platform it is given (deps.platform), n
   const mid = s.out().length;
   assert.equal(await projectsCommand(["rename", "--suggest", "--dry-run"], s.io, { ...s.deps(), platform: "linux" }), 0, s.err());
   // POSIX reads a backslash as part of a name: the whole root is one folder name.
-  assert.ok(s.out().slice(mid).includes("'src' -> 'C:\\Work\\Demo\\src'"), s.out().slice(mid));
+  assert.ok(s.out().slice(mid).includes("'src' -> 'Z:\\Work\\Demo\\src'"), s.out().slice(mid));
 });

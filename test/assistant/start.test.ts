@@ -226,6 +226,14 @@ test("real dependencies: organizePreview is read-only (the dry run) and null whe
   assert.equal(p.projects.length, 1);
   assert.equal(p.autoSettleDays, 7);
   assert.equal(p.plan.counts.unsettle, 1, "a human conversation put away at import is shown again");
+  assert.equal(p.legacyHistory, undefined, "no 0.2 history value");
+  // T3 Code's option as the run will set it is planned too (a dry run: nothing written).
+  const withT3 = await d.organizePreview(false, undefined, 30);
+  assert.deepEqual(withT3?.plan.actions.filter((a) => a.kind === "auto-settle").map((a) => [a.previous, a.next]), [[7, 30]]);
+  // A 0.2.1-shaped config: organize.history "all", answered for 0.2 only.
+  writeFileSync(join(t.state, "config.json"), JSON.stringify({ version: 1, accounts: [{ id: "claudeAgent", home: "~/.claude", displayName: "Claude", accentColor: null }], defaultAccount: "claudeAgent", organize: { history: "all", decided: ["history"] } }));
+  assert.equal((await d.organizePreview(false))?.legacyHistory, "all");
+  writeFileSync(join(t.state, "config.json"), JSON.stringify({ version: 1, accounts: [{ id: "claudeAgent", home: "~/.claude", displayName: "Claude", accentColor: null }], defaultAccount: "claudeAgent" }));
   assert.deepEqual(f.calls.filter((c) => c !== "close"), [], "nothing written to T3 Code");
   assert.equal(existsSync(join(t.state, "journal.jsonl")), false, "no journal, no lock: a dry run");
   // config(): the plan's own decisionsPending

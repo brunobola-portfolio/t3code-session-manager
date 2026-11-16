@@ -98,6 +98,6 @@ test("Portuguese plural forms agree in number", () => {
   assert.equal(fmt(pt["status.organizeFailed"], { n: 2, runId: "r", kinds: "2 title", error: "e" }), "2 alterações de organize não puderam ser feitas na última execução (r): 2 title; primeiro erro: e");
   assert.equal(fmt(pt["status.organize.undone"], { n: 1 }), ", 1 desfeita");
   assert.equal(fmt(pt["status.organize.undone"], { n: 3 }), ", 3 desfeitas");
-  assert.match(fmt(pt["status.nativeUnknown"], { n: 1, names: "x" }), /se o T3 Code já não a mostra, retoma-a num terminal/);
-  assert.match(fmt(pt["status.nativeUnknown"], { n: 2, names: "x" }), /se o T3 Code já não mostrar alguma delas, retoma-a num terminal/);
+  assert.match(fmt(pt["status.nativeUnknown"], { n: 1, names: "x" }), /se o T3 Code já não a mostra, trá-la de volta com t3sm recover <id>/);
+  assert.match(fmt(pt["status.nativeUnknown"], { n: 2, names: "x" }), /se o T3 Code já não mostrar alguma delas, trá-la de volta com t3sm recover <id>/);
 });

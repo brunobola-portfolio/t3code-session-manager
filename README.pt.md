@@ -31,7 +31,7 @@ trabalho, não a partir de um terminal que defina `CLAUDE_CONFIG_DIR`.
 **1. Instala uma vez.** A mesma linha no Windows, no macOS e no Linux:
 
 ```bash
-npm install -g --install-links github:brunobola-portfolio/t3code-session-manager#v0.3.0
+npm install -g --install-links github:brunobola-portfolio/t3code-session-manager#v0.3.1
 ```
 
 **2. Corre:**
@@ -76,7 +76,7 @@ tabela **Project accounts**: diz que subscrição cada projeto vai usar. Passo a
 
 </details>
 
-Sem instalar nada? `npx -y github:brunobola-portfolio/t3code-session-manager#v0.3.0 <comando>` corre qualquer
+Sem instalar nada? `npx -y github:brunobola-portfolio/t3code-session-manager#v0.3.1 <comando>` corre qualquer
 comando (a sincronização em segundo plano precisa do comando instalado). Para seres rigoroso com o que corres, fixa um
 commit em vez da tag (`#<sha do commit>`). Outras origens: [docs/migrate/](docs/migrate/claude-code.pt.md). No Claude
 Code também podes pedir em linguagem natural, com a skill incluída
@@ -409,6 +409,7 @@ desfeita.
 | `t3sm scan` | Conta as sessões por agente e por conta, sem o T3 Code; só escreve a cache de descoberta do t3sm. **Flagged** conta as sessões com uma observação (em uso, uma linha corrompida, sem pasta, uma cópia de backup ou comprimida, um sub-agente…); o `plan.md` diz o que acontece a cada uma |
 | `t3sm runs` | Lista as execuções do journal (exemplo acima) |
 | `t3sm rollback --run <id>` | Desfaz uma execução; `--dry-run` lista o que desfaria. O `--yes` exige `--run` |
+| `t3sm recover <id da sessão>` | Traz de volta uma conversa começada no T3 Code cuja thread apagaste, quando o t3sm não o consegue saber sozinho (o `t3sm status` lista-as): uma cópia fiel com um id novo, importada para o seu projeto. Se a thread ainda existir no T3 Code, isto cria um duplicado. Pergunta primeiro; `--dry-run`; desfaz-se com `rollback` |
 | `t3sm doctor --repair` | Repõe as datas dos ficheiros que uma execução interrompida deixou mudadas; é a única escrita do `doctor` |
 | `t3sm accounts` | Contas encontradas e as respetivas instâncias no T3 Code |
 | `t3sm projects` | Cada pasta de projeto com a sua conta e porquê; `projects set "<pasta>" <conta>` muda-a (uma rota, e a conta por omissão do projeto no T3 Code, reversível); `projects unset` remove a rota; `projects rename --suggest` propõe nomes limpos para os projetos que o t3sm criou (antes -> depois, pergunta primeiro, desfeito pelo `organize --undo`) |

@@ -13,6 +13,19 @@ export function normalizeHistory(h: HistoryConfig | undefined): HistoryRule | nu
   return { days: h.days ?? DEFAULT_HISTORY.days, minPerProject: h.minPerProject ?? DEFAULT_HISTORY.minPerProject };
 }
 
+/** The decided key of the 0.3 history question (days and a minimum per project); "history" alone was 0.2's. */
+export const HISTORY_V2 = "history-v2";
+
+/**
+ * organize.history as 0.2 stored it ("all", "off", "days:N") while the 0.3 question (HISTORY_V2) was never answered:
+ * the assistant asks that question once after the upgrade. Null otherwise (a 0.3 rule, nothing stored, or answered).
+ */
+export function legacyHistory(c: Config): Extract<HistoryConfig, string> | null {
+  const h = c.organize?.history;
+  if (typeof h !== "string") return null;
+  return c.organize?.decided?.includes(HISTORY_V2) ? null : h;
+}
+
 /** The history rule of `c` (defaults filled); null = history off. */
 export function historyRule(c: Config): HistoryRule | null {
   return normalizeHistory(c.organize?.history);

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { activityAt, historyActions, settleShown } from "../../src/organize/history.ts";
+import { SHOWN_NO_OVERRIDE, activityAt, historyActions, settleShown } from "../../src/organize/history.ts";
 import type { OrganizeAction } from "../../src/organize/types.ts";
 import type { HistoryRule } from "../../src/core/types.ts";
 import type { T3Thread } from "../../src/t3/api.ts";
@@ -25,8 +25,9 @@ function th(id: string, age: number, o: Partial<T3Thread> & { shown?: boolean } 
 
 /** The real rule's movable, minus the journal: an import thread, not archived, not pinned. */
 const movable = (t: T3Thread): boolean => t.id.startsWith("import:") && !t.archived && t.pinnedAt == null;
-const plan = (threads: T3Thread[], rule: HistoryRule = RULE, backdate = false): OrganizeAction[] =>
-  historyActions(threads, rule, NOW, { movable, backdate });
+/** T3 Code's own auto-settle in these tests: on, at 15 days (the marks are planned only while it is on). */
+const plan = (threads: T3Thread[], rule: HistoryRule = RULE, backdate = false, t3AutoSettleDays: number | null = 15): OrganizeAction[] =>
+  historyActions(threads, rule, NOW, { movable, backdate, t3AutoSettleDays });
 const ids = (as: OrganizeAction[], kind: "settle" | "unsettle"): string[] => as.filter((a) => a.kind === kind).map((a) => a.target);
 const range = (n: number, from = 0): number[] => Array.from({ length: n }, (_, i) => from + i);
 
@@ -181,4 +182,63 @@ test("5 000 threads plan: counts and ordering", () => {
   for (const group of [un, se]) {
     for (let i = 1; i < group.length; i++) assert.ok(at.get(group[i - 1]!.target)! <= at.get(group[i]!.target)!, `oldest first at ${i}`);
   }
+});
+
+test("kept visible by the minimum: older threads shown without an override are marked, so T3 Code's own auto-settle never puts them away", () => {
+  // 3 recent + 20 old, all shown with no override (settledAt null, settledOverride null): T3 Code's auto-settle may
+  // settle any of them that is older than its days. The rule keeps the 3 recent and the 7 newest old ones.
+  const bare = { settledOverride: null, settledAt: null };
+  const world = [...range(3, 1).map((d) => th(`import:r${d}`, d, bare)), ...range(20, 100).map((d) => th(`import:o${d}`, d, bare))];
+  const a = plan(world);
+  const marks = a.filter((x) => x.kind === "unsettle");
+  assert.deepEqual(marks.map((x) => x.target), range(7, 100).map((d) => `import:o${d}`).reverse(), "the 7 kept old ones, oldest first; nothing for the recent ones");
+  for (const m of marks) assert.deepEqual([m.previous, m.next, m.reason], [SHOWN_NO_OVERRIDE, "active", "history: kept visible, at least 10 per project"]);
+  assert.deepEqual(ids(a, "settle"), range(13, 107).map((d) => `import:o${d}`).reverse(), "the 13 others settle, as before");
+  assert.ok(a.findIndex((x) => x.kind === "settle") > a.findLastIndex((x) => x.kind === "unsettle"), "every mark before any settle");
+  // Already marked by an earlier unsettle (override "active"): nothing to do.
+  const marked = world.map((t) => (range(7, 100).some((d) => t.id === `import:o${d}`) ? { ...t, settledOverride: "active" as const } : t));
+  assert.deepEqual(ids(plan(marked), "unsettle"), []);
+  // A thread the user changed by hand (not movable) still counts toward the minimum, but is never marked.
+  const notO100 = (t: T3Thread): boolean => movable(t) && t.id !== "import:o100";
+  const u = historyActions(world, RULE, NOW, { movable: notO100, backdate: false, t3AutoSettleDays: 15 }).filter((x) => x.kind === "unsettle").map((x) => x.target);
+  assert.deepEqual(u, range(6, 101).map((d) => `import:o${d}`).reverse());
+  // No date t3sm can read: no evidence T3 Code's option would reach it, so it is not marked (it still counts).
+  const undated = world.map((t) => (t.id === "import:o100" ? { ...t, latestUserMessageAt: null } : t));
+  assert.ok(!ids(plan(undated), "unsettle").includes("import:o100"));
+  // "all": every conversation is recent, nothing is marked; minimum 0: nothing is kept for the minimum.
+  assert.deepEqual(plan(world, { days: "all", minPerProject: 10 }), []);
+  assert.deepEqual(ids(plan(world, { days: 90, minPerProject: 0 }), "unsettle"), []);
+});
+
+test("settleShown: a mark of an already shown thread shows no override before it", () => {
+  assert.equal(settleShown("unsettle", SHOWN_NO_OVERRIDE), null);
+});
+
+test("marks only while T3 Code's own auto-settle is on, and only for kept threads it could reach within a week", () => {
+  const bare = { settledOverride: null, settledAt: null };
+  const world = [...range(3, 1).map((d) => th(`import:r${d}`, d, bare)), ...range(20, 100).map((d) => th(`import:o${d}`, d, bare))];
+  const unsettles = (t3: number | null | undefined): string[] => ids(historyActions(world, RULE, NOW, { movable, backdate: false, t3AutoSettleDays: t3 }), "unsettle");
+  assert.deepEqual(unsettles(null), [], "T3 Code's option off: nothing can put them away");
+  assert.deepEqual(unsettles(undefined), [], "unknown: no evidence, no marks");
+  assert.equal(unsettles(15).length, 7, "T3 Code at 15 days");
+  // Rule 30 days, T3 Code at 90: a kept thread 40 days old is 50 days from T3 Code's reach (not marked yet); one 85
+  // days old is within a week of it.
+  const near = [th("import:a40", 40, bare), th("import:a85", 85, bare), th("import:a200", 200, bare)];
+  const m = ids(historyActions(near, { days: 30, minPerProject: 10 }, NOW, { movable, backdate: false, t3AutoSettleDays: 90 }), "unsettle");
+  assert.deepEqual(m, ["import:a200", "import:a85"]);
+});
+
+test("with the defaults (rule and T3 Code both at 90 days) a kept conversation is marked a week before T3 Code reaches it, while still recent", () => {
+  const bare = { settledOverride: null, settledAt: null };
+  // 12 shown with no override, 80..91 days old: 80..90 are recent (90 days exactly included), 91 settles. The rule
+  // keeps the 10 most recent for its minimum (80..89). T3 Code at 90 days could settle the ones of 83 days and more
+  // within a week: marked; 80..82 not yet, and 90 (recent, not kept for the minimum) never.
+  const world = range(12, 80).map((d) => th(`import:t${d}`, d, bare));
+  const a = historyActions(world, { days: 90, minPerProject: 10 }, NOW, { movable, backdate: false, t3AutoSettleDays: 90 });
+  assert.deepEqual(ids(a, "unsettle"), range(7, 83).map((d) => `import:t${d}`).reverse());
+  assert.deepEqual(ids(a, "settle"), ["import:t91"]);
+  // A recent conversation the rule does not keep for the minimum (beyond the 10) is never marked.
+  const many = range(15, 80).map((d) => th(`import:m${d}`, d, bare));
+  const b = historyActions(many, { days: 120, minPerProject: 10 }, NOW, { movable, backdate: false, t3AutoSettleDays: 90 });
+  assert.deepEqual(ids(b, "unsettle"), range(7, 83).map((d) => `import:m${d}`).reverse(), "only the kept 10 (80..89), from 83 days on");
 });

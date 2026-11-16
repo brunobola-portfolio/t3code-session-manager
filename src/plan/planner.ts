@@ -62,6 +62,11 @@ export interface PlanInput {
   home?: string;
   /** Folder classification inputs (default: this home and platform, os.tmpdir(), process.env, T3 Code under ~/.t3). */
   folderEnv?: FolderEnv;
+  /**
+   * Claude session ids `t3sm recover` brings back: a session started in T3 Code whose thread t3sm cannot find (no thread id
+   * in its transcript, `t3-native-unknown`) is planned as an orphan's faithful copy, without the orphaned question.
+   */
+  recover?: { has(nativeId: string): boolean };
   /** Language of the General folder's default path and title ("T3 General" / "T3 Geral"); default "en". */
   lang?: "en" | "pt";
   /** The project a rehomed Claude transcript worked in (default: rehome.inferProjectRoot). */
@@ -85,6 +90,8 @@ function memo<T>(fn: (k: string) => Promise<T>, key: (k: string) => string): (k:
 
 export async function buildPlan(input: PlanInput): Promise<Plan> {
   const { config, t3, now } = input;
+  /** A Claude session `t3sm recover` names: brought back as an orphan's faithful copy when T3 Code holds no thread of it. */
+  const recovering = (s: DiscoveredSession): boolean => s.harness === "claude" && input.recover?.has(s.nativeId) === true;
   const platform = input.platform ?? process.platform;
   const home = input.home ?? homedir();
   const rootKey = (p: string): string => pathKeyOf(p, platform);
@@ -447,7 +454,15 @@ export async function buildPlan(input: PlanInput): Promise<Plan> {
         note(s, "started-in-t3");
         return skip("already-in-t3");
       }
-      if (s.t3ThreadId === undefined) return skip("t3-native-unknown");
+      // Brought back already (`t3sm recover`): its copy's thread is in T3 Code (any instance, archived or not).
+      if (s.t3ThreadId === undefined && instancesOfSession.has(orphanUuid(s.nativeId))) {
+        const r = t3RootOf(orphanUuid(s.nativeId));
+        if (r !== null) rootsUsed.set(rootKey(r), r);
+        note(s, "recovered");
+        return skip("already-in-t3");
+      }
+      // `t3sm recover <id>` names one: the user says its thread is gone, so it is treated as orphaned (below).
+      if (s.t3ThreadId === undefined && !recovering(s)) return skip("t3-native-unknown");
     }
     /** Started in T3 Code and its thread is gone (every other case returned above). */
     const orphan = fromT3;
@@ -463,6 +478,7 @@ export async function buildPlan(input: PlanInput): Promise<Plan> {
     /** Why an orphaned session waits or stays out (applied where a category skip would be). */
     const orphanHold: Extract<Route, { kind: "skip" }> | null = !orphan ? null
       : overrideSkip ? category
+      : recovering(s) ? null // asked for by name (`t3sm recover`): no question, whatever organize.sessions.orphaned says
       : !rules.decided("orphaned") ? { kind: "skip", reason: "undecided", pending: "orphaned" }
       : rules.organize.sessions.orphaned === "skip" ? { kind: "skip", reason: "orphaned-in-t3" } : null;
     // A rehomed session's own folder does not matter (and its target may not exist yet: created on apply). R9: a
@@ -638,7 +654,7 @@ export async function buildPlan(input: PlanInput): Promise<Plan> {
 }
 
 /** The id of the copy of an orphaned T3 session (its thread deleted): distinct from a rehome copy's `claude:<id>`. */
-function orphanUuid(nativeId: string): string {
+export function orphanUuid(nativeId: string): string {
   return uuidV5(`claude-orphan:${nativeId}`);
 }
 

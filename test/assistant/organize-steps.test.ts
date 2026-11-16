@@ -7,6 +7,8 @@ import { STEPS } from "../../src/assistant/steps.ts";
 import type { RunSummary } from "../../src/ops/rollback.ts";
 import type { OrganizeAction } from "../../src/organize/types.ts";
 import { tildePath } from "../../src/core/paths.ts";
+import { applyOrganizePatch, legacyHistory } from "../../src/core/config.ts";
+import { cfg } from "../plan/helpers.ts";
 import { BIG, HOME, MOVES, PENDING, SCRATCH, harness, previewFixture, writesFollowYes } from "./helpers.ts";
 
 /** welcome, check, accounts (no new instance, names fine), plan (continue): then the decisions step. */
@@ -32,8 +34,50 @@ test("the assistant has TOTAL_STEPS steps and a title for each, in both language
 
 // ---------------- decisions ----------------
 
-test("decisions: one question per pending key, with the real numbers, default and how to change it; saves exactly the answered keys after a y", async () => {
-  const h = harness({ answers: [...PRE, "y", "y", "n", "n", "y", "", ...SKIP_REST], pending: PENDING, moves: MOVES });
+test("decisions apply when answered: Enter on every question saves the defaults at once (no save question), the next plan asks nothing and the import sees the sessions", async () => {
+  // 5: Enter, Enter, Enter (home yes, t3-refused yes, automated no), the destinations list confirmed untouched;
+  // 6: no, no; 7: pilot skipped; 8: import everything yes; 10: no watcher.
+  const pending = [{ key: "home", sessions: 5, folders: 1 }, { key: "t3-refused", sessions: 1, folders: 1 }, { key: "automated", sessions: 7, folders: 3 }];
+  const h = harness({ answers: [...PRE, "", "", "", "", "n", "n", "n", "y", "n"], pending, moves: MOVES });
+  assert.equal(await h.run(), 0, h.text());
+  const t = flat(h);
+  assert.deepEqual(h.saved[0], { decided: ["home", "t3-refused", "automated"], folders: { home: "rehome", "t3-refused": "rehome" }, sessions: { automated: "skip" } });
+  assert.doesNotMatch(t, /Save your answers|so they are not asked again/, "no separate save question");
+  assert.match(t, /Saved your answers in config\.json; change them later under organize\./);
+  assert.equal(t.match(/Step 5 of 11 · Decisions/g)?.length, 1, "the plans after the save ask nothing");
+  const save = h.events.findIndex((e) => e.t === "call" && e.name.startsWith("saveOrganize"));
+  const replan = h.events.findIndex((e, i) => i > save && e.t === "call" && e.name === "plan");
+  assert.ok(save >= 0 && replan > save, "saved right after the last answer, then the plan is redone");
+  // The copies reach the pilot's table and the import: demo shows its 2 conversations and 3 copies from the home folder,
+  // and the import counts them (20 + 5 + busy's 1; before the answers, demo had 2).
+  assert.match(t, /demo +5 +Claude · Personal/);
+  assert.match(t, /Import +26 conversations Into +3 projects/);
+  assert.ok(h.calls().includes("run apply --yes"));
+  assert.deepEqual(writesFollowYes(h.events), []);
+});
+
+test("decisions: q before the last answer saves nothing; b goes back and saves nothing", async () => {
+  for (const leave of ["q", "b"]) {
+    const h = harness({ answers: [...PRE, "y", "y", leave, "q"], pending: PENDING });
+    await h.run();
+    assert.deepEqual(h.saved, [], leave);
+    assert.equal(h.calls().filter((c) => c.startsWith("saveOrganize")).length, 0, leave);
+  }
+});
+
+test("writesFollowYes: a config save right after the decisions passes; any other write without a yes does not", () => {
+  const ask = (q: string, a: string) => ({ t: "ask" as const, q, a, at: 0 });
+  const call = (name: string) => ({ t: "call" as const, name, write: true, at: 0 });
+  const save = 'saveOrganize {"decided":["home","automated"],"folders":{"home":"rehome"},"sessions":{"automated":"skip"}}';
+  assert.deepEqual(writesFollowYes([ask("Put copies? [Y/n/?/b/q] ", ""), ask("Import these? [y/N/?/b/q] ", "?"), ask("Import these? [y/N/?/b/q] ", "n"), call(save)]), []);
+  assert.equal(writesFollowYes([ask("Import these? [y/N/?/b/q] ", "n"), call(save)]).length, 1, "two keys need two answers");
+  assert.equal(writesFollowYes([ask("Put copies? [Y/n/?/b/q] ", ""), ask("Import these? [y/N/?/b/q] ", "n"), call('saveOrganize {"decided":["home","automated"],"history":"off"}')]).length, 1, "only decisions fields");
+  assert.equal(writesFollowYes([ask("Put copies? [Y/n/?/b/q] ", ""), ask("Import these? [y/N/?/b/q] ", "n"), call("run apply --yes")]).length, 1, "an import still needs its yes");
+  assert.equal(writesFollowYes([ask("Days (Enter = 90):", "30"), call('saveOrganize {"decided":["home"]}')]).length, 1, "not after a text answer");
+});
+
+test("decisions: one question per pending key, with the real numbers, default and how to change it; saves exactly the answered keys once answered", async () => {
+  const h = harness({ answers: [...PRE, "y", "y", "n", "n", "", ...SKIP_REST], pending: PENDING, moves: MOVES });
   assert.equal(await h.run(), 0, h.text());
   assert.equal(h.left(), 0);
   const t = flat(h);
@@ -54,14 +98,14 @@ test("decisions: one question per pending key, with the real numbers, default an
   assert.deepEqual(writesFollowYes(h.events), []);
   assert.deepEqual(new Set(h.planLangs), new Set(["en"]), "every plan is asked in the assistant's language");
   assert.ok(h.calls().filter((c) => c === "plan").length >= 3, "re-planned after the answers were saved");
-  assert.match(t, /Saved\. Updating the plan with your answers/);
+  assert.match(t, /Saved your answers in config\.json; change them later under organize\. Updating the plan with your answers/);
   assert.match(t, /New projects t3sm will create: "demo", "General"\. Their names come from the folder; rename them in T3 Code if you like\./);
   assert.match(t, /Step 6 of 11 · Clean-up/);
   assert.match(t, /What changed ✓ Saved your answers about which conversations to bring .*How to undo · edit "organize" in config\.json/);
 });
 
 test("decisions in Portuguese: the numbers, the General project is Geral, every plan is asked in pt", async () => {
-  const answers = [...PRE, "s", "s", "n", "n", "s", "", ...SKIP_REST].map((a) => (a === "y" ? "s" : a));
+  const answers = [...PRE, "s", "s", "n", "n", "", ...SKIP_REST].map((a) => (a === "y" ? "s" : a));
   const h = harness({ answers, lang: "pt", pending: PENDING, moves: MOVES });
   assert.equal(await h.run(), 0, h.text());
   const t = flat(h);
@@ -70,20 +114,20 @@ test("decisions in Portuguese: the numbers, the General project is Geral, every 
   assert.match(t, /11 conversas correram em 5 pastas temporárias/);
   assert.match(t, /projeto "Geral"/);
   assert.match(t, /Mudar depois +organize\.folders\.temp/);
-  assert.match(t, /Guardar as respostas no config\.json para não voltarem a ser perguntadas\? Desfazer: edita lá "organize"\. \[s\/N/);
+  assert.doesNotMatch(t, /Guardar as respostas no config\.json para não voltarem/, "no separate save question");
+  assert.match(t, /Respostas guardadas no config\.json; podes mudá-las depois em organize\./);
   assert.match(t, /Projetos novos que o t3sm vai criar: "demo", "General"\. Os nomes vêm da pasta/, "the planner's own titles");
   assert.deepEqual(new Set(h.planLangs), new Set(["pt"]));
   assert.deepEqual(writesFollowYes(h.events), []);
 });
 
 test("decisions: only the keys in decisionsPending are asked; nothing pending means the step is not shown", async () => {
-  const h = harness({ answers: [...PRE, "n", "n", ...SKIP_REST], pending: [{ key: "temp", sessions: 11, folders: 5 }] });
+  const h = harness({ answers: [...PRE, "n", ...SKIP_REST], pending: [{ key: "temp", sessions: 11, folders: 5 }] });
   assert.equal(await h.run(), 0, h.text());
   assert.equal(h.prompts.filter((p) => /Import these conversations anyway/.test(p)).length, 1);
   assert.doesNotMatch(h.prompts.join("\n"), /home folder|Put copies|started by programs/);
-  assert.deepEqual(h.saved, [], "an n to the save question writes nothing");
-  assert.match(flat(h), /OK, nothing saved\. These questions come back the next time you run t3sm start\./);
-  assert.deepEqual(h.writes(), []);
+  assert.deepEqual(h.saved, [{ decided: ["temp"], folders: { temp: "skip" } }], "a no is an answer too: saved at once");
+  assert.deepEqual(h.writes().map((w) => w.split(" ")[0]), ["saveOrganize"]);
   const none = harness({ answers: [...PRE, ...SKIP_REST] });
   await none.run();
   assert.doesNotMatch(flat(none), /Step 5 of 11|Decisions/);
@@ -172,16 +216,81 @@ test("organize: the preview comes first (its exact header), then one question pe
   assert.match(t, /Projects to pin/);
   assert.match(t, /Delete this empty project\? \[Y\/n/);
   assert.match(t, /Now: after 7 days\. t3sm can set it to 90 days, like the rule above\./);
-  assert.match(t, /Also let T3 Code settle conversations started in T3 Code after 90 days\? \[Y\/n/);
+  assert.match(t, /Also let T3 Code put away conversations started in T3 after 90 days\? Now: after 7 days\. \[Y\/n/);
   assert.match(flat(h), /Here is what I will do History +the last 90 days, at least 10 per project +shown again +4 +settled +0 +New titles +2 +Archive automated +3 +Pin projects +2 +Delete empty projects +1 +Undo +t3sm organize --undo/);
   assert.match(flat(h), /Apply these changes to T3 Code now\? Undo: t3sm organize --undo\. \[y\/N/);
-  assert.deepEqual(h.saved.at(-1), { decided: ["history", "titles", "archiveAutomated", "pinRecent"], history: { days: 90, minPerProject: 10 }, titles: true, archiveAutomated: true, pinRecent: { enabled: true } });
+  assert.deepEqual(h.saved.at(-1), { decided: ["history", "history-v2", "titles", "archiveAutomated", "pinRecent"], history: { days: 90, minPerProject: 10 }, titles: true, archiveAutomated: true, pinRecent: { enabled: true } });
   assert.equal(h.writes().at(-1), "run organize --yes");
   assert.ok(h.writes().at(-2)!.startsWith("saveOrganize "), "the choices are saved right before the command, after the same y");
   assert.deepEqual(writesFollowYes(h.events), []);
   assert.match(flat(h), /✓ Organized the imported history in T3 Code \(run R(\d)\) .*· t3sm organize --undo R\1/);
   assert.match(flat(h), /Done\. Open T3 Code: your projects now show their history\./);
   assert.match(flat(h), /Step 10 of 11 · Keep in sync/);
+});
+
+test("organize after an upgrade from 0.2: a legacy organize.history (\"all\") asks the 0.3 question once, 90 days and 10 per project by default", async () => {
+  // A 0.2.1 config: history "all", with "history" in organize.decided. Every imported conversation is visible, so the
+  // plan with that rule changes nothing in the history: 0.3.0 never asked. The 0.3 rule is planned and asked instead.
+  const base = previewFixture();
+  const legacy = { ...base, history: { days: "all" as const, minPerProject: 10 }, legacyHistory: "all" as const, plan: { ...base.plan, actions: base.plan.actions.filter((a) => a.kind !== "unsettle"), counts: { ...base.plan.counts, unsettle: 0 } } };
+  const rules: unknown[] = [];
+  const h = harness({
+    answers: [...TO_ORGANIZE, ...ORGANIZE_ALL, "y", "n"], preview: legacy,
+    previewFor: (rule) => { rules.push(rule); return { ...base, history: rule }; },
+  });
+  assert.equal(await h.run(), 0, h.text());
+  assert.deepEqual(rules[0], { days: 90, minPerProject: 10 }, "the 0.3 default is planned first");
+  const t = flat(h);
+  assert.match(t, /History inside projects .*Until now: every conversation visible\./);
+  assert.match(t, /Show the last 90 days, and at least 10 per project\? \[Y\/n/);
+  const save = h.saved.at(-1)!;
+  assert.deepEqual(save.history, { days: 90, minPerProject: 10 });
+  assert.ok(save.decided!.includes("history") && save.decided!.includes("history-v2"), "answered for 0.3: not asked again");
+  assert.deepEqual(writesFollowYes(h.events), []);
+});
+
+test("organize after an upgrade from 0.2: off and days:N say what they had and are asked as they were (EN and PT)", async () => {
+  const base = previewFixture();
+  const offParts = { history: true, titles: false, archiveAutomated: false, pinRecent: false };
+  for (const [was, lang, re, ask, planned] of [
+    // off: the off variant, Enter keeps it off; nothing is planned with another rule.
+    ["off", "en", /Until now: no history rule; T3 Code's Settled shelf decided\./, /Turn it on: the last 90 days, at least 10 per project\? \[y\/N/, null],
+    // days:N: those days, at least 10 per project.
+    ["days:30", "en", /Until now: the last 30 days visible\./, /Show the last 30 days, and at least 10 per project\? \[Y\/n/, { days: 30, minPerProject: 10 }],
+    // all: the 0.3 default.
+    ["all", "pt", /Até agora: todas as conversas visíveis\./, /Mostrar os últimos 90 dias, e pelo menos 10 por projeto\? \[S\/n/, { days: 90, minPerProject: 10 }],
+  ] as const) {
+    const legacy = { ...base, history: was === "off" ? null : { days: was === "all" ? "all" as const : 30, minPerProject: 10 }, ...(was === "off" ? { off: offParts } : {}), legacyHistory: was };
+    const answers = [...TO_ORGANIZE, ...ORGANIZE_ALL, "n", "n"].map((a) => (lang === "pt" && a === "y" ? "s" : a));
+    const rules: unknown[] = [];
+    const h = harness({ answers, lang, preview: legacy, previewFor: (rule) => { rules.push(rule); return { ...base, history: rule }; } });
+    assert.equal(await h.run(), 0, h.text());
+    assert.match(flat(h), re, was);
+    assert.match(flat(h), ask, was);
+    assert.deepEqual(rules, planned === null ? [] : [planned], `${was}: planned with`);
+  }
+  // Without a legacy value nothing is re-planned: the preview is asked once, with the rule config.json holds.
+  const h = harness({ answers: [...TO_ORGANIZE, ...ORGANIZE_ALL, "n", "n"], preview: base, previewFor: () => { throw new Error("re-planned"); } });
+  assert.equal(await h.run(), 0, h.text());
+  assert.doesNotMatch(flat(h), /Until now|Até agora/);
+});
+
+test("organize after an upgrade from 0.2: keeping it off (or none) with nothing else chosen still records the answer, so it is not asked again", async () => {
+  const base = previewFixture();
+  const offParts = { history: true, titles: false, archiveAutomated: false, pinRecent: false };
+  const NO_PARTS = ["n", "n", "n", "n", "n"]; // titles, archive, pins, empty projects, T3 Code's option
+  for (const [was, history] of [["off", [""]], ["all", ["n", "none"]]] as const) {
+    const legacy = { ...base, history: was === "off" ? null : { days: "all" as const, minPerProject: 10 }, ...(was === "off" ? { off: offParts } : {}), legacyHistory: was };
+    const h = harness({ answers: [...TO_ORGANIZE, ...history, ...NO_PARTS, "n"], preview: legacy, previewFor: (rule) => ({ ...base, history: rule }) });
+    assert.equal(await h.run(), 0, h.text());
+    assert.deepEqual(h.saved, [{ history: "off", decided: ["history", "history-v2"] }], was);
+    assert.match(flat(h), /Saved in config\.json: no history rule\. This question is not asked again\./);
+    assert.doesNotMatch(flat(h), /Apply these changes/);
+    assert.deepEqual(writesFollowYes(h.events), [], was);
+    assert.ok(!h.writes().some((w) => w.startsWith("run organize")), "nothing changes in T3 Code");
+    const config = applyOrganizePatch(cfg({ organize: { history: was, decided: ["history"] } }), h.saved[0]!);
+    assert.equal(legacyHistory(config), null, `${was}: the question does not come back`);
+  }
 });
 
 test("organize: n at Apply never writes (no config, no command); n to every part leaves nothing to apply", async () => {
@@ -204,7 +313,7 @@ test("organize: the answers become flags and settings (days, a pin left out, no 
   const h = harness({ answers, preview: previewFixture() });
   assert.equal(await h.run(), 0, h.text());
   assert.match(flat(h), /Type a number from 1 to 3650, all, or none\./);
-  assert.deepEqual(h.saved.at(-1), { decided: ["history", "titles", "archiveAutomated", "pinRecent"], history: { days: 30, minPerProject: 10 }, titles: false, archiveAutomated: true, pinRecent: { enabled: true } });
+  assert.deepEqual(h.saved.at(-1), { decided: ["history", "history-v2", "titles", "archiveAutomated", "pinRecent"], history: { days: 30, minPerProject: 10 }, titles: false, archiveAutomated: true, pinRecent: { enabled: true } });
   assert.deepEqual(h.writes().at(-1), "run organize --yes --no-pin alpha --no-delete --auto-settle 30");
   assert.match(flat(h), /History +the last 30 days, at least 10 per project +shown again +4 +settled +0 +Archive automated +3 +Pin projects +1 +T3 Code's option +30 days \(now after 7 days\)/);
   assert.deepEqual(writesFollowYes(h.events), []);
@@ -259,7 +368,7 @@ test("organize: a T3 Code that does not report auto-settle gets no such question
   const t = flat(pt);
   assert.match(t, /Passo 9 de 11 · Arrumar/);
   assert.match(t, new RegExp(CATALOGUES.pt.organizePreviewHead.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
-  assert.match(t, /Deixar também o T3 Code passar para Settled as conversas começadas no T3 Code passados 90 dias\? \[S\/n/);
+  assert.match(t, /Deixar também o T3 Code arrumar as conversas começadas no T3 passados 90 dias\? Agora: passados 7 dias\. \[S\/n/);
   assert.match(t, /Agora: passados 7 dias\. O t3sm pode pô-la em 90 dias, como a regra acima\./);
   assert.match(t, /Aplicar estas alterações ao T3 Code agora\? Desfazer: t3sm organize --undo\. \[s\/N/);
   assert.deepEqual(pt.writes(), ["run apply --yes"], "n at Apply");
@@ -322,8 +431,8 @@ test("organize: a part the saved config turned off is still offered, saying it i
 /** titles y, archive y, pin y (+ list confirmed), delete y. */
 const PARTS_YES = ["y", "y", "y", "", "y"];
 
-test("assistant: Enter keeps 90/10 and offers T3 option 90 (default yes)", async () => {
-  const h = harness({ answers: [...TO_ORGANIZE, "?", "", ...PARTS_YES, "", "y", "n"], preview: previewFixture() });
+test("assistant: Enter keeps 90/10 and offers T3 option 90 (default yes); ? says why the order is safe", async () => {
+  const h = harness({ answers: [...TO_ORGANIZE, "?", "", ...PARTS_YES, "?", "", "y", "n"], preview: previewFixture() });
   assert.equal(await h.run(), 0, h.text());
   assert.equal(h.left(), 0);
   const t = flat(h);
@@ -332,7 +441,9 @@ test("assistant: Enter keeps 90/10 and offers T3 option 90 (default yes)", async
   assert.match(t, /Show the last 90 days, and at least 10 per project\? \[Y\/n/);
   assert.match(t, /n lets you type others/, "? explains");
   assert.match(t, /Now: after 7 days\. t3sm can set it to 90 days, like the rule above\./);
-  assert.match(t, /Also let T3 Code settle conversations started in T3 Code after 90 days\? \[Y\/n/);
+  assert.match(t, /Also let T3 Code put away conversations started in T3 after 90 days\? Now: after 7 days\. \[Y\/n/);
+  assert.match(t, /The order is safe: t3sm marks the older ones it keeps for the minimum per project, so T3 Code's own option never puts them away, and it applies the history rule before it changes T3 Code's option\./);
+  assert.match(t, /n leaves it as it is; t3sm never turns it off unless you choose that/);
   assert.doesNotMatch(t, /Also turn off T3 Code's auto-settle/);
   assert.match(t, /History +the last 90 days, at least 10 per project +shown again +4 +settled +0/);
   assert.match(t, /T3 Code's option +90 days \(now after 7 days\)/);
@@ -346,7 +457,7 @@ test("assistant: Enter keeps 90/10 and offers T3 option 90 (default yes)", async
   assert.equal(no.writes().at(-1), "run organize --yes");
   const same = harness({ answers: [...TO_ORGANIZE, "", ...PARTS_YES, "y", "n"], preview: previewFixture({ autoSettleDays: 90 }) });
   assert.equal(await same.run(), 0, same.text());
-  assert.doesNotMatch(flat(same), /settle conversations started in T3 Code after/);
+  assert.doesNotMatch(flat(same), /put away conversations started in T3 after/);
   assert.equal(same.writes().at(-1), "run organize --yes");
   // T3 Code's option off today: offered too (default yes).
   const off = harness({ answers: [...TO_ORGANIZE, "", ...PARTS_YES, "", "y", "n"], preview: previewFixture({ autoSettleDays: null }) });
@@ -355,8 +466,8 @@ test("assistant: Enter keeps 90/10 and offers T3 option 90 (default yes)", async
   assert.equal(off.writes().at(-1), "run organize --yes --auto-settle 90");
 });
 
-test("assistant: days 120 offers keep or off, never 120", async () => {
-  for (const [answer, flags] of [["", "run organize --yes"], ["n", "run organize --yes --auto-settle off"]] as const) {
+test("assistant: days 120 offers keep, 90 days or off (default keep), never 120", async () => {
+  for (const [answer, flags] of [["", "run organize --yes"], ["2", "run organize --yes --auto-settle 90"], ["3", "run organize --yes --auto-settle off"]] as const) {
     // n, then a bad number, 120 days and a minimum of 5.
     const h = harness({ answers: [...TO_ORGANIZE, "n", "4000", "120", "x", "5", ...PARTS_YES, answer, "y", "n"], preview: previewFixture() });
     assert.equal(await h.run(), 0, h.text());
@@ -367,13 +478,15 @@ test("assistant: days 120 offers keep or off, never 120", async () => {
     assert.match(t, /At least how many per project, even older ones\? 0 to 1000 \(Enter = 10\):/);
     assert.match(t, /Type a number from 0 to 1000\./);
     assert.match(t, /accepts at most 90 days, so it cannot follow the last 120 days/);
-    assert.match(t, /Leave T3 Code's own option as it is \(now 7 days\)\? n turns it off\. \[Y\/n/);
+    assert.match(t, /1 +Keep it \(after 7 days\) +2 +Set it to 90 days +3 +Turn it off/);
+    assert.match(t, /T3 Code's option: 1-3 \(Enter = 1, keep it\):/);
     assert.doesNotMatch(t, /after 120 days\?|auto-settle 120/);
     assert.match(t, /History +the last 120 days, at least 5 per project +shown again +4 +settled +0/, "other numbers: counted by a preview planned with them");
     assert.ok(h.calls().includes('organizePreview {"days":120,"minPerProject":5}'));
     assert.deepEqual(h.saved.at(-1)?.history, { days: 120, minPerProject: 5 });
     assert.equal(h.writes().at(-1), flags);
-    if (answer === "n") assert.match(t, /T3 Code's option +off \(now after 7 days\)/);
+    if (answer === "3") assert.match(t, /T3 Code's option +off \(now after 7 days\)/);
+    if (answer === "2") assert.match(t, /T3 Code's option +90 days \(now after 7 days\)/);
   }
   // all: no minimum question; same keep-or-off offer.
   const all = harness({ answers: [...TO_ORGANIZE, "n", "all", ...PARTS_YES, "", "y", "n"], preview: previewFixture() });
@@ -381,6 +494,13 @@ test("assistant: days 120 offers keep or off, never 120", async () => {
   assert.doesNotMatch(flat(all), /At least how many per project/);
   assert.match(flat(all), /cannot follow all of its history/);
   assert.deepEqual(all.saved.at(-1)?.history, { days: "all", minPerProject: 10 });
+  // T3 Code's option off today and a rule it cannot follow: keep it off, or 90 days (nothing to turn off).
+  const offAll = harness({ answers: [...TO_ORGANIZE, "n", "all", ...PARTS_YES, "7", "2", "y", "n"], preview: previewFixture({ autoSettleDays: null }) });
+  assert.equal(await offAll.run(), 0, offAll.text());
+  assert.match(flat(offAll), /1 +Keep it \(off\) +2 +Set it to 90 days T3 Code's option: 1-2/);
+  assert.doesNotMatch(flat(offAll), /Turn it off/);
+  assert.match(flat(offAll), /Type one of the numbers shown\./);
+  assert.equal(offAll.writes().at(-1), "run organize --yes --auto-settle 90");
   // none: the rule off; T3 Code's option keeps the old question (turn it off? default no).
   const none = harness({ answers: [...TO_ORGANIZE, "n", "none", ...PARTS_YES, "", "y", "n"], preview: previewFixture() });
   assert.equal(await none.run(), 0, none.text());
@@ -410,6 +530,77 @@ test("assistant: the history question and T3 Code's option in Portuguese", async
   const t = flat(h);
   assert.match(t, /Mostrar os últimos 90 dias, e pelo menos 10 por projeto\? \[S\/n/);
   assert.match(t, /4 conversas voltam a aparecer, 0 passam para Settled, em 2 projetos/);
-  assert.match(t, /Deixar também o T3 Code passar para Settled as conversas começadas no T3 Code passados 90 dias\? \[S\/n/);
+  assert.match(t, /Deixar também o T3 Code arrumar as conversas começadas no T3 passados 90 dias\? Agora: passados 7 dias\. \[S\/n/);
   assert.equal(h.writes().at(-1), "run organize --yes --auto-settle 90");
+});
+
+test("organize: the marks that keep older conversations shown are on the approval screen (EN and PT)", async () => {
+  const base = previewFixture();
+  const mark = (id: string): OrganizeAction => ({ kind: "unsettle", target: id, projectId: "alpha", previous: "shown", next: "active", reason: "history: kept visible, at least 10 per project" });
+  const preview = { ...base, plan: { ...base.plan, actions: [...base.plan.actions, mark("import:k1"), mark("import:k2"), mark("import:k3")], counts: { ...base.plan.counts, unsettle: 7 } } };
+  const h = harness({ answers: [...TO_ORGANIZE, ...ORGANIZE_ALL, "y", "n"], preview });
+  assert.equal(await h.run(), 0, h.text());
+  const t = flat(h);
+  assert.match(t, /4 conversations shown again, 0 settled, in 2 projects\. .*3 conversations kept for the minimum stay shown, marked so T3 Code's own option never puts them away\./, "the marks are not shown again");
+  assert.match(t, /Here is what I will do History +the last 90 days, at least 10 per project +shown again +4 +settled +0 +kept shown \(protected from T3 Code's own option; cannot be undone\) +3 /);
+  const pt = harness({ answers: [...TO_ORGANIZE, ...ORGANIZE_ALL, "y", "n"].map((a) => (a === "y" ? "s" : a)), lang: "pt", preview });
+  assert.equal(await pt.run(), 0, pt.text());
+  assert.match(flat(pt), /3 conversas mantidas para o mínimo ficam à vista, marcadas para que a opção do próprio T3 Code nunca as arrume\./);
+  assert.match(flat(pt), /mantidas à vista \(protegidas da opção do T3 Code; não se desfaz\) +3 /);
+  // Without marks the row is not shown.
+  const none = harness({ answers: [...TO_ORGANIZE, ...ORGANIZE_ALL, "y", "n"], preview: base });
+  await none.run();
+  assert.doesNotMatch(flat(none), /kept shown|stay shown, marked/);
+  // The ? of T3 Code's option says what happens when it is kept shorter than the rule.
+  assert.match(CATALOGUES.en.organizeT3Help, /If you keep T3 Code's option shorter than the rule, t3sm brings such conversations back on its next pass\./);
+});
+
+test("organize: the marks follow T3 Code's option as this run sets it (planned again after its answer), so the panel names them", async () => {
+  const base = previewFixture();
+  const mark = (id: string): OrganizeAction => ({ kind: "unsettle", target: id, projectId: "alpha", previous: "shown", next: "active", reason: "history: kept visible, at least 10 per project" });
+  const withMarks = (n: number) => ({ ...base, plan: { ...base.plan, actions: [...base.plan.actions, ...Array.from({ length: n }, (_, i) => mark(`import:k${i}`))] } });
+  // T3 Code's option off, rule 90: no marks planned now; y to 90 days plans them (3), and the panel shows them.
+  {
+    const asked: unknown[] = [];
+    const h = harness({
+      answers: [...TO_ORGANIZE, "", ...PARTS_YES, "y", "y", "n"], preview: { ...base, autoSettleDays: null },
+      previewFor: (rule, autoSettle) => { asked.push([rule, autoSettle]); return autoSettle === 90 ? { ...withMarks(3), autoSettleDays: null } : { ...base, autoSettleDays: null }; },
+    });
+    assert.equal(await h.run(), 0, h.text());
+    assert.ok(h.calls().includes('organizePreview {"days":90,"minPerProject":10} auto-settle=90'), h.calls().join("\n"));
+    assert.match(flat(h), /Here is what I will do History +the last 90 days, at least 10 per project +shown again +4 +settled +0 +kept shown \(protected from T3 Code's own option; cannot be undone\) +3 /);
+    assert.equal(h.writes().at(-1), "run organize --yes --auto-settle 90");
+  }
+  // T3 Code's option on (7 days) with marks planned; rule 120, turned off: planned again, no marks, no kept row.
+  {
+    const h = harness({
+      answers: [...TO_ORGANIZE, "n", "120", "", ...PARTS_YES, "3", "y", "n"], preview: withMarks(2),
+      previewFor: (_rule, autoSettle) => (autoSettle === null ? base : withMarks(2)),
+    });
+    assert.equal(await h.run(), 0, h.text());
+    assert.ok(h.calls().some((c) => c.endsWith(" auto-settle=null")), h.calls().join("\n"));
+    assert.doesNotMatch(flat(h), /kept shown/);
+    assert.equal(h.writes().at(-1), "run organize --yes --auto-settle off");
+  }
+  // Left as it is: not planned again.
+  {
+    const h = harness({ answers: [...TO_ORGANIZE, "", ...PARTS_YES, "n", "y", "n"], preview: withMarks(2), previewFor: () => { throw new Error("planned again"); } });
+    assert.equal(await h.run(), 0, h.text());
+    assert.match(flat(h), /kept shown \(protected from T3 Code's own option; cannot be undone\) +2 /);
+  }
+});
+
+test("writesFollowYes: the history 'no rule' save passes only right after the history question kept off and no to the rest", () => {
+  const ask = (q: string, a: string) => ({ t: "ask" as const, q, a, at: 0 });
+  const save = { t: "call" as const, name: 'saveOrganize {"history":"off","decided":["history","history-v2"]}', write: true, at: 0 };
+  const keptOff = ask("Turn it on: the last 90 days, at least 10 per project? [y/N/?/b/q] ", "");
+  const none = ask("Days each project shows: 1 to 3650, all, or none (Enter = 90): ", "none");
+  const noTitles = ask("Give these conversations clearer titles? [Y/n/?/b/q] ", "n");
+  assert.deepEqual(writesFollowYes([keptOff, noTitles, save]), []);
+  assert.deepEqual(writesFollowYes([ask("Show the last 90 days, and at least 10 per project? [Y/n/?/b/q] ", "n"), none, noTitles, save]), []);
+  assert.deepEqual(writesFollowYes([ask("Ligar: os últimos 90 dias, pelo menos 10 por projeto? [s/N/?/v/q] ", "não"), save]), []);
+  assert.equal(writesFollowYes([noTitles, save]).length, 1, "no history question");
+  assert.equal(writesFollowYes([ask("Turn it on: the last 90 days, at least 10 per project? [y/N/?/b/q] ", "y"), noTitles, save]).length, 1, "turned on");
+  assert.equal(writesFollowYes([keptOff, ask("Give these conversations clearer titles? [Y/n/?/b/q] ", ""), save]).length, 1, "a later yes (Enter on a default yes)");
+  assert.equal(writesFollowYes([ask("Days each project shows: 1 to 3650, all, or none (Enter = 90): ", "30"), save]).length, 1, "numbers typed");
 });

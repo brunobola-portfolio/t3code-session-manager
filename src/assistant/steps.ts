@@ -3,12 +3,13 @@
 // is one of t3sm's own commands, run through ctx.d.run only after an explicit "y" in the question right before it (write
 // questions default to No). The exceptions, saving the assistant's language and the decisions / organize choices (the
 // "organize" section), are config.json only: they go through ctx.d.saveLanguage and ctx.d.saveOrganize (under the
-// lock), also after a "y". The assistant never calls T3 Code's write API itself.
+// lock), after a "y", except the decisions (step 5): each one is an explicit answer, saved right after the last one.
+// The assistant never calls T3 Code's write API itself.
 //
 // The screens use the UI kit (src/ui/components.ts) at the terminal's width, at most 80 columns. Text from disk or T3
 // Code (folders, titles, account names, a child's output) goes through shownText before it reaches the terminal.
 
-import { DEFAULT_HISTORY, organizeSettings, type OrganizePatch } from "../core/config.ts";
+import { DEFAULT_HISTORY, HISTORY_V2, organizeSettings, type OrganizePatch } from "../core/config.ts";
 import type { Check } from "../ops/doctor.ts";
 import { isGlob, normalizeFolder, projectRows, type ProjectRow } from "../ops/projects.ts";
 import { shownAccountName, shownText } from "../plan/names.ts";
@@ -16,6 +17,7 @@ import { SKIP_REASONS, summarize } from "../plan/report.ts";
 import { expandHome, sameCwd, tildePath } from "../core/paths.ts";
 import type { HistoryRule, OrganizeConfig } from "../core/types.ts";
 import type { OrganizeAction } from "../organize/types.ts";
+import { isShownMark } from "../organize/history.ts";
 import { reviewList, type ListItem } from "../ui/list.ts";
 import { appHeader, callout, kv, panel, table, type Column } from "../ui/components.ts";
 import { organizePreviewTable } from "../ui/organizePreview.ts";
@@ -412,9 +414,11 @@ async function ensureConfig(ctx: Ctx): Promise<void> {
   ctx.done.pop(); // part of the write the user just confirmed; the summary lists that write
 }
 
-async function pickNumber(ctx: Ctx, question: string, max: number, help: string): Promise<number> {
+/** A number from 1 to `max`; Enter is `def` when one is given. */
+async function pickNumber(ctx: Ctx, question: string, max: number, help: string, def?: number): Promise<number> {
   for (;;) {
     const a = await askText(ctx, question, { help });
+    if (a === "" && def !== undefined) return def;
     const n = /^\d+$/.test(a) ? Number(a) : NaN;
     if (n >= 1 && n <= max) return n;
     say(ctx, t(ctx, "badNumber"));
@@ -740,11 +744,11 @@ async function moveReview(ctx: Ctx): Promise<void> {
     });
   }
   if (changes.length === 0) { say(ctx, t(ctx, "decMoveNone")); return; }
-  if (!(await ask(ctx, t(ctx, "decMoveSaveAsk"), { def: "n", help: t(ctx, "decMoveSaveHelp") }))) { say(ctx, t(ctx, "decNotSaved")); return; }
+  if (!(await ask(ctx, t(ctx, "decMoveSaveAsk"), { def: "n", help: t(ctx, "decMoveSaveHelp") }))) { say(ctx, t(ctx, "decMoveNotSaved")); return; }
   const kept = (p.config.organize?.overrides ?? []).filter((o) => !changes.some((c) => sameCwd(expandHome(o.match, home), expandHome(c.match, home))));
   await saveSettings(ctx, { overrides: [...kept, ...changes] as OrganizeConfig["overrides"] }, t(ctx, "didOverrides"), t(ctx, "undoOverrides"));
   say(ctx, t(ctx, "decMoveSaved"));
-  await buildPlan(ctx, "decSaved");
+  await buildPlan(ctx, "decReplan");
 }
 
 /** Leaving the step with Back drops the gate's return point: a later normal visit must go on to the next step. */
@@ -779,10 +783,13 @@ const decisionsStep: Step = async (ctx) => {
     else if (d.key === "orphaned") patch.sessions = { ...patch.sessions, orphaned: DECISIONS[d.key]!.value(yes) as "copy" | "skip" };
     else patch.folders = { ...patch.folders, [d.key]: DECISIONS[d.key]!.value(yes) as OrganizeConfig["folders"]["home"] };
   }
+  // The answers are the decision: saved at once (config.json only, under the lock). A separate "save?" question with a
+  // default No left every conversation of the answered questions out of the import (0.3.0). q or b before the last
+  // answer leaves the loop above by its exception, so nothing is saved then.
   blank(ctx);
-  if (!(await ask(ctx, t(ctx, "decSaveAsk"), { def: "n", help: t(ctx, "decSaveHelp") }))) { say(ctx, t(ctx, "decNotSaved")); return afterDecisions(ctx); }
   await saveSettings(ctx, patch, t(ctx, "didDecisions"), t(ctx, "undoDecisions"));
-  await buildPlan(ctx, "decSaved");
+  okLine(ctx, t(ctx, "decSaved"));
+  await buildPlan(ctx, "decReplan");
   if (answers.get("home") === true || answers.get("t3-refused") === true) await moveReview(ctx);
   return afterDecisions(ctx);
 };
@@ -996,10 +1003,12 @@ async function askNumbers(ctx: Ctx, planned: HistoryRule, def: number | "all" | 
  * (a number, all, none) and the minimum. Off in config.json: Enter or n keeps it off (one Enter, nothing more), y asks
  * the days and the minimum to turn it on with. Returns the rule chosen (null = off).
  */
-async function askHistory(ctx: Ctx, planned: HistoryRule, off: boolean, c: { shown: number; settled: number; p: number }): Promise<HistoryRule | null> {
+async function askHistory(ctx: Ctx, planned: HistoryRule, off: boolean, c: { shown: number; settled: number; kept: number; p: number }, was?: string): Promise<HistoryRule | null> {
   const help = t(ctx, "organizeHistoryHelp2");
   const body = off ? [t(ctx, "organizeOffHistory"), t(ctx, "organizeHistoryNow", c)]
     : [t(ctx, "organizeHistoryNow", c), t(ctx, planned.days === "all" ? "organizeHistorySayAll" : "organizeHistorySay", { days: planned.days, min: planned.minPerProject })];
+  if (c.kept > 0) body.push(t(ctx, "organizeHistoryKept", { kept: c.kept }));
+  if (was !== undefined) body.push(t(ctx, "organizeHistoryWas", { was }));
   lines(ctx, box(ctx, { title: t(ctx, "organizeHistoryTitle"), body: [...body, "", ...rows(ctx, [[t(ctx, "decDefaultLabel"), t(ctx, off ? "organizeHistoryDefaultOff" : "organizeHistoryDefault")], [t(ctx, "willUndo"), "t3sm organize --undo"]])] }));
   if (off) {
     const on = await ask(ctx, t(ctx, "organizeHistoryAskOn", { days: planned.days === "all" ? t(ctx, "organizeScopeAll") : planned.days, min: planned.minPerProject }), { def: "n", help });
@@ -1008,6 +1017,13 @@ async function askHistory(ctx: Ctx, planned: HistoryRule, off: boolean, c: { sho
   const q = planned.days === "all" ? t(ctx, "organizeHistoryAskAll") : t(ctx, "organizeHistoryAsk2", { days: planned.days, min: planned.minPerProject });
   if (await ask(ctx, q, { def: "y", help })) return planned;
   return askNumbers(ctx, planned, planned.days, help);
+}
+
+/** A 0.2 organize.history value in words ("every conversation visible", "the last 30 days visible", ...). */
+function wasWords(ctx: Ctx, h: "all" | "off" | `days:${number}`): string {
+  if (h === "all") return t(ctx, "organizeWasAll");
+  if (h === "off") return t(ctx, "organizeWasOff");
+  return t(ctx, "organizeWasDays", { d: Number(h.slice("days:".length)) });
 }
 
 /** First run: no organize run of ours stands in the journal (so the projects to pin are confirmed one by one). */
@@ -1044,11 +1060,19 @@ export const organize: Step = async (ctx) => {
   if (pv === null) return { to: "skip" };
   heading(ctx, 9);
   say(ctx, t(ctx, "organizeIntro"));
-  const histOff = pv.off?.history === true;
-  const planned: HistoryRule = pv.history ?? { ...DEFAULT_HISTORY };
+  // A 0.2 organize.history ("all", "off", "days:N") was answered before the 0.3 rule (days and a minimum per project)
+  // existed: its question is asked once more, planned with the 0.3 default, saying what the user had.
+  // As the user had it: "all" gets the 0.3 default (90 days, at least 10); "days:N" those days, at least 10; "off" the
+  // off variant (Enter keeps it off).
+  const legacy = pv.legacyHistory;
+  const legacyRule: HistoryRule | null = legacy === "all" ? { ...DEFAULT_HISTORY }
+    : legacy !== undefined && legacy !== "off" ? { days: Number(legacy.slice("days:".length)), minPerProject: DEFAULT_HISTORY.minPerProject } : null;
+  if (legacyRule !== null) pv = (await ctx.d.organizePreview(ctx.allowUntested, legacyRule)) ?? pv;
+  const histOff = legacy === "off" || (legacy === undefined && pv.off?.history === true);
+  const planned: HistoryRule = legacyRule ?? pv.history ?? { ...DEFAULT_HISTORY };
   // The preview first, before any question: what each project shows today and with t3sm's defaults.
   showPreview(ctx, pv, planned);
-  if (pv.plan.actions.length === 0) { say(ctx, t(ctx, "organizeNothing")); return NEXT; }
+  if (pv.plan.actions.length === 0 && legacy === undefined) { say(ctx, t(ctx, "organizeNothing")); return NEXT; }
   const of = (k: OrganizeAction["kind"]): OrganizeAction[] => pv!.plan.actions.filter((a) => a.kind === k);
 
   const patch: OrganizePatch = { decided: [] };
@@ -1066,22 +1090,28 @@ export const organize: Step = async (ctx) => {
   // the rule chosen, so "Here is what I will do" says what organize will really do.
   /** The rule organize will run with: the answer, else what config.json says (null = off). */
   let rule: HistoryRule | null = histOff ? null : planned;
-  const historyAsked = of("unsettle").length > 0 || of("settle").length > 0;
+  const historyAsked = legacy !== undefined || of("unsettle").length > 0 || of("settle").length > 0;
+  const countsOf = (x: OrganizePreview): { shown: number; settled: number; kept: number; p: number } => {
+    // A mark of a thread already shown (history step 6) shows nothing again: counted apart (`kept`), so the approval
+    // screen still names every write.
+    const sh = x.plan.actions.filter((a) => a.kind === "unsettle" && !isShownMark(a));
+    const kp = x.plan.actions.filter((a) => isShownMark(a));
+    const st = x.plan.actions.filter((a) => a.kind === "settle");
+    return { shown: sh.length, settled: st.length, kept: kp.length, p: new Set([...sh, ...st].map((a) => a.projectId)).size };
+  };
+  /** Where the history rows end in `will`: the kept row goes there once T3 Code's option is chosen. */
+  let historyEnd: number | null = null;
   if (historyAsked) {
     blank(ctx);
-    const countsOf = (x: OrganizePreview): { shown: number; settled: number; p: number } => {
-      const sh = x.plan.actions.filter((a) => a.kind === "unsettle");
-      const st = x.plan.actions.filter((a) => a.kind === "settle");
-      return { shown: sh.length, settled: st.length, p: new Set([...sh, ...st].map((a) => a.projectId)).size };
-    };
-    rule = await askHistory(ctx, planned, histOff, countsOf(pv));
+    rule = await askHistory(ctx, planned, histOff, countsOf(pv), legacy === undefined ? undefined : wasWords(ctx, legacy));
     patch.history = rule ?? "off";
-    patch.decided!.push("history");
+    patch.decided!.push("history", HISTORY_V2);
     const same = rule !== null && rule.days === planned.days && rule.minPerProject === planned.minPerProject;
     if (rule !== null && !same) pv = (await ctx.d.organizePreview(ctx.allowUntested, rule)) ?? pv; // other numbers: plan them
     if (rule !== null) {
       const c = countsOf(pv);
       will.push([t(ctx, "organizeRowHistory"), ruleScope(ctx, rule)], [`  ${t(ctx, "organizeRowShown")}`, c.shown], [`  ${t(ctx, "organizeRowSettled")}`, c.settled]);
+      historyEnd = will.length;
     }
   }
 
@@ -1131,38 +1161,71 @@ export const organize: Step = async (ctx) => {
   }
 
   // Separate from the parts above: T3 Code's own setting, for conversations started in T3 Code (spec §5.2). With a rule
-  // of at most 90 days: set it to the same days (default yes). Otherwise T3 Code cannot follow: leave it or turn it off
-  // (default leave). With the rule off: turn it off? (default no).
+  // of at most 90 days: let T3 Code put them away after the same days (default yes; n leaves it as it is, never off).
+  // Otherwise T3 Code cannot follow: keep it, set it to 90 days, or turn it off (default keep). With the rule off: turn
+  // it off? (default no). The order is safe: organize applies the history rule (unsettle, settle) before this setting.
   const days = pv.autoSettleDays;
+  /** T3 Code's option as this run sets it (undefined: left as it is). */
+  let t3Want: number | null | undefined;
   if (days !== undefined) {
     const current = days === null ? t(ctx, "organizeT3Off") : t(ctx, "organizeT3After", { days });
     if (rule !== null && rule.days !== "all" && rule.days <= T3_MAX_DAYS) {
       if (days !== rule.days) {
         // "Like the rule above" only when the history question was just asked; otherwise the rule is named.
         part("organizeT3Title", t(ctx, historyAsked ? "organizeT3Say" : "organizeT3SayAlone", { current, days: rule.days }));
-        if (await yn("", "y", "organizeT3Ask", "organizeT3Help", { days: rule.days })) {
+        if (await yn("", "y", "organizeT3Ask", "organizeT3Help", { days: rule.days, current })) {
+          t3Want = rule.days;
           flags.push("--auto-settle", String(rule.days));
           will.push([t(ctx, "organizeRowT3"), t(ctx, "organizeValT3", { days: rule.days, current })]);
         }
       }
-    } else if (days !== null && rule !== null) {
+    } else if (rule !== null) {
       const scope = rule.days === "all" ? t(ctx, "organizeScopeAllHistory") : t(ctx, "organizeScopeDays", { d: rule.days });
-      part("organizeT3Title", t(ctx, "organizeT3KeepSay", { scope, days }));
-      if (!(await ask(ctx, t(ctx, "organizeT3KeepAsk", { days }), { def: "y", help: t(ctx, "organizeT3KeepHelp", { days }) }))) {
-        flags.push("--auto-settle", "off");
-        will.push([t(ctx, "organizeRowT3"), t(ctx, "organizeValT3Off", { current })]);
+      part("organizeT3Title", t(ctx, "organizeT3KeepSay", { scope, current }));
+      // undefined: keep it as it is; a number: set it to that; null: off.
+      const choices: [string, number | null | undefined][] = [[t(ctx, "organizeT3ChoiceKeep", { current }), undefined]];
+      if (days !== T3_MAX_DAYS) choices.push([t(ctx, "organizeT3ChoiceSet", { days: T3_MAX_DAYS }), T3_MAX_DAYS]);
+      if (days !== null) choices.push([t(ctx, "organizeT3ChoiceOff"), null]);
+      lines(ctx, choices.map(([label], i) => `  ${ctx.s("num", String(i + 1))}  ${label}`));
+      const n = await pickNumber(ctx, t(ctx, "organizeT3ChoiceAsk", { n: choices.length }), choices.length, t(ctx, "organizeT3KeepHelp", { current }), 1);
+      const want = choices[n - 1]![1];
+      if (want !== undefined) {
+        t3Want = want;
+        flags.push("--auto-settle", want === null ? "off" : String(want));
+        will.push([t(ctx, "organizeRowT3"), want === null ? t(ctx, "organizeValT3Off", { current }) : t(ctx, "organizeValT3", { days: want, current })]);
       }
     } else if (days !== null) {
       part("organizeT3Title", t(ctx, "organizeSettleSay", { days }));
       if (await yn("", "n", "organizeSettleAsk", "organizeSettleHelp", {})) {
+        t3Want = null;
         flags.push("--auto-settle", "off");
         will.push([t(ctx, "organizeRowT3"), t(ctx, "organizeValT3Off", { current })]);
       }
     }
   }
 
+  // The marks follow T3 Code's option as this run leaves it: a changed option is planned again (a dry run), so the
+  // approval screen names the marks the run will write.
+  if (t3Want !== undefined && t3Want !== days) pv = (await ctx.d.organizePreview(ctx.allowUntested, rule, t3Want)) ?? pv;
+  const kept = countsOf(pv).kept;
+  if (kept > 0 && rule !== null) {
+    const row: [string, number] = [`  ${t(ctx, "organizeRowKept")}`, kept];
+    if (historyEnd !== null) will.splice(historyEnd, 0, row);
+    else will.unshift([t(ctx, "organizeRowHistory"), ruleScope(ctx, rule)], row);
+  }
+
   blank(ctx);
-  if (will.length === 0) { say(ctx, t(ctx, "organizeNothingChosen")); return NEXT; }
+  if (will.length === 0) {
+    // The re-asked 0.2 history question answered "no rule" (kept off, or none) with nothing else chosen: the answer is
+    // still saved (config.json only, like the decisions), so it is not asked again. Nothing changes in T3 Code.
+    if (legacy !== undefined && rule === null) {
+      await saveSettings(ctx, { history: "off", decided: ["history", HISTORY_V2] }, t(ctx, "didOrganizeSettings"), t(ctx, "undoOrganizeSettings"));
+      okLine(ctx, t(ctx, "organizeHistoryOffSaved"));
+      return NEXT;
+    }
+    say(ctx, t(ctx, "organizeNothingChosen"));
+    return NEXT;
+  }
   const nw = Math.max(...will.map(([, v]) => (typeof v === "number" ? num(ctx, v).length : 0)));
   const body = rows(ctx, [...will.map(([k, v]): [string, string] => [k, typeof v === "number" ? ctx.s("num", padStart(num(ctx, v), nw)) : v]),
     [t(ctx, "willUndo"), ctx.s("key", "t3sm organize --undo")]]);

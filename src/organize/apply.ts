@@ -32,7 +32,7 @@ import type { T3Api, T3Project, T3Thread } from "../t3/api.ts";
 import { organizeGate } from "../t3/compat.ts";
 import { RpcClosed, RpcTimeout, ShapeError, T3HttpError, redact } from "../t3/errors.ts";
 import { JournalWriteError } from "../ops/quarantine.ts";
-import { changeKind, isObj, settleShown } from "./history.ts";
+import { changeKind, isObj, isShownMark, isVisibleInProject, settleShown } from "./history.ts";
 import { AUTO_SETTLE_TARGET } from "./plan.ts";
 import type { OrganizeAction, OrganizePlan } from "./types.ts";
 
@@ -64,8 +64,12 @@ export interface ApplyOrganizeResult {
 export interface OrganizeUndoItem {
   kind: OrganizeKind;
   target: string;
-  /** reverted (or would be, in a dry run); user-changed: not at the value t3sm set; already: back at the old value. */
-  status: "reverted" | "user-changed" | "already" | "failed";
+  /**
+   * reverted (or would be, in a dry run); user-changed: not at the value t3sm set; already: back at the old value; kept:
+   * a mark of a thread already shown (history step 6), which cannot be undone: T3 Code keeps it shown, with its
+   * override, outside its own auto-settle.
+   */
+  status: "reverted" | "user-changed" | "already" | "kept" | "failed";
   note?: string;
 }
 
@@ -88,6 +92,8 @@ export interface UndoOrganizeResult {
   reverted: number;
   skippedUserChanged: number;
   alreadyRestored: number;
+  /** Marks that cannot be undone (status "kept"). */
+  kept: number;
   failed: { kind: OrganizeKind; target: string; error: string }[];
   items: OrganizeUndoItem[];
 }
@@ -287,7 +293,11 @@ export async function applyOrganize(plan: OrganizePlan, d: ApplyOrganizeDeps): P
       await refresh(a.kind);
       cur = await current(d.api, w, a.kind, a.target);
     } catch (e) { return await fail(a, `could not read T3 Code: ${msg(e)}`); }
-    const stale = !cur.exists || !same(cur.value, a.previous)
+    // A mark of a thread already shown (isShownMark) expects it still shown (not archived, settledAt null) and with no
+    // override at all, right before the write: a thread put on the shelf since (by hand, or by T3 Code's own option,
+    // which leaves no override) or archived is left as it is.
+    const markGone = isShownMark(a) && !(w.threads.has(a.target) && isVisibleInProject(w.threads.get(a.target)!));
+    const stale = !cur.exists || markGone || !same(cur.value, isShownMark(a) ? null : a.previous)
       || (a.kind === "project-delete" && [...w.threads.values()].some((t) => t.projectId === a.target));
     if (stale) {
       r.skippedChanged++;
@@ -372,6 +382,9 @@ export async function undoOrganizeEntries(entries: JournalEntry[], targetRunId: 
       cur = await current(c.api, w, e.kind, e.target);
     } catch (err) { return it("failed", `could not read T3 Code: ${msg(err)}`); }
     if (!cur.exists) return it("user-changed", "no longer exists in T3 Code");
+    // A mark of a thread already shown cannot be undone: it was shown and stays shown, and T3 Code cannot remove the
+    // override ("kept"); unless the user settled it since.
+    if (isShownMark(e)) return cur.value === "active" || cur.value === null ? it("kept") : it("user-changed", `changed since: now ${JSON.stringify(cur.value)}`);
     // A legacy follow carry (kind unsettle, next "settled") is a settle: its null previous means "shown".
     const kind = changeKind(e.kind, e.next);
     if (same(cur.value, settleShown(kind, e.previous))) return it("already");
@@ -475,6 +488,7 @@ export async function undoOrganize(runId: string, d: UndoOrganizeDeps): Promise<
     reverted: items.filter((x) => x.status === "reverted").length,
     skippedUserChanged: items.filter((x) => x.status === "user-changed").length,
     alreadyRestored: items.filter((x) => x.status === "already").length,
+    kept: items.filter((x) => x.status === "kept").length,
     failed,
     items,
   };

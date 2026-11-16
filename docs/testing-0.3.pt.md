@@ -7,7 +7,7 @@ instalação 0.2.1, responder às perguntas do assistente guiado, ver o resultad
 testes ao vivo, assistir a uma atualização automática e a uma reposição, e saber o que enviar quando algo não parecer
 certo.
 
-Todos os comandos aqui existem na 0.3.0; o `t3sm <comando> --help` dá os pormenores. Tudo o que o t3sm escreve fica no
+Todos os comandos aqui existem na 0.3.1 (o `t3sm recover` é novo nela); o `t3sm <comando> --help` dá os pormenores. Tudo o que o t3sm escreve fica no
 journal e pode ser desfeito (`t3sm runs`, `t3sm rollback --run <id>`). Os exemplos usam marcadores:
 `D:\Work\t3code-session-manager` é o teu clone do repositório (com o nome do repositório, para o projeto dele no T3 Code
 se chamar `t3code-session-manager`), `~` a tua pasta pessoal; no macOS ou no Linux usa um caminho como
@@ -16,7 +16,7 @@ se chamar `t3code-session-manager`), `~` a tua pasta pessoal; no macOS ou no Lin
 | Parte | O que confirma | Tempo |
 | :-- | :-- | :-- |
 | [A](#a-um-pc-novo) | Uma instalação nova e o assistente guiado | 20-40 min |
-| [B](#b-migrar-um-pc-da-021) | Passar um PC com a 0.2.1 e um vigilante a correr para a 0.3.0, e depois o T3 Code e o Claude Code | 30-60 min |
+| [B](#b-migrar-um-pc-da-021) | Passar um PC com a 0.2.1 e um vigilante a correr para a 0.3.1, e depois o T3 Code e o Claude Code | 30-60 min |
 | [C](#c-os-testes-ao-vivo) | Os testes ao vivo que decidem duas definições em `src/t3/compat.ts` | 10 min |
 | [D](#d-o-ciclo-de-atualização) | Uma atualização, o reinício do vigilante, uma reposição forçada | 20 min |
 | [E](#e-outros-pcs-e-sistemas) | O que muda noutro PC Windows, no macOS e no Linux | - |
@@ -31,13 +31,13 @@ se chamar `t3code-session-manager`), `~` a tua pasta pessoal; no macOS ou no Lin
   Bash: `unset CLAUDE_CONFIG_DIR`. Corre todos os comandos abaixo nessa shell, como o teu utilizador normal (não com
   "Executar como administrador": o t3sm avisa então que o que instala fica só para esse utilizador).
 - **A versão, já no `main` e com etiqueta.** No fim da construção, o Claude junta a 0.3 ao `main` e cria a etiqueta
-  `v0.3.0`, por isso já lá está quando começares. Confirma, por esta ordem:
+  `v0.3.1`, por isso já lá está quando começares. Confirma, por esta ordem:
 
   ```powershell
   git -C D:\Work\t3code-session-manager status --short     # não escreve nada: sem alterações locais
   git -C D:\Work\t3code-session-manager switch main
-  git -C D:\Work\t3code-session-manager tag --list v0.3.0  # escreve v0.3.0
-  node D:\Work\t3code-session-manager\bin\t3sm.mjs --version   # 0.3.0
+  git -C D:\Work\t3code-session-manager tag --list v0.3.1  # escreve v0.3.1
+  node D:\Work\t3code-session-manager\bin\t3sm.mjs --version   # 0.3.1
   ```
 
   Se alguma destas disser outra coisa, para aqui e pergunta antes de continuar.
@@ -68,10 +68,10 @@ se chamar `t3code-session-manager`), `~` a tua pasta pessoal; no macOS ou no Lin
 
 ### A1. Instalar
 
-A partir do GitHub, quando a `v0.3.0` lá estiver publicada:
+A partir do GitHub, quando a `v0.3.1` lá estiver publicada:
 
 ```bash
-npm install -g --install-links github:brunobola-portfolio/t3code-session-manager#v0.3.0
+npm install -g --install-links github:brunobola-portfolio/t3code-session-manager#v0.3.1
 ```
 
 (Usa a etiqueta da versão que estás a testar: a linha do README indica sempre a atual.)
@@ -81,7 +81,7 @@ mais tarde um caminho de rede):
 
 ```powershell
 npm install -g --install-links D:\Work\t3code-session-manager
-t3sm --version                      # 0.3.0
+t3sm --version                      # 0.3.1
 ```
 
 O npm constrói o pacote só com o Node (o `prepare` escreve `dist/` dentro da pasta; o git ignora-o).
@@ -109,11 +109,11 @@ Num sistema em português fala português; `--lang en` ou `--lang pt` escolhem. 
 
 | Passo | O que vês | Resposta |
 | :-- | :-- | :-- |
-| 1 Boas-vindas | Um cabeçalho com a versão (0.3.0) e quantas contas Claude o t3sm encontrou; numa segunda vez, uma lista dos passos (✓ feito, ◉ a seguir, ○ mais tarde) | `s` |
+| 1 Boas-vindas | Um cabeçalho com a versão (0.3.1) e quantas contas Claude o t3sm encontrou; numa segunda vez, uma lista dos passos (✓ feito, ◉ a seguir, ○ mais tarde) | `s` |
 | 2 Verificação | Todas as verificações do doctor numa grelha compacta, e "A ter em conta" só para o que te diz respeito | `s` |
 | 3 Contas | Uma tabela com as tuas contas Claude (emails mascarados) e as instâncias no T3 Code | `s` se os nomes estiverem certos |
 | 4 Plano | Um painel com as contagens alinhadas (a importar, a converter, de fora), e depois os projetos e as contas | Enter (ou `c`) para continuar |
-| 5 Decisões | Um painel por pergunta, com os números reais, o valor por omissão e a chave do `config.json` para mudar depois | vê B5 |
+| 5 Decisões | Um painel por pergunta, com os números reais, o valor por omissão e a chave do `config.json` para mudar depois; as respostas ficam guardadas logo que respondes à última | vê B5 |
 | 6 Limpeza | Só quando o plano encontrou pastas de backup ou cópias-espelho | à tua escolha |
 | 7 Piloto | Projetos pequenos para experimentar primeiro, e depois "Isto é o que vou fazer" | escolhe um, `s` |
 | 8 Importação completa | "Isto é o que vou fazer", depois uma barra de progresso, depois um painel com o resultado | `s` |
@@ -137,6 +137,11 @@ t3sm schedule status # a entrada do agendador, o comando, o heartbeat do vigilan
 Esta é a passagem completa de um PC que corre a 0.2.1 com um vigilante em segundo plano, conversas da pasta pessoal,
 conversas começadas no T3 Code e pelo menos uma cuja thread foi apagada no T3 Code.
 
+> **Se já correste a 0.3.0:** instala a 0.3.1 (como no B2, ou `t3sm update --from D:\Work\t3code-session-manager`) e
+> corre outra vez `t3sm start` (B5). As perguntas voltam: a 0.3.0 perguntava "guardar as respostas?" depois das
+> decisões, e o não por omissão deixava todas as respostas (e essas conversas) de fora; e a pergunta do histórico volta
+> uma vez para um `config.json` da 0.2.1. Responde como no B5; a importação traz então as conversas que ficaram de fora.
+
 ### B1. Regista onde estás
 
 ```powershell
@@ -147,11 +152,11 @@ t3sm runs               # aponta o id da execução mais recente
 
 Tira uma captura da barra lateral do T3 Code se quiseres comparar antes e depois.
 
-### B2. Instala a 0.3.0 a partir da pasta
+### B2. Instala a 0.3.1 a partir da pasta
 
 ```powershell
 npm install -g --install-links D:\Work\t3code-session-manager
-t3sm --version          # 0.3.0
+t3sm --version          # 0.3.1
 ```
 
 Entretanto o vigilante 0.2.1 continua a correr o código antigo que tem em memória; o passo seguinte substitui-o. (A
@@ -182,11 +187,11 @@ processo e corre o comando outra vez.
 
 ```powershell
 t3sm status
-t3sm status --json      # "watcher": { "running": true, "pid": <n>, "version": "0.3.0", "stale": false }
+t3sm status --json      # "watcher": { "running": true, "pid": <n>, "version": "0.3.1", "stale": false }
 t3sm doctor             # ✓ Sincronização agendada, ✓ Vigilante
 ```
 
-O `t3sm status` mostra `Vigilante  a correr (processo <n>, t3sm 0.3.0)`. Se disser que o vigilante "ainda corre o
+O `t3sm status` mostra `Vigilante  a correr (processo <n>, t3sm 0.3.1)`. Se disser que o vigilante "ainda corre o
 t3sm 0.2.1" ou que "corre um t3sm antigo que não volta a arrancar sozinho depois de uma atualização", o B3 não o substituiu: corre
 `t3sm schedule restart --yes`.
 
@@ -195,7 +200,7 @@ Depois reinicia-o duas vezes seguidas e confirma que fica um só vigilante e que
 ```powershell
 t3sm schedule restart --yes   # Parei o vigilante em execução (processo <n>) e arranquei o novo.
 t3sm schedule restart --yes   # a mesma linha, com o processo do vigilante que o primeiro reinício arrancou
-t3sm status                   # ✓ Tudo bem; Vigilante  a correr (processo <m>, t3sm 0.3.0), o do segundo reinício
+t3sm status                   # ✓ Tudo bem; Vigilante  a correr (processo <m>, t3sm 0.3.1), o do segundo reinício
 ```
 
 O Gestor de Tarefas (Detalhes, `node.exe`, a coluna Linha de comandos) mostra um só `t3sm ... sync --watch`, com esse
@@ -216,7 +221,10 @@ bloqueio do t3sm: espera um minuto e corre `t3sm start --lang pt` outra vez. Dep
    - *Iniciadas por programas* (automáticas, Agent SDK) — "Importar estas conversas?" → `n`.
    - *Apagadas no T3 Code* — "Trazer de volta estas conversas como cópias?" → `s`.
    - Outras perguntas (pastas recusadas, temporárias, do sistema): os valores por omissão servem.
-   - "Guardar as respostas no config.json para não voltarem a ser perguntadas?" → `s`.
+
+   Não há pergunta "guardar as respostas?": as respostas ficam guardadas no `config.json` logo que respondes à última,
+   com uma linha, "Respostas guardadas no config.json; podes mudá-las depois em organize." Um `q` antes da última
+   resposta não guarda nada.
 
    Depois, "Para onde vão as cópias": uma linha por pasta de onde vêm cópias, com o sítio para onde o t3sm as vai pôr
    e porquê ("63 de 80 caminhos em ..."). Confirma que as conversas sobre o t3sm feitas na tua pasta pessoal vão para
@@ -227,10 +235,15 @@ bloqueio do t3sm: espera um minuto e corre `t3sm start --lang pt` outra vez. Dep
    painel do resultado. Um projeto retido porque uma conversa dele está em uso (a conversa deste terminal, por
    exemplo) espera e é importado quando ela estiver parada há 10 minutos; o painel di-lo.
 3. **Passo 9 · Arrumar.** Uma tabela por projeto (agora → depois). Depois:
-   - "Mostrar os últimos 90 dias, e pelo menos 10 por projeto?" → Enter ou `s` (90 / 10).
+   - "Mostrar os últimos 90 dias, e pelo menos 10 por projeto?" → Enter ou `s` (90 / 10). Depois de atualizar da
+     0.2.1 o painel diz também o que tinhas, "Até agora: todas as conversas visíveis." (a 0.2.1 deixava todas as
+     conversas visíveis): é perguntado mais uma vez, com a regra da 0.3, mesmo quando nada mudaria.
    - Títulos, automáticas, projetos fixados, projetos vazios: os valores por omissão servem.
-   - Se for perguntado, "Deixar também o T3 Code arrumar as conversas começadas no T3 Code passados 90 dias?" → `s`
-     (a opção do próprio T3 Code fica em 90; não é perguntado quando já está em 90).
+   - Se for perguntado, "Deixar também o T3 Code arrumar as conversas começadas no T3 passados 90 dias? Agora: passados
+     15 dias." → `s` (a opção do próprio T3 Code fica em 90; `n` deixa-a como está, nunca a desliga; não é perguntado
+     quando já está em 90). Com uma regra de mais de 90 dias, ou de tudo, aparece antes um menu numerado; escolhe pelo
+     texto, os números dependem do que se aplica: "Manter (...)" (Enter), "Pôr em 90 dias", "Desligar". O `?` explica
+     porque é que a ordem é segura.
    - "Aplicar estas alterações ao T3 Code agora?" → `s`.
 4. **Passos 10 e 11.** O vigilante já está instalado (B3). Para cada conta Claude sem os comandos `/t3sm`, o passo 11
    oferece "Instalar o plugin em <conta> (<pasta>)?" (por omissão não). `s` corre o `claude plugin marketplace add` e o
@@ -250,7 +263,19 @@ Abre o T3 Code (pelo menu Iniciar) e confirma:
 - [ ] **Sem duplicados das conversas começadas no T3 Code**: cada uma continua a aparecer uma vez. O `t3sm plan`
   lista-as no `plan.md`, em "Skipped by reason", como `already-in-t3` com a nota `started-in-t3`.
 - [ ] **A apagada voltou**: uma conversa cuja thread tinhas apagado no T3 Code é outra vez uma thread, no seu projeto,
-  com o histórico.
+  com o histórico. Quando a transcrição não indica nenhuma thread do T3 Code, o t3sm não consegue saber que foi
+  apagada: o `t3sm status` lista-a em Bom saber ("... trá-la de volta com t3sm recover <id>"). Aí o
+  `t3sm recover <id> --dry-run` mostra o que faria, e o `t3sm recover <id>` pergunta e trá-la de volta como cópia com
+  um id novo (um duplicado se a thread ainda existir; desfaz-se com `t3sm rollback --run <id> --archive-threads`).
+- [ ] **Nenhuma conversa continua a falhar sem razão**: o `t3sm status` não lista conversas começadas no T3 Code em
+  "continuam a falhar a importação".
+- [ ] **As conversas mantidas para o mínimo ficam marcadas** (só enquanto a opção do próprio T3 Code estiver
+  ligada, uma semana antes de lhes poder chegar): antes de aplicar, o `t3sm organize --dry-run` lista "Manter N conversas
+  à vista em P projetos, marcadas para que a passagem automática para Settled do T3 Code nunca as arrume" num projeto
+  que mantém conversas assim. Depois de aplicar, o `t3sm status` está limpo e essas conversas continuam à
+  vista no projeto. Uma marca muda o `unsettledAt` do T3 Code, por isso podem mudar de lugar na ordenação da prateleira
+  de trabalho do T3 Code; é o esperado. O `t3sm organize --undo --dry-run` lista-as como mantidas (uma marca não se
+  desfaz).
 - [ ] **A opção do próprio T3 Code**: nas definições do T3 Code, a opção de passar automaticamente para Settled (auto-settle) as
   suas próprias conversas está em 90 dias.
 - [ ] **Dá para desfazer**: o `t3sm runs` lista as execuções do B5; o `t3sm organize --undo --dry-run` mostra o que a
@@ -316,7 +341,7 @@ O que mudar em `src/t3/compat.ts`:
 
 Se mudares alguma: corre `npm run typecheck` e `npm test`, escreve as linhas na secção "Results" de
 `docs/spikes/S7-followup-and-backdate.md`, acrescenta uma linha ao `CHANGELOG.md` em `## [Unreleased]` e lança-a como
-versão de correção (0.3.1). O teu vigilante instala-a sozinho (a parte D mostra como).
+versão de correção (0.3.2). O teu vigilante instala-a sozinho (a parte D mostra como).
 
 ### Ler o `organize.live`
 
@@ -339,9 +364,9 @@ cd D:\Work\t3sm-update-test
 git switch main
 git config user.name "t3sm test"           # só neste clone; preciso numa máquina onde o git ainda não tem nome
 git config user.email "test@example.com"
-node scripts/release.js 0.3.1      # só edita os ficheiros de versão; pode dizer "Still to fix": serve para um teste
-git commit -am "test release 0.3.1"
-git tag -a v0.3.1 -m v0.3.1
+node scripts/release.js 0.3.2      # só edita os ficheiros de versão; pode dizer "Still to fix": serve para um teste
+git commit -am "test release 0.3.2"
+git tag -a v0.3.2 -m v0.3.2
 ```
 
 ### D2. Ver, e depois atualizar
@@ -352,26 +377,26 @@ t3sm update --from D:\Work\t3sm-update-test --dry-run
 t3sm update --from D:\Work\t3sm-update-test
 ```
 
-- O `--check` mostra a versão instalada (0.3.0), a mais recente da origem atual (o GitHub até ficar lembrada uma
+- O `--check` mostra a versão instalada (0.3.1), a mais recente da origem atual (o GitHub até ficar lembrada uma
   pasta), o tipo, se as atualizações automáticas estão ligadas e a última procura. Só lê.
-- O ensaio mostra um painel `t3sm 0.3.0 -> 0.3.1 (correção)`, `origem: a pasta D:\Work\t3sm-update-test`, depois a
+- O ensaio mostra um painel `t3sm 0.3.1 -> 0.3.2 (correção)`, `origem: a pasta D:\Work\t3sm-update-test`, depois a
   secção do CHANGELOG dessa etiqueta em "O que há de novo", e acaba com
-  `Instalaria o t3sm 0.3.1 (origem: a pasta D:\Work\t3sm-update-test). Nada mudou.` Nada é instalado.
-- A execução a sério pergunta se instala a 0.3.1 (`s`) e depois mostra cada passo: a instalação com o npm, o reinício
-  do vigilante, a espera (até 2 minutos) por ele na 0.3.1, e no fim `O t3sm foi atualizado: 0.3.0 -> 0.3.1.` Código 0.
+  `Instalaria o t3sm 0.3.2 (origem: a pasta D:\Work\t3sm-update-test). Nada mudou.` Nada é instalado.
+- A execução a sério pergunta se instala a 0.3.2 (`s`) e depois mostra cada passo: a instalação com o npm, o reinício
+  do vigilante, a espera (até 2 minutos) por ele na 0.3.2, e no fim `O t3sm foi atualizado: 0.3.1 -> 0.3.2.` Código 0.
 
 Depois:
 
 ```powershell
-t3sm --version                   # 0.3.1
-t3sm status                      # Vigilante  a correr (processo <n>, t3sm 0.3.1); em Bom saber: "Atualizado para 0.3.1 hoje"
+t3sm --version                   # 0.3.2
+t3sm status                      # Vigilante  a correr (processo <n>, t3sm 0.3.2); em Bom saber: "Atualizado para 0.3.2 hoje"
 t3sm update --check              # Origem: a pasta D:\Work\t3sm-update-test (agora lembrada)
 Select-String '"t":"update"' ~\.t3code-session-manager\journal.jsonl   # pending, depois installed
-t3sm status --json               # "watcher": { "running": true, "version": "0.3.1", ... } e um processo novo
+t3sm status --json               # "watcher": { "running": true, "version": "0.3.2", ... } e um processo novo
 ```
 
-A atualização só acaba `installed` depois de o vigilante novo escrever o heartbeat dele na 0.3.1: a última entrada de
-atualização do journal diz `installed`, e o `t3sm status --json` mostra o vigilante a correr a 0.3.1 com um processo
+A atualização só acaba `installed` depois de o vigilante novo escrever o heartbeat dele na 0.3.2: a última entrada de
+atualização do journal diz `installed`, e o `t3sm status --json` mostra o vigilante a correr a 0.3.2 com um processo
 diferente do anterior.
 
 ### D3. Vê o vigilante reiniciar-se sozinho
@@ -380,15 +405,15 @@ diferente do anterior.
 
 ```powershell
 cd D:\Work\t3sm-update-test
-node scripts/release.js 0.3.2
-git commit -am "test release 0.3.2"
-git tag -a v0.3.2 -m v0.3.2
+node scripts/release.js 0.3.3
+git commit -am "test release 0.3.3"
+git tag -a v0.3.3 -m v0.3.3
 npm install -g --install-links D:\Work\t3sm-update-test
 ```
 
-Num ciclo (no máximo `schedule.everyMinutes`, 15 por omissão) mais 30 segundos, o vigilante 0.3.1 em execução vê a
-instalação nova, para de forma limpa e arranca o novo. O `logs/sync.log` ganha `restart from=0.3.1 to=0.3.2`, e o
-`t3sm status` mostra o vigilante na 0.3.2. Se disser que a 0.3.2 está instalada e que o vigilante passa para ela depois
+Num ciclo (no máximo `schedule.everyMinutes`, 15 por omissão) mais 30 segundos, o vigilante 0.3.2 em execução vê a
+instalação nova, para de forma limpa e arranca o novo. O `logs/sync.log` ganha `restart from=0.3.2 to=0.3.3`, e o
+`t3sm status` mostra o vigilante na 0.3.3. Se disser que a 0.3.3 está instalada e que o vigilante passa para ela depois
 do ciclo seguinte, espera por esse ciclo.
 
 ### D4. Força uma reposição
@@ -401,21 +426,21 @@ if (process.argv.includes("--watch")) process.exit(1);
 ```
 
 ```powershell
-node scripts/release.js 0.3.3
-git commit -am "test release 0.3.3 (broken watcher)"
-git tag -a v0.3.3 -m v0.3.3
+node scripts/release.js 0.3.4
+git commit -am "test release 0.3.4 (broken watcher)"
+git tag -a v0.3.4 -m v0.3.4
 t3sm update --yes
 ```
 
-Instala a 0.3.3, reinicia o vigilante, espera 2 minutos por um heartbeat que nunca chega, diz que a versão nova não
-arrancou e que está a repor a 0.3.2, e termina com
-`O t3sm 0.3.3 não arrancou bem, por isso voltou a 0.3.2 (...)` (código 1). O t3sm recuperou sozinho, por isso não
+Instala a 0.3.4, reinicia o vigilante, espera 2 minutos por um heartbeat que nunca chega, diz que a versão nova não
+arrancou e que está a repor a 0.3.3, e termina com
+`O t3sm 0.3.4 não arrancou bem, por isso voltou a 0.3.3 (...)` (código 1). O t3sm recuperou sozinho, por isso não
 precisa de ti. Confirma:
 
-- [ ] O `t3sm --version` é 0.3.2 e o `t3sm status` mostra o vigilante a correr na 0.3.2.
-- [ ] O `t3sm status` diz "Tudo bem" (código 0) e lista em "Bom saber": "A atualização para o t3sm 0.3.3 foi
-  desfeita; está a correr o 0.3.2 (a verificação automática passa a ignorar o 0.3.3)", com `t3sm update --check`.
-- [ ] O `t3sm update --check` ainda mostra a 0.3.3 como a mais recente, com a nota "voltou atrás antes, por isso a
+- [ ] O `t3sm --version` é 0.3.3 e o `t3sm status` mostra o vigilante a correr na 0.3.3.
+- [ ] O `t3sm status` diz "Tudo bem" (código 0) e lista em "Bom saber": "A atualização para o t3sm 0.3.4 foi
+  desfeita; está a correr o 0.3.3 (a verificação automática passa a ignorar o 0.3.4)", com `t3sm update --check`.
+- [ ] O `t3sm update --check` ainda mostra a 0.3.4 como a mais recente, com a nota "voltou atrás antes, por isso a
   procura automática salta-a". A procura automática nunca mais a instala; o `t3sm update` ainda a instalaria de
   propósito (aqui não o faças).
 - [ ] O journal tem uma entrada `update` com `"outcome":"rolled-back"`.
@@ -424,41 +449,41 @@ precisa de ti. Confirma:
 
 Com o `update.auto` ligado (o valor por omissão), o vigilante procura uma vez por dia; uma versão de correção ou menor
 mais recente na origem lembrada é instalada por um `t3sm update --auto-run --yes` escondido, com a mesma verificação.
-Para o veres, faz uma 0.3.4 boa no clone de teste:
+Para o veres, faz uma 0.3.5 boa no clone de teste:
 
 ```powershell
 cd D:\Work\t3sm-update-test
-git revert --no-edit HEAD                  # tira a linha estragada do bin/t3sm.mjs (e a subida para 0.3.3)
-node scripts/release.js 0.3.4
-git commit -am "test release 0.3.4"
-git tag -a v0.3.4 -m v0.3.4
+git revert --no-edit HEAD                  # tira a linha estragada do bin/t3sm.mjs (e a subida para 0.3.4)
+node scripts/release.js 0.3.5
+git commit -am "test release 0.3.5"
+git tag -a v0.3.5 -m v0.3.5
 ```
 
-Deixa o PC ligado, com o vigilante a correr, até um dia. Depois o `t3sm --version` é 0.3.4, o `t3sm status` diz
-"Atualizado para 0.3.4 hoje - novidades: t3sm changelog" e o `logs/sync.log` regista a atualização. O
+Deixa o PC ligado, com o vigilante a correr, até um dia. Depois o `t3sm --version` é 0.3.5, o `t3sm status` diz
+"Atualizado para 0.3.5 hoje - novidades: t3sm changelog" e o `logs/sync.log` regista a atualização. O
 `t3sm update --auto off` desliga as atualizações automáticas.
 
 ### D6. Limpar
 
-O t3sm nunca volta a uma versão anterior, por isso não regressa sozinho à 0.3.0, e a origem lembrada ainda aponta para
+O t3sm nunca volta a uma versão anterior, por isso não regressa sozinho à 0.3.1, e a origem lembrada ainda aponta para
 o clone de teste. Repõe tudo à mão:
 
 ```powershell
 t3sm schedule remove --yes
-git clone --depth 1 --branch v0.3.0 file:///D:/Work/t3code-session-manager $env:TEMP\t3sm-v0.3.0
-npm install -g --install-links $env:TEMP\t3sm-v0.3.0
+git clone --depth 1 --branch v0.3.1 file:///D:/Work/t3code-session-manager $env:TEMP\t3sm-v0.3.1
+npm install -g --install-links $env:TEMP\t3sm-v0.3.1
 Remove-Item ~\.t3code-session-manager\update.json      # esquece a origem de teste e a versão ignorada
-Remove-Item -Recurse -Force D:\Work\t3sm-update-test, $env:TEMP\t3sm-v0.3.0
+Remove-Item -Recurse -Force D:\Work\t3sm-update-test, $env:TEMP\t3sm-v0.3.1
 t3sm schedule install --watch --yes
-t3sm --version                                         # 0.3.0
+t3sm --version                                         # 0.3.1
 ```
 
 Sem o `update.json` o t3sm volta a seguir o GitHub. Para a próxima versão a sério a partir do teu clone, corre uma vez
 `t3sm update --from D:\Work\t3code-session-manager`; daí em diante o vigilante segue essa pasta.
 
 O `t3sm status` diz então "Tudo bem" (código 0). Se saltaste o D5, lista também uma linha em "Bom saber": "A
-atualização para o t3sm 0.3.3 foi desfeita; está a correr o 0.3.0 (a verificação automática passa a ignorar o 0.3.3)".
-Essa linha fica até ser instalada uma versão mais recente do que a 0.3.3; nunca precisa de ti.
+atualização para o t3sm 0.3.4 foi desfeita; está a correr o 0.3.1 (a verificação automática passa a ignorar o 0.3.4)".
+Essa linha fica até ser instalada uma versão mais recente do que a 0.3.4; nunca precisa de ti.
 
 ## E. Outros PCs e sistemas
 

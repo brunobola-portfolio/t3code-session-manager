@@ -1,6 +1,7 @@
 * * * * @ o o o o o o  Passo 5 de 11 - Decisões
 3 perguntas antes da importação. Até responderes, essas conversas ficam fora do
-T3 Code. Nada se perde.
+T3 Code. Nada se perde. As respostas ficam guardadas no config.json quando
+responderes à última.
 
 +- 1 de 3 - A tua pasta pessoal ---------------------------------------------+
 | 5 conversas começaram na tua pasta pessoal. O T3 Code não a aceita como    |

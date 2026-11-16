@@ -115,6 +115,7 @@ export function renderRollback(ui: CliUi, r: RollbackReport, dry: boolean, words
   const org = undoLines(r.organize, words.changes, words.names);
   list(did("rollback.reverted", "rollback.dry.reverted"), org.reverted);
   list("rollback.orgUserChanged", org.userChanged);
+  list("organize.undo.keptTitle", org.kept);
   list("rollback.orgFailed", org.failed);
   list("rollback.parked", r.parkedThreads);
   if (r.t3Unavailable) out.push("", ...noteLines(s, "warn", t("rollback.t3Part", { why: rollbackWhy(ui, r.t3Unavailable, shown) }), w));
@@ -173,17 +174,20 @@ export async function rollbackCommand(args: string[], io: Io, deps: OpsDeps = {}
     try { words.names = namesOf(await api.listThreads(), await api.listProjects(), home, ui.lang); } catch { /* the rollback reports what it could not read */ }
     return api;
   };
-  const connectWith = (manageProviders: boolean) => async () => {
-    if (!organizeOnly) return nameFrom(await connectFn(home, { allowUntested, manageProviders, onNotice }));
+  // settings:write only for the rollback that may put T3 Code's own auto-settle option back (an organize change).
+  const settingBack = [...changes.values()].some((c) => c.kind === "auto-settle");
+  const connectWith = (manageProviders: boolean, writeSettings = false) => async () => {
+    const extra = writeSettings ? { writeSettings } : {};
+    if (!organizeOnly) return nameFrom(await connectFn(home, { allowUntested, manageProviders, ...extra, onNotice }));
     let connecting = true;
     try {
-      return await nameFrom(await connectFn(home, { allowUntested: true, manageProviders, onNotice: (l) => { if (!connecting) onNotice(l); } }));
+      return await nameFrom(await connectFn(home, { allowUntested: true, manageProviders, ...extra, onNotice: (l) => { if (!connecting) onNotice(l); } }));
     } finally {
       connecting = false;
     }
   };
   const accountHomes = (await accountsOf(dir, home, io.env)).map((a) => a.home);
-  const opts = { journal: j, accountHomes, connect: connectWith(instances), now, instances, archiveThreads, allowUntested, onNotice };
+  const opts = { journal: j, accountHomes, connect: connectWith(instances, settingBack), now, instances, archiveThreads, allowUntested, onNotice };
   const dryOpts = { ...opts, connect: connectWith(false), dryRun: true };
   const nothing = (): void => say(noteLines(ui.s, "ok", ui.t("rollback.nothing", { runId: shown(target) }), ui.width));
 
