@@ -596,6 +596,18 @@ tarefa autónoma: [docs/adding-a-harness.md](docs/adding-a-harness.md). Problema
 [docs/testing-0.3.pt.md](docs/testing-0.3.pt.md).
 O que vem a seguir, e onde a ajuda é bem-vinda: [ROADMAP.md](ROADMAP.md) (em inglês).
 
+## Apoiar o projeto
+
+O t3sm é gratuito e MIT, feito e mantido nas horas livres. Se te poupou uma tarde a copiar sessões à mão, um café
+ajuda a mantê-lo:
+
+<p>
+  <a href="https://ko-fi.com/brunobola"><img alt="Apoiar no Ko-fi" src="https://img.shields.io/badge/Ko--fi-apoiar-3451D1?logo=kofi&logoColor=white"></a>
+  <a href="https://buymeacoffee.com/brunobola"><img alt="Pagar um café" src="https://img.shields.io/badge/Buy%20me%20a%20coffee-apoiar-3451D1?logo=buymeacoffee&logoColor=white"></a>
+</p>
+
+Uma estrela no GitHub, um relatório de erro ou um pull request ajudam tanto quanto.
+
 ## Licença
 
 [MIT](LICENSE), © 2026 BolaLabs. Sem ligação ao T3 Code nem à Anthropic.

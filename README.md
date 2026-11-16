@@ -640,6 +640,18 @@ To check a release live on your own machine, step by step: [docs/testing-0.3.md]
 Security reports: [SECURITY.md](SECURITY.md).
 What comes next, and where help is wanted: [ROADMAP.md](ROADMAP.md).
 
+## Support the project
+
+t3sm is free and MIT, built and kept up to date in spare time. If it saved you an afternoon of copying sessions by
+hand, a coffee keeps it going:
+
+<p>
+  <a href="https://ko-fi.com/brunobola"><img alt="Support on Ko-fi" src="https://img.shields.io/badge/Ko--fi-support-3451D1?logo=kofi&logoColor=white"></a>
+  <a href="https://buymeacoffee.com/brunobola"><img alt="Buy me a coffee" src="https://img.shields.io/badge/Buy%20me%20a%20coffee-support-3451D1?logo=buymeacoffee&logoColor=white"></a>
+</p>
+
+A star on GitHub, a bug report or a pull request help just as much.
+
 ## License
 
 [MIT](LICENSE), © 2026 BolaLabs. Not affiliated with T3 Code or Anthropic.
