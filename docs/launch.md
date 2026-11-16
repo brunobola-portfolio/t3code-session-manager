@@ -50,7 +50,7 @@ GitHub accepts PNG, JPG or GIF (not SVG), at least 640×320, ideally 1280×640, 
 - [ ] After pushing the tag, from a machine without a clone:
       `npx -y t3code-session-manager@<version> --version` prints the release's version, `doctor` runs, and the
       package page on npmjs.com shows its provenance (the tag's commit and the Release workflow).
-      From GitHub too: `npx -y github:brunobola-portfolio/t3code-session-manager#v0.4.0 --version`.
+      From GitHub too: `npx -y github:brunobola-portfolio/t3code-session-manager#v0.4.1 --version`.
 - [ ] In Claude Code: `/plugin marketplace add brunobola-portfolio/t3code-session-manager`, then
       `/plugin install t3sm@t3code-session-manager`, then ask "check my T3 Code sessions": the skill runs
       `t3sm doctor`.

@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-11-16
+
 Every release is now staged on npm with provenance and goes live only after a maintainer approves it with 2FA. The
 README shows the version on npm.
 
