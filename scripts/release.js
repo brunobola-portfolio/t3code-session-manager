@@ -5,7 +5,8 @@
  *   node scripts/release.js --check   every version (package-lock.json included), install pin, github.com URL of this
  *                                     project and the top CHANGELOG entry agree, and new CHANGELOG entries keep the
  *                                     house style of docs/changelog-style.md (CI runs this)
- *   node scripts/release.js --notes   print the CHANGELOG section of the current version (the Release workflow uses it)
+ *   node scripts/release.js --notes   print the CHANGELOG section of the current version, its wrapped lines joined
+ *                                     (the Release workflow uses it)
  *   node scripts/release.js 0.2.0     bump every version and install pin, date or stub the CHANGELOG entry, and
  *                                     print the git commands to run next (it never runs git itself)
  *
@@ -234,6 +235,27 @@ export function changelogStyleProblems(text) {
   return problems;
 }
 
+/**
+ * A changelog section as release notes: GitHub keeps every line break of a release body, so the lines an editor
+ * wrapped inside a paragraph or a bullet are joined back into one. Headings, blank lines and code blocks stay as they are.
+ */
+export function unwrapNotes(body) {
+  const out = [];
+  let fence = false;
+  let joinable = false; // the previous line is paragraph or bullet text that a continuation may extend
+  for (const line of body.split("\n")) {
+    if (/^\s*```/.test(line)) { fence = !fence; out.push(line); joinable = false; continue; }
+    if (fence) { out.push(line); continue; }
+    const blank = line.trim() === "";
+    // a heading, a list item, a quote or a table row starts a new block; anything else continues the line above
+    const starts = /^(#{1,6} |[-*+] |\d+[.)] |>|\|)/.test(line);
+    if (!blank && !starts && joinable) { out[out.length - 1] += ` ${line.trim()}`; continue; }
+    out.push(line);
+    joinable = !blank && !/^(#{1,6} |\|)/.test(line);
+  }
+  return out.join("\n");
+}
+
 /** The first released `## [X.Y.Z]` heading (skipping `## [Unreleased]`). */
 function topChangelogVersion() {
   const m = /^## \[(\d+\.\d+\.\d+)\]/m.exec(read("CHANGELOG.md"));
@@ -361,7 +383,7 @@ function main(argv) {
     const version = JSON.parse(read("package.json")).version;
     const section = changelogSection(version);
     if (!section) { process.stderr.write(`No changelog entry for ${version}\n`); return 1; }
-    process.stdout.write(`${section.body}\n`);
+    process.stdout.write(`${unwrapNotes(section.body)}\n`);
     return 0;
   }
   if (arg === "--repo") { process.stdout.write(`${REPO}\n`); return 0; }

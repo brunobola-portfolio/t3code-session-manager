@@ -180,3 +180,41 @@ test("release --check: the style applies to every release, not only Unreleased; 
     assert.doesNotMatch(r.stderr, /example\.com/);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
+
+test("release --notes: soft-wrapped paragraphs and bullets come out one line each (GitHub keeps every line break)", () => {
+  const root = fixture();
+  const body = [
+    "A summary that the editor",
+    "wrapped at 120 columns.",
+    "",
+    "### Fixed",
+    "",
+    "- **A bullet.** Its text goes on",
+    "  on a second line.",
+    "- **Another.** One line.",
+    "",
+    "```bash",
+    "t3sm doctor",
+    "t3sm plan",
+    "```",
+  ].join("\n");
+  try {
+    writeFileSync(join(root, "CHANGELOG.md"), `# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - 2026-11-11\n\n${body}\n`);
+    const r = run(root, "--notes");
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(r.stdout, [
+      "A summary that the editor wrapped at 120 columns.",
+      "",
+      "### Fixed",
+      "",
+      "- **A bullet.** Its text goes on on a second line.",
+      "- **Another.** One line.",
+      "",
+      "```bash",
+      "t3sm doctor",
+      "t3sm plan",
+      "```",
+      "",
+    ].join("\n"));
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
