@@ -335,17 +335,19 @@ engine:
 
 `src/ops/updater.ts` is the engine; `t3sm update` and the watcher's daily check (`src/ops/autoUpdate.ts`) drive it.
 
-- **Source.** GitHub (`git ls-remote --tags --refs https://github.com/<repo>.git`, `npm view` when git fails: t3sm's
-  only network calls besides the npm install itself and the optional plugin install through `claude plugin`) or a checkout on this computer (`git tag --merged main --list "v*"`, `master` when there
+- **Source.** The npm registry (`npm view <name> versions --json`; the default for the package published there: the Release workflow
+  builds it with `channel: "npm"` in `dist/build.json`), GitHub (`git ls-remote --tags --refs
+  https://github.com/<repo>.git`, `npm view` when git fails; with the registry, t3sm's only network calls besides the
+  npm install itself and the optional plugin install through `claude plugin`) or a checkout on this computer (`git tag --merged main --list "v*"`, `master` when there
   is no `main`; a network path is refused). The source is remembered in `<state>/update.json` once an install from it
-  went through; `update --from` / `--source github` choose it.
+  went through; `update --from` / `--source npm|github` choose it.
 - **Which release.** The newest `vX.Y.Z` strictly newer than the installed version: never a downgrade. The daily check
   also leaves out the versions in the `skip` list (versions that were rolled back); a manual `t3sm update` can install
   one on purpose (`update --check` marks it). The daily check (every 24 h, an hour later after a failed lookup) installs a
   patch or minor release when `update.auto` is on; a major one is only announced (`available`, one notification per
   version). It runs the install in a separate hidden `t3sm update --auto-run --yes`, because the update stops the watcher.
 - **Install.** Under the lock: journal `update` `pending`, write `update.pending.json` (the attempt, with how to
-  reinstall the previous version), then `npm install -g --install-links github:<repo>#vX.Y.Z` (from a folder:
+  reinstall the previous version), then `npm install -g <name>@X.Y.Z` (from GitHub: `npm install -g --install-links github:<repo>#vX.Y.Z`; from a folder:
   `git clone --depth 1 --branch vX.Y.Z file://<folder>` into a temp folder, then `npm install -g --install-links .` in
   it). npm and git never get `CLAUDE_CONFIG_DIR` and git never prompts.
 - **Restart and health check.** Stop the watcher (above), start it again (re-registering the scheduled entry), then wait

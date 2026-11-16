@@ -10,7 +10,7 @@ import type { JournalEntry } from "../../src/core/types.ts";
 import type { Clock, Heartbeat } from "../../src/ops/watch.ts";
 import { LAUNCHD_LABEL, TASK_NAME } from "../../src/ops/schedule.ts";
 import {
-  HEALTH_MS, INSTALL_TIMEOUT_MS, QUERY_TIMEOUT_MS, classify, readPendingUpdate, recoverInterruptedUpdate, installRelease, latestRelease, readUpdateState, releaseSpecOf, runUpdate, watcherOps, writeUpdateState,
+  HEALTH_MS, INSTALL_TIMEOUT_MS, QUERY_TIMEOUT_MS, classify, parseReleaseSpec, readPendingUpdate, recoverInterruptedUpdate, installRelease, latestRelease, readUpdateState, releaseSpecOf, runUpdate, watcherOps, writeUpdateState,
   type UpdateSource, type UpdaterDeps, type WatcherOps,
 } from "../../src/ops/updater.ts";
 import { EXIT_GRACE_MS, KILL_GRACE_MS, defaultKill, updateRunner, type SpawnFn } from "../../src/ops/update.ts";
@@ -71,7 +71,7 @@ function world(o: { installed: string; source?: UpdateSource; healthy?: (v: stri
       const r = o.npm?.(c) ?? ok();
       if (r.code === 0) {
         const spec = c.args.at(-1)!;
-        st.installed = spec === "." ? st.branch!.slice(1) : /#v(.+)$/.exec(spec)![1]!;
+        st.installed = spec === "." ? st.branch!.slice(1) : (/#v(.+)$/.exec(spec) ?? /@(\d[^@]*)$/.exec(spec))![1]!;
       }
       return r;
     }
@@ -1110,4 +1110,69 @@ test("watcherOps win32 from the automatic update: /Run may be ignored inside the
   const plain = watcherOps({ platform: "win32", run: winRunner({ installed: true }), stateDir: "C:\\s", nodePath: "C:\\nodejs\\node.exe", binPath: "C:\\npm\\t3sm.mjs", everyMinutes: 15, conhost: null, systemRoot: "C:\\Windows", userId: "DEMO\\demo", spawn: s.spawn, fs, stop: STOPPED });
   await plain.restart({ wasRunning: true, reinstallSchedule: false });
   assert.equal(s.spawned.length, 1);
+});
+
+// ---------- the npm registry as a source ----------
+
+const NPM: UpdateSource = { kind: "npm", name: "demo-app" };
+
+test("latestRelease npm: the registry's published versions (npm view --json), prereleases left out", async () => {
+  const run = runner(() => ok(JSON.stringify(["0.3.0", "0.3.1", "0.4.0-rc.1", "0.10.0"])));
+  assert.equal(await latestRelease(NPM, run, "linux"), "0.10.0");
+  assert.deepEqual(run.calls.map((c) => [c.cmd, ...c.args]), [["npm", "view", "demo-app", "versions", "--json"]]);
+  assert.equal(run.calls[0]!.timeoutMs, QUERY_TIMEOUT_MS);
+  // One version only: npm prints a JSON string instead of an array.
+  assert.equal(await latestRelease(NPM, runner(() => ok('"0.4.0"\n')), "linux"), "0.4.0");
+  // A rolled-back version is skipped like any other source.
+  assert.equal(await latestRelease(NPM, runner(() => ok('["0.3.1","0.4.0"]')), "linux", ["0.4.0"]), "0.3.1");
+  // Offline, not published yet (E404), or output that is not JSON: no answer, never an error.
+  assert.equal(await latestRelease(NPM, runner(() => fail(1, "npm error code E404")), "linux"), null);
+  assert.equal(await latestRelease(NPM, runner(() => ok("<html>proxy</html>")), "linux"), null);
+  // A name that is not an npm package name never reaches a command line.
+  for (const name of ["--registry=https://evil.example", "../x", "Demo", "a b", ""]) {
+    const bad = runner(() => ok("[]"));
+    assert.equal(await latestRelease({ kind: "npm", name }, bad, "linux"), null, name);
+    assert.equal(bad.calls.length, 0, name);
+  }
+});
+
+test("installRelease npm: one npm install of the exact published version; bad names refused before anything runs", async () => {
+  const run = runner(() => ok());
+  await installRelease(NPM, "v0.4.0", { run, platform: "win32" });
+  assert.deepEqual(run.calls, [{ cmd: "npm", args: ["install", "-g", "--install-links", "--no-audit", "--no-fund", "--no-update-notifier", "demo-app@0.4.0"], timeoutMs: INSTALL_TIMEOUT_MS }]);
+  const scoped = runner(() => ok());
+  await installRelease({ kind: "npm", name: "@demo-owner/demo-app" }, "0.4.0", { run: scoped, platform: "linux" });
+  assert.equal(scoped.calls[0]!.args.at(-1), "@demo-owner/demo-app@0.4.0");
+  const none = runner(() => ok());
+  await assert.rejects(installRelease({ kind: "npm", name: "demo-app --global-style" }, "0.4.0", { run: none, platform: "linux" }), /npm package name/);
+  assert.equal(none.calls.length, 0);
+});
+
+test("releaseSpecOf npm: what rollback reinstalls, read back by parseReleaseSpec", () => {
+  assert.equal(releaseSpecOf(NPM, "0.4.0"), "npm:demo-app#v0.4.0");
+  assert.deepEqual(parseReleaseSpec("npm:demo-app#v0.4.0"), { source: NPM, version: "0.4.0" });
+  assert.deepEqual(parseReleaseSpec("npm:@demo-owner/demo-app#v0.4.0"), { source: { kind: "npm", name: "@demo-owner/demo-app" }, version: "0.4.0" });
+  assert.equal(parseReleaseSpec("npm:#v0.4.0"), null);
+});
+
+test("update.json remembers an npm source; an invalid npm name is not a source", async () => {
+  const t = tempRoot();
+  mkdirSync(t.state, { recursive: true });
+  await writeUpdateState(t.state, { source: NPM, lastCheckAt: null, previous: { version: "0.3.1", spec: "npm:demo-app#v0.3.1" }, available: null, skip: [] });
+  assert.deepEqual((await readUpdateState(t.state))?.source, NPM);
+  writeFileSync(join(t.state, "update.json"), JSON.stringify({ source: { kind: "npm", name: "--evil" }, lastCheckAt: null, previous: null, available: null }));
+  assert.equal(await readUpdateState(t.state), null);
+});
+
+test("npm source end to end: installed from the registry, rolled back to the registry's previous version", async () => {
+  const good = world({ installed: "0.3.1", source: NPM });
+  await seed(good);
+  const r = await runUpdate("0.4.0", good.deps());
+  assert.equal(r.outcome, "installed");
+  assert.deepEqual(good.npmInstalls(), ["demo-app@0.4.0"]);
+  const bad = world({ installed: "0.3.1", source: NPM, healthy: (v) => v !== "0.4.0" });
+  await seed(bad);
+  const rb = await runUpdate("0.4.0", bad.deps());
+  assert.equal(rb.outcome, "rolled-back");
+  assert.deepEqual(bad.npmInstalls(), ["demo-app@0.4.0", "demo-app@0.3.1"]);
 });

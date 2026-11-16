@@ -2,8 +2,9 @@
 // it with npm, restart the watcher into it, check that it is healthy within HEALTH_MS, roll back if it is not, and
 // journal every update. `t3sm update` and the watcher's daily check (Task 14) drive it.
 //
-// Sources: GitHub (`git ls-remote --tags --refs https://github.com/<repo>.git`, npm as the fallback when git itself
-// fails; the only network calls t3sm makes) or a local checkout (its `vX.Y.Z` tags merged into `main`, or `master` when
+// Sources: the npm registry (`npm view <name> versions --json`), GitHub (`git ls-remote --tags --refs
+// https://github.com/<repo>.git`, npm as the fallback when git itself fails; with the registry, the only network calls
+// t3sm makes) or a local checkout (its `vX.Y.Z` tags merged into `main`, or `master` when
 // there is no `main`). Every external command goes through the injected CommandRunner as an argument array with a time
 // limit (QUERY_TIMEOUT_MS, INSTALL_TIMEOUT_MS); versions are checked with parseSemver, repository slugs with REPO_RE and
 // folders must be absolute before anything runs. npm and git never get CLAUDE_CONFIG_DIR and git never prompts
@@ -53,6 +54,8 @@ const START_SLACK_MS = 2000;
 const UPDATE_FILE = "update.json";
 /** GitHub `owner/name`: owners are letters, digits and hyphens; names add `_` and `.` (never `.` or `..` alone). */
 const REPO_RE = /^[A-Za-z0-9-]+\/(?!\.\.?$)[A-Za-z0-9_.-]+$/;
+/** An npm package name: lower case, optionally `@scope/`, never starting with `.`, `_` or `-` (so never an option). */
+const NPM_NAME_RE = /^(?:@[a-z0-9][a-z0-9._~-]*\/)?[a-z0-9][a-z0-9._~-]*$/;
 /** npm without the extra network calls and banners nobody sees in a background install. */
 const NPM_INSTALL = ["install", "-g", "--install-links", "--no-audit", "--no-fund", "--no-update-notifier"];
 
@@ -67,6 +70,7 @@ const strOrNull = (u: unknown): u is string | null => u === null || typeof u ===
 
 function decodeSource(u: unknown): UpdateSource | null {
   if (!isObj(u)) return null;
+  if (u["kind"] === "npm" && typeof u["name"] === "string" && NPM_NAME_RE.test(u["name"])) return { kind: "npm", name: u["name"] };
   if (u["kind"] === "github" && typeof u["repo"] === "string" && REPO_RE.test(u["repo"])) return { kind: "github", repo: u["repo"] };
   if (u["kind"] === "folder" && typeof u["path"] === "string" && u["path"] !== "") return { kind: "folder", path: u["path"] };
   return null;
@@ -140,6 +144,7 @@ export function sourceProblem(src: UpdateSource, platform: NodeJS.Platform): str
 }
 
 function checkSource(src: UpdateSource, platform: NodeJS.Platform): void {
+  if (src.kind === "npm" && !NPM_NAME_RE.test(src.name)) throw new UpdateError(`not an npm package name: ${JSON.stringify(src.name)}`);
   if (src.kind === "github" && !REPO_RE.test(src.repo)) throw new UpdateError(`the GitHub repository must be owner/name: ${JSON.stringify(src.repo)}`);
   if (src.kind === "folder" && !absoluteFolder(src.path, platform)) {
     const example = platform === "win32" ? "D:\\code\\t3sm" : "/home/you/code/t3sm";
@@ -163,6 +168,15 @@ export async function releaseVersions(src: UpdateSource, run: CommandRunner, pla
   };
   const releases = (tags: string[]): string[] => tags.filter((t) => t.startsWith("v") && parseSemver(t) !== null).map(release);
   try { checkSource(src, platform); } catch { return null; }
+  if (src.kind === "npm") {
+    // Every published version (a JSON array, or a JSON string when there is only one); E404 before the first publish.
+    const r = await attempt("npm", ["view", src.name, "versions", "--json"]);
+    if (r === null) return null;
+    let v: unknown;
+    try { v = JSON.parse(r.stdout); } catch { return null; }
+    const list = typeof v === "string" ? [v] : Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : null;
+    return list === null ? null : list.filter((x) => /^\d+\.\d+\.\d+$/.test(x));
+  }
   if (src.kind === "github") {
     const r = await attempt("git", ["ls-remote", "--tags", "--refs", `https://github.com/${src.repo}.git`]);
     if (r !== null) return releases(r.stdout.split(/\r?\n/).map((l) => /\trefs\/tags\/(.+)$/.exec(l.trim())?.[1] ?? ""));
@@ -189,9 +203,10 @@ export async function latestRelease(src: UpdateSource, run: CommandRunner, platf
 
 // ---------- installing ----------
 
-/** The npm spec rollback reinstalls: `github:<repo>#v<version>` or `folder:<path>#v<version>`. */
+/** The spec rollback reinstalls: `npm:<name>#v<version>`, `github:<repo>#v<version>` or `folder:<path>#v<version>`. */
 export function releaseSpecOf(src: UpdateSource, version: string): string {
-  return `${src.kind === "github" ? `github:${src.repo}` : `folder:${src.path}`}#v${release(version)}`;
+  const head = src.kind === "npm" ? `npm:${src.name}` : src.kind === "github" ? `github:${src.repo}` : `folder:${src.path}`;
+  return `${head}#v${release(version)}`;
 }
 
 /** The source and version of a releaseSpecOf spec, or null when it is not one. */
@@ -200,6 +215,7 @@ export function parseReleaseSpec(spec: string): { source: UpdateSource; version:
   if (at < 0 || parseSemver(spec.slice(at + 1)) === null) return null;
   const head = spec.slice(0, at);
   const version = release(spec.slice(at + 1));
+  if (head.startsWith("npm:")) return NPM_NAME_RE.test(head.slice(4)) ? { source: { kind: "npm", name: head.slice(4) }, version } : null;
   if (head.startsWith("github:")) return { source: { kind: "github", repo: head.slice(7) }, version };
   if (head.startsWith("folder:") && head.length > 7) return { source: { kind: "folder", path: head.slice(7) }, version };
   return null;
@@ -242,6 +258,11 @@ export async function installRelease(src: UpdateSource, version: string, d: Inst
   const v = release(version);
   checkSource(src, d.platform);
   const limit = { timeoutMs: INSTALL_TIMEOUT_MS };
+  if (src.kind === "npm") {
+    const r = await d.run("npm", [...NPM_INSTALL, `${src.name}@${v}`], limit);
+    if (r.code !== 0) throw failure("npm", "npm install", r);
+    return;
+  }
   if (src.kind === "github") {
     const r = await d.run("npm", [...NPM_INSTALL, `github:${src.repo}#v${v}`], limit);
     if (r.code !== 0) throw failure("npm", "npm install", r);
@@ -501,8 +522,8 @@ export async function runUpdate(target: string, d: UpdaterDeps): Promise<UpdateO
   }
 }
 
-const sameSource = (a: UpdateSource, b: UpdateSource): boolean =>
-  a.kind === b.kind && (a.kind === "github" ? a.repo === (b as { repo: string }).repo : a.path === (b as { path: string }).path);
+const sourceKey = (s: UpdateSource): string => (s.kind === "npm" ? s.name : s.kind === "github" ? s.repo : s.path);
+const sameSource = (a: UpdateSource, b: UpdateSource): boolean => a.kind === b.kind && sourceKey(a) === sourceKey(b);
 
 /**
  * How to reinstall the installed version `from` (the rollback target), and whether that is known (`confirmed`) or a

@@ -227,8 +227,8 @@ Optional; `{ "auto": true }` when absent.
 | `auto` | `true` | boolean | `true`: once a day the background watcher looks up the newest `vX.Y.Z` release of the source t3sm was last installed from (GitHub's tags, or the tags on `main` of a checkout on this computer: a drive path such as `D:\Work\t3code-session-manager` on Windows; a network path such as `\\server\share` is refused, though a mapped network drive or a network mount looks local and is not detected) and installs it by itself when it is a patch or minor release (0.x minors included) strictly newer than the installed one; a major release is only announced. After installing, the watcher is restarted into the new version; if no heartbeat of it arrives within 2 minutes, the previous version is reinstalled. `false`: never installs by itself |
 
 Set it with `t3sm update --auto on|off`; `t3sm update --check` shows it, the newest release and the last check (no
-checkout or npx install is ever updated by itself). Looking up the newest release (`git ls-remote` on GitHub, or
-`npm view` when git cannot) is t3sm's only network call; installing a release downloads it with npm, and the optional
+checkout or npx install is ever updated by itself). Looking up the newest release (`npm view` on the npm registry, or
+`git ls-remote` for an install from GitHub) is t3sm's only network call; installing a release downloads it with npm, and the optional
 `/t3sm` plugin install in `t3sm start` goes through `claude plugin` after your yes. Every update is journaled (`update` entries in `journal.jsonl`); the source and the previous version are
 kept in `<state>/update.json`.
 

@@ -438,14 +438,14 @@ Exemplos:
   t3sm organize --undo 20261114-120000-abcd --dry-run
   t3sm organize --undo 20261114-120000-abcd --yes
 `,
-  update: `Uso: t3sm update [--from <pasta> | --source github] [--yes | --dry-run]
+  update: `Uso: t3sm update [--from <pasta> | --source npm|github] [--yes | --dry-run]
      t3sm update --check
      t3sm update --auto on|off [--dry-run]
 
-Atualiza o t3sm para a versão mais recente da origem: as etiquetas vX.Y.Z do GitHub (o repositório do package.json),
-ou as etiquetas no main de uma cópia do código neste computador. Primeiro mostra o que há de novo (uma pasta: o
-CHANGELOG.md dessa etiqueta; GitHub: depois da instalação, a partir do CHANGELOG.md instalado) e depois pergunta. A
-instalação é um \`npm install -g --install-links\` dessa etiqueta; o vigilante em segundo plano é parado (pelo próprio
+Atualiza o t3sm para a versão mais recente da origem: o registo do npm (uma instalação que veio de lá), as etiquetas
+vX.Y.Z do GitHub (o repositório do package.json), ou as etiquetas no main de uma cópia do código neste computador.
+Primeiro mostra o que há de novo (uma pasta: o CHANGELOG.md dessa etiqueta; npm e GitHub: depois da instalação, a
+partir do CHANGELOG.md instalado) e depois pergunta. A instalação é um \`npm install -g\` dessa versão exata; o vigilante em segundo plano é parado (pelo próprio
 controlo dele, nunca pelo nome) e volta a arrancar na versão nova, e se nenhum sinal de vida dele chegar em 2 minutos
 a versão anterior é reinstalada. Cada atualização fica no diário. O t3sm nunca volta a uma versão anterior. Uma cópia
 git ou a cache do npx só recebem instruções. Numa shell aberta como Administrador, o t3sm avisa que a atualização fica
@@ -454,8 +454,8 @@ instalada só para esse utilizador.
 Uma vez por dia o vigilante também procura (update.auto, ligado por omissão): uma versão de correção ou menor mais
 recente (incluindo as menores 0.x) é instalada sozinha, uma versão maior só é anunciada; uma atualização que falhou ou
 voltou atrás aparece no \`t3sm status\` (\`t3sm help updates\`), e a procura automática salta uma versão desfeita (o
-t3sm update ainda a pode instalar). Procurar as versões (git ls-remote, ou npm view) é a única ligação à rede do
-próprio t3sm; instalar uma versão descarrega-a com o npm.
+t3sm update ainda a pode instalar). Procurar as versões (npm view, ou git ls-remote para o GitHub) é a única ligação
+à rede do próprio t3sm; instalar uma versão descarrega-a com o npm.
 
 Opções:
   --check            Só vê: a versão instalada, a mais recente e o tipo dela
@@ -466,7 +466,8 @@ Opções:
   --from <pasta>     Atualiza a partir desta cópia do código (um caminho local
                      absoluto como D:\\code\\t3sm; nunca uma pasta de rede);
                      fica lembrado para as próximas quando a versão nova entra
-  --source github    Volta a atualizar a partir do GitHub (lembrado da mesma forma)
+  --source npm       Atualiza a partir do registo do npm (lembrado da mesma forma)
+  --source github    Atualiza a partir das etiquetas do GitHub (lembrado da mesma forma)
   --auto on|off      Liga ou desliga a atualização automática diária no
                      config.json (corre t3sm start primeiro se não houver um).
                      Uma preferência como o \`projects unset\`: não precisa de --yes

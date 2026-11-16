@@ -25,14 +25,18 @@ which subscription each project belongs to. t3sm brings all of it in, reviewed f
 
 ## Quick start
 
-You need Node.js 22.18+, git, and T3 Code open. Open it from the Start menu or your
+You need Node.js 22.18+ and T3 Code open. Open it from the Start menu or your
 desktop launcher, not from a terminal that sets `CLAUDE_CONFIG_DIR`.
 
 **1. Install once.** The same line on Windows, macOS and Linux:
 
 ```bash
-npm install -g --install-links github:brunobola-portfolio/t3code-session-manager#v0.3.1
+npm install -g t3code-session-manager
 ```
+
+Every npm release is built by GitHub Actions from its tag and signed with
+[provenance](https://docs.npmjs.com/generating-provenance-statements) (`npm audit signatures`
+checks it). From GitHub instead: `npm install -g --install-links github:brunobola-portfolio/t3code-session-manager#v0.3.1` (needs git).
 
 **2. Run it:**
 
@@ -77,9 +81,9 @@ subscription each project will use. Step by step, with every check:
 
 </details>
 
-No install at all? `npx -y github:brunobola-portfolio/t3code-session-manager#v0.3.1 <command>`
-runs any command (background sync needs the installed one). To be strict about what you
-run, pin a commit instead of the tag (`#<commit sha>`). Other sources:
+No install at all? `npx -y t3code-session-manager <command>` runs any command (background
+sync needs the installed one). To be strict about what you run, pin the version
+(`t3code-session-manager@<version>`). Other sources:
 [docs/migrate/](docs/migrate/claude-code.md). In Claude Code you can also ask for it in
 plain words with the bundled skill ([docs/install.md](docs/install.md#claude-code-plugin)).
 
@@ -291,8 +295,8 @@ installs it after you say yes.
   updated by itself.
 
 **The one network call.** Apart from T3 Code on your own machine (loopback only), t3sm
-itself contacts one thing: the release lookup (`git ls-remote` on the GitHub repository, or
-`npm view` when git cannot), once a day from the watcher and when you run `t3sm update` or
+itself contacts one thing: the release lookup (`npm view` on the npm registry, or
+`git ls-remote` on GitHub for an install from GitHub), once a day from the watcher and when you run `t3sm update` or
 `t3sm update --check`. Installing a release runs npm (and git), which download it. The only
 other time anything goes online is the optional `/t3sm` plugin install in `t3sm start`,
 after your yes (`claude plugin` commands). Nothing about your sessions is ever sent.
@@ -449,7 +453,7 @@ Every change is journaled and undoable.
 | `t3sm status` | Says whether t3sm needs you, and what to run. Read-only; exit 10 when it needs you; `--json` |
 | `t3sm start` | The guided assistant (also plain `t3sm` on a terminal) |
 | `t3sm schedule` | `install [--watch]`, `remove`, `restart` (stops and starts the watcher safely), `status`; the writing ones ask, or take `--yes`, and have `--dry-run` |
-| `t3sm update` | Installs the newest release, shows what is new and asks first; `--check` only looks, `--dry-run` shows what would be installed, `--from <folder>` installs from a checkout (remembered), `--source github` goes back to GitHub, `--auto on` / `--auto off` turns the daily automatic update on or off. A git checkout or npx only gets instructions |
+| `t3sm update` | Installs the newest release, shows what is new and asks first; `--check` only looks, `--dry-run` shows what would be installed, `--from <folder>` installs from a checkout (remembered), `--source npm` or `--source github` chooses where updates come from, `--auto on` / `--auto off` turns the daily automatic update on or off. A git checkout or npx only gets instructions |
 | `t3sm changelog` | What is new in the installed version (`--since <version>` for several releases). Read-only |
 | `t3sm help [<topic>]` | What a message means, why it happens and what to do (`not-imported`, `held`, `decisions`, `history`, `updates`, `watcher`, ...). Read-only |
 

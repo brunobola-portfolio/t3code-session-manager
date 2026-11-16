@@ -68,7 +68,7 @@ These commands change files or T3 Code: `apply`, `dedupe`, `quarantine`, `merge 
 `accounts --init`, `schedule install`, `schedule remove`, `schedule restart`, `sync` (without `--dry-run`),
 `organize`, `organize --undo`, `projects rename --suggest`, `projects set`, `projects unset`,
 `doctor --repair` and `update` without `--check` or `--dry-run` (it reinstalls t3sm itself with npm;
-also `update --from <folder>` and `update --source github`), and `update --auto on|off` (a preference switch in config.json, like `projects unset`: it needs no `--yes`,
+also `update --from <folder>`, `update --source npm` and `update --source github`), and `update --auto on|off` (a preference switch in config.json, like `projects unset`: it needs no `--yes`,
 but still ask first).
 
 - Run them only after the user has said yes, in this conversation, to that exact command.

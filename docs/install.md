@@ -3,7 +3,7 @@
 ## Requirements
 
 - **Node.js 22.18 or newer** (`node --version`). t3sm has no runtime dependencies.
-- **git** on `PATH`, for `npx` or `npm install -g` from GitHub (npm clones the repository and builds it).
+- **git** on `PATH`, only to install from GitHub or from a checkout (npm then clones the repository and builds it).
 - **T3 Code** ([t3.codes](https://t3.codes), open source), installed and opened at least once, running whenever t3sm talks to it. Open it from the Start menu or
   your desktop launcher, never from a terminal that sets `CLAUDE_CONFIG_DIR` (it would read that folder as its
   default account; `t3sm doctor` checks this).
@@ -20,16 +20,29 @@ where.
 One line, the same on Windows, macOS and Linux:
 
 ```bash
-npm install -g --install-links github:brunobola-portfolio/t3code-session-manager#v0.3.1
+npm install -g t3code-session-manager
 t3sm
 ```
 
-npm clones the release (the `#v…` suffix is npm's syntax for a git tag), builds it with Node alone (no TypeScript
-download) and puts `t3sm` on your `PATH`. Keep `--install-links`: without it, npm 11 leaves a global install from git
-as a link to its own temporary clone, which it then deletes, so `t3sm` is not found afterwards. Plain `t3sm` starts
-the guided set-up; `t3sm --help` lists every command, grouped by what you want to do. The background sync
-(`t3sm schedule install`) needs this installed command, because it must stay where it is. CI runs this exact line on
-Windows, macOS and Linux.
+npm downloads the release from the registry and puts `t3sm` on your `PATH`. Plain `t3sm` starts the guided set-up;
+`t3sm --help` lists every command, grouped by what you want to do. The background sync (`t3sm schedule install`) needs
+this installed command, because it must stay where it is. CI installs the exact package the registry gets (`npm pack`)
+on Windows, macOS and Linux.
+
+Every release on npm is published by the GitHub Actions workflow of its `vX.Y.Z` tag, with
+[provenance](https://docs.npmjs.com/generating-provenance-statements): `npm audit signatures` (run in a folder that
+depends on it) or the package page on npmjs.com shows which commit and workflow built it.
+
+### From GitHub instead
+
+```bash
+npm install -g --install-links github:brunobola-portfolio/t3code-session-manager#v0.3.1
+```
+
+npm clones the release (the `#v…` suffix is npm's syntax for a git tag) and builds it with Node alone (no TypeScript
+download). Keep `--install-links`: without it, npm 11 leaves a global install from git as a link to its own temporary
+clone, which it then deletes, so `t3sm` is not found afterwards. CI runs this exact line too. An install from GitHub
+keeps updating from GitHub; `t3sm update --source npm` moves it to the registry.
 
 ## Install from a folder on this computer
 
@@ -70,10 +83,11 @@ resident watcher to stop. From then on updates are automatic.
 t3sm update
 ```
 
-It looks up the newest `vX.Y.Z` release on GitHub (`git ls-remote`, or `npm view` when git cannot: t3sm's only network
-call; installing then downloads the release with npm, and the optional `/t3sm` plugin install in `t3sm start` goes
-through `claude plugin` after your yes), shows the change (`0.3.0 -> 0.3.1 (patch)`), asks, and installs that tag with
-`npm install -g --install-links github:brunobola-portfolio/t3code-session-manager#v<version>`. Then it stops the
+It looks up the newest release where t3sm came from (the npm registry with `npm view`; an install from GitHub with
+`git ls-remote`: t3sm's only network call; installing then downloads the release with npm, and the optional `/t3sm`
+plugin install in `t3sm start` goes through `claude plugin` after your yes), shows the change
+(`0.3.0 -> 0.3.1 (patch)`), asks, and installs that exact version (`npm install -g t3code-session-manager@<version>`,
+or the `vX.Y.Z` tag from GitHub). Then it stops the
 background watcher (through its own control, never by name), starts it again on the new version and waits up to 2
 minutes for it; if it does not start, the previous version is reinstalled. What is new is printed after the update,
 from the CHANGELOG it installed; `t3sm changelog` shows it again later (`--since <version>` for several releases).
@@ -84,7 +98,8 @@ t3sm never installs an older version than the one you have. Every update is jour
 t3sm update --check            # only look: installed, newest, patch/minor/major, source, automatic updates
 t3sm update --dry-run          # what would be installed; changes nothing
 t3sm update --from D:\Work\t3code-session-manager   # from a checkout on this computer (its vX.Y.Z tags on main)
-t3sm update --source github    # back to GitHub
+t3sm update --source npm       # update from the npm registry
+t3sm update --source github    # update from GitHub's release tags
 t3sm update --auto off         # no automatic updates (on: the default)
 ```
 
@@ -98,19 +113,19 @@ again; `t3sm update` can still install it on purpose. Offline, nothing happens u
 
 **From a folder.** `--from <folder>` takes a local checkout (a drive path such as `D:\Work\t3code-session-manager` on Windows; a network
 folder is refused) and installs its newest `vX.Y.Z` tag on `main` (`master` when there is no `main`), showing that
-tag's CHANGELOG first. The folder is remembered for later updates once the new version is in; `--source github`
-switches back. Version 0.1.0 has no `update` command, and 0.2.x's only installs from GitHub: from them, install once by
+tag's CHANGELOG first. The folder is remembered for later updates once the new version is in; `--source npm` or
+`--source github` switches back. Version 0.1.0 has no `update` command, and 0.2.x's only installs from GitHub: from them, install once by
 hand ([Upgrading from 0.2.x](#upgrading-from-02x)).
 
 ## Run it with npx (no install)
 
 ```bash
-npx -y github:brunobola-portfolio/t3code-session-manager#v0.3.1 doctor
+npx -y t3code-session-manager doctor
 ```
 
-Every command works this way: replace `doctor` with `plan`, `apply`, and so on. The first run downloads and builds
-the package (a few seconds); later runs reuse npm's cache. Without the `#v…` tag, `npx` builds whatever is on `main`. To
-update, put the newer tag in the command. Fine for a try; use the installed command for background sync.
+Every command works this way: replace `doctor` with `plan`, `apply`, and so on. The first run downloads the package
+(a few seconds); later runs reuse npm's cache. Without a version, `npx` runs the newest release; pin one with
+`t3code-session-manager@<version>`. Fine for a try; use the installed command for background sync.
 
 ## From a clone
 

@@ -49,7 +49,8 @@ function tsFiles(dir) {
 /**
  * Writes outDir (emptied first) with one .js per .ts under srcDir, the help topics (docs/help/*.md) in outDir/help,
  * plus outDir/build.json `{version, builtAt}` (the
- * version from the package.json next to srcDir; builtAt now unless given). The background watcher compares builtAt
+ * version from the package.json next to srcDir; builtAt now unless given; `channel: "npm"` with meta.channel, which
+ * `T3SM_BUILD_CHANNEL=npm` sets for the package the Release workflow publishes). The background watcher compares builtAt
  * with the one it started from and restarts into a new build (src/core/version.ts). Returns the number of .js files.
  */
 export function build(srcDir, outDir, meta = {}) {
@@ -64,7 +65,10 @@ export function build(srcDir, outDir, meta = {}) {
   const version = meta.version ?? JSON.parse(readFileSync(join(srcDir, "..", "package.json"), "utf8")).version;
   const builtAt = meta.builtAt ?? new Date().toISOString();
   mkdirSync(outDir, { recursive: true });
-  writeFileSync(join(outDir, "build.json"), JSON.stringify({ version, builtAt }) + "\n");
+  // `channel: "npm"` marks the package the Release workflow publishes to the registry, so an install of it updates from
+  // there (src/ops/update.ts isRegistryInstall); an install from GitHub or a checkout has no channel.
+  const stamp = meta.channel === "npm" ? { version, builtAt, channel: "npm" } : { version, builtAt };
+  writeFileSync(join(outDir, "build.json"), JSON.stringify(stamp) + "\n");
   // The help topics (`t3sm help <topic>`): docs/help/*.md in both languages, read by the installed package from dist/help.
   const help = meta.helpDir ?? join(srcDir, "..", "docs", "help");
   if (existsSync(help)) {
@@ -76,6 +80,7 @@ export function build(srcDir, outDir, meta = {}) {
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-  const n = build(join(root, "src"), join(root, "dist"));
-  process.stdout.write(`Built ${n} files into dist/\n`);
+  const channel = process.env.T3SM_BUILD_CHANNEL === "npm" ? "npm" : undefined;
+  const n = build(join(root, "src"), join(root, "dist"), channel ? { channel } : {});
+  process.stdout.write(`Built ${n} files into dist/${channel ? " (channel npm)" : ""}\n`);
 }

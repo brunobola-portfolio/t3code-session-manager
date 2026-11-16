@@ -25,14 +25,18 @@ com revisão primeiro.
 
 ## Começar já
 
-Precisas do Node.js 22.18+, do git e do T3 Code aberto. Abre-o pelo menu Iniciar ou pelo lançador do ambiente de
+Precisas do Node.js 22.18+ e do T3 Code aberto. Abre-o pelo menu Iniciar ou pelo lançador do ambiente de
 trabalho, não a partir de um terminal que defina `CLAUDE_CONFIG_DIR`.
 
 **1. Instala uma vez.** A mesma linha no Windows, no macOS e no Linux:
 
 ```bash
-npm install -g --install-links github:brunobola-portfolio/t3code-session-manager#v0.3.1
+npm install -g t3code-session-manager
 ```
+
+Cada versão no npm é construída pelo GitHub Actions a partir da sua etiqueta e assinada com
+[proveniência](https://docs.npmjs.com/generating-provenance-statements) (o `npm audit signatures` confirma-a). A partir
+do GitHub: `npm install -g --install-links github:brunobola-portfolio/t3code-session-manager#v0.3.1` (precisa do git).
 
 **2. Corre:**
 
@@ -76,9 +80,8 @@ tabela **Project accounts**: diz que subscrição cada projeto vai usar. Passo a
 
 </details>
 
-Sem instalar nada? `npx -y github:brunobola-portfolio/t3code-session-manager#v0.3.1 <comando>` corre qualquer
-comando (a sincronização em segundo plano precisa do comando instalado). Para seres rigoroso com o que corres, fixa um
-commit em vez da tag (`#<sha do commit>`). Outras origens: [docs/migrate/](docs/migrate/claude-code.pt.md). No Claude
+Sem instalar nada? `npx -y t3code-session-manager <comando>` corre qualquer comando (a sincronização em segundo plano
+precisa do comando instalado). Para seres rigoroso com o que corres, fixa a versão (`t3code-session-manager@<versão>`). Outras origens: [docs/migrate/](docs/migrate/claude-code.pt.md). No Claude
 Code também podes pedir em linguagem natural, com a skill incluída
 ([docs/install.md](docs/install.md#claude-code-plugin), em inglês).
 
@@ -274,7 +277,7 @@ sozinha, num processo separado e escondido, e o vigilante reinicia-se nela. Uma 
 - **Desligar.** `t3sm update --auto off` (e `on`). Um clone git ou o `npx` nunca são atualizados sozinhos.
 
 **A única ligação à rede.** Fora o T3 Code na tua própria máquina (só loopback), o t3sm contacta uma coisa: a procura
-de versões (`git ls-remote` no repositório do GitHub, ou `npm view` quando o git não consegue), uma vez por dia pelo
+de versões (`npm view` no registo do npm, ou `git ls-remote` no GitHub para uma instalação a partir do GitHub), uma vez por dia pelo
 vigilante e quando corres `t3sm update` ou `t3sm update --check`. Instalar uma versão corre o npm (e o git), que a
 descarregam. A única outra vez em que algo vai à rede é a instalação opcional do plugin `/t3sm` no `t3sm start`,
 depois do teu sim (comandos `claude plugin`). Nada sobre as tuas sessões é alguma vez enviado.
@@ -417,7 +420,7 @@ desfeita.
 | `t3sm status` | Diz se o t3sm precisa de ti, e o que correr. Só lê; sai com 10 quando precisa de ti; `--json` |
 | `t3sm start` | O assistente guiado (também `t3sm` sozinho num terminal) |
 | `t3sm schedule` | `install [--watch]`, `remove`, `restart` (para e volta a arrancar o vigilante em segurança), `status`; os que escrevem perguntam, ou aceitam `--yes`, e têm `--dry-run` |
-| `t3sm update` | Instala a versão mais recente, mostra o que há de novo e pergunta primeiro; `--check` só consulta, `--dry-run` mostra o que seria instalado, `--from <pasta>` instala a partir de um clone (fica lembrado), `--source github` volta ao GitHub, `--auto on` / `--auto off` liga ou desliga a atualização automática diária. Num clone git ou com npx só dá instruções |
+| `t3sm update` | Instala a versão mais recente, mostra o que há de novo e pergunta primeiro; `--check` só consulta, `--dry-run` mostra o que seria instalado, `--from <pasta>` instala a partir de um clone (fica lembrado), `--source npm` ou `--source github` escolhe de onde vêm as atualizações, `--auto on` / `--auto off` liga ou desliga a atualização automática diária. Num clone git ou com npx só dá instruções |
 | `t3sm changelog` | O que há de novo na versão instalada (`--since <versão>` para várias versões). Só lê |
 | `t3sm help [<tópico>]` | O que uma mensagem quer dizer, porque acontece e o que fazer (`not-imported`, `held`, `decisions`, `history`, `updates`, `watcher`, ...). Só lê |
 

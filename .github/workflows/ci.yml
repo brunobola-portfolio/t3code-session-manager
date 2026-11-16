@@ -42,6 +42,22 @@ jobs:
           got="$("$B" --version | tr -d '\r')"; want="$(node -p 'require("./package.json").version')"
           test "$got" = "$want" || { echo "installed t3sm says '$got', expected '$want'"; exit 1; }
           "$B" --help | grep -q "t3sm update"
+      - name: The npm package installs and runs (npm pack, as the registry gets it)
+        shell: bash
+        run: |
+          P="$RUNNER_TEMP/npm-global"; D="$RUNNER_TEMP/pack"; mkdir -p "$D"
+          if [ "$RUNNER_OS" = "Windows" ]; then P="$(cygpath -m "$P")"; D="$(cygpath -m "$D")"; B="$P/t3sm.cmd"; else B="$P/bin/t3sm"; fi
+          # Built exactly as the Release workflow publishes it: channel npm, then packed without running prepare again.
+          T3SM_BUILD_CHANNEL=npm npm run build
+          tgz="$(npm pack --silent --ignore-scripts --pack-destination "$D" | tail -n 1)"
+          npm install -g --prefix "$P" "$D/$tgz"
+          if [ "$RUNNER_OS" = "Windows" ]; then R="$P/node_modules/t3code-session-manager"; else R="$P/lib/node_modules/t3code-session-manager"; fi
+          node -e "process.exit(require(process.argv[1]).channel === 'npm' ? 0 : 1)" "$R/dist/build.json" || { echo "the packed build is not marked channel npm"; exit 1; }
+          got="$("$B" --version | tr -d '\r')"; want="$(node -p 'require("./package.json").version')"
+          test "$got" = "$want" || { echo "the packed t3sm says '$got', expected '$want'"; exit 1; }
+          "$B" --help | grep -q "t3sm update"
+          "$B" help updates | grep -q "npm"
+
       - name: README artwork is up to date
         if: matrix.os == 'ubuntu-latest' && matrix.node == 24
         run: |

@@ -6,6 +6,21 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+t3sm is on npm: `npm install -g t3code-session-manager` installs it without git, and it keeps itself up to date from
+there. Installs from GitHub keep working and can move over with `t3sm update --source npm`.
+
+### Added
+
+- **t3sm is published on npm, with provenance.** Each release is built by GitHub Actions from its tag and signed, so
+  `npm audit signatures` and the package page show which commit made it.
+- **Updates come from where t3sm was installed.** An install from npm updates from the registry, the daily check
+  included; `t3sm update --source npm` or `--source github` chooses, and `t3sm update --check` names the source.
+
+### Changed
+
+- **The README and the guides install from npm.** Installing from GitHub or from a checkout stays documented as an
+  alternative.
+
 ## [0.3.1] - 2026-11-16
 
 Fixes from the first real run of 0.3.0, and a way to bring back a conversation whose T3 Code thread you deleted. If you

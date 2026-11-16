@@ -222,5 +222,8 @@ export interface Config {
   /** Optional in config.json. auto (default true): the watcher installs newer patch and minor releases by itself. */
   update?: { auto?: boolean };
 }
-/** Where t3sm updates come from (remembered in `<state>/update.json`): GitHub's tags, or a local checkout's tags. */
-export type UpdateSource = { kind: "github"; repo: string } | { kind: "folder"; path: string };
+/**
+ * Where t3sm updates come from (remembered in `<state>/update.json`): the npm registry's published versions, GitHub's
+ * tags, or a local checkout's tags.
+ */
+export type UpdateSource = { kind: "npm"; name: string } | { kind: "github"; repo: string } | { kind: "folder"; path: string };

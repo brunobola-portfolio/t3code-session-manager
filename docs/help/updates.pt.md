@@ -6,6 +6,10 @@ Uma vez por dia o vigilante em segundo plano procura um t3sm mais recente. Uma v
 instalada sozinha; uma versão maior só é anunciada. Depois de instalar, o vigilante tem de arrancar na versão nova em
 2 minutos, senão volta a versão anterior. O t3sm nunca volta a uma versão mais antiga.
 
+Atualiza-se a partir de onde foi instalado: o registo do npm para `npm install -g t3code-session-manager`, as
+etiquetas de versão do GitHub para uma instalação a partir do GitHub, ou uma cópia do código neste computador depois de
+`t3sm update --from <pasta>`.
+
 ## Porque falha
 
 - Sem rede, com um proxy, ou sem git e npm: a procura fica para mais tarde.
@@ -21,3 +25,4 @@ instalada sozinha; uma versão maior só é anunciada. Depois de instalar, o vig
 - `t3sm update` instala a versão mais recente depois de mostrar o que há de novo; `t3sm changelog` mostra o que
   mudou.
 - `t3sm update --auto off` desliga as atualizações automáticas (`--auto on` volta a ligá-las).
+- `t3sm update --source npm` passa uma instalação do GitHub para o registo do npm; `--source github` volta atrás.

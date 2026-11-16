@@ -109,4 +109,7 @@ test("build writes dist/build.json: {version, builtAt}", (t) => {
   assert.equal(new Date(at).toISOString(), stamp.builtAt);
   build(join(REPO, "src"), out, { builtAt: "2026-11-15T10:00:00.000Z" });
   assert.equal((JSON.parse(readFileSync(join(out, "build.json"), "utf8")) as { builtAt: string }).builtAt, "2026-11-15T10:00:00.000Z");
+  // The package the Release workflow publishes to npm says so: an install from it then updates from the registry.
+  build(join(REPO, "src"), out, { channel: "npm" });
+  assert.equal((JSON.parse(readFileSync(join(out, "build.json"), "utf8")) as { channel?: string }).channel, "npm");
 });

@@ -17,13 +17,13 @@ function fixture(): string {
   const root = mkdtempSync(join(tmpdir(), "t3sm-release-"));
   const w = (rel: string, text: string) => { mkdirSync(dirname(join(root, rel)), { recursive: true }); writeFileSync(join(root, rel), text); };
   const json = (o: unknown) => JSON.stringify(o, null, 2) + "\n";
-  w("package.json", json({ name: "t3code-session-manager", version: "0.1.0", repository: { type: "git", url: `${URL_}.git` }, homepage: `${URL_}#readme`, bugs: { url: `${URL_}/issues` } }));
+  w("package.json", json({ name: "t3code-session-manager", version: "0.1.0", repository: { type: "git", url: `${URL_}.git` }, homepage: `${URL_}#readme`, bugs: { url: `${URL_}/issues` }, publishConfig: { access: "public" } }));
   w("package-lock.json", json({ name: "t3code-session-manager", version: "0.1.0", lockfileVersion: 3, requires: true,
     packages: { "": { name: "t3code-session-manager", version: "0.1.0" }, "node_modules/typescript": { version: "5.9.3" } } }));
   w(".claude-plugin/plugin.json", json({ name: "t3sm", version: "0.1.0", repository: URL_ }));
   w(".claude-plugin/marketplace.json", json({ plugins: [{ name: "t3sm", version: "0.1.0" }] }));
   for (const n of ["status", "sync", "organize", "import"]) w(`commands/${n}.md`, `---\ndescription: Demo ${n} command for the fixture\n---\nRun the dry run first; write only after the user says yes.\n`);
-  w("README.md", `[![CI](${URL_}/actions/workflows/ci.yml/badge.svg)](${URL_}/actions)\n\nnpx -y github:${REPO}#v0.1.0 doctor\n\nSee also https://github.com/someone/other-project.\n`);
+  w("README.md", `[![CI](${URL_}/actions/workflows/ci.yml/badge.svg)](${URL_}/actions)\n\nnpm install -g t3code-session-manager\n\nnpx -y github:${REPO}#v0.1.0 doctor\n\nSee also https://github.com/someone/other-project.\n`);
   w("SECURITY.md", `Report at ${URL_}/security.\n`);
   w(".github/ISSUE_TEMPLATE/config.yml", `contact_links:\n  - url: ${URL_}/discussions\n`);
   w("CHANGELOG.md", "# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - 2026-11-11\n\n### Added\n\n- **First release.**\n");
@@ -216,5 +216,21 @@ test("release --notes: soft-wrapped paragraphs and bullets come out one line eac
       "```",
       "",
     ].join("\n"));
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("release --check: the package can be published to npm, and the README shows the npm install line", () => {
+  const root = fixture();
+  const pkgPath = join(root, "package.json");
+  const pkg = JSON.parse(readFileSync(pkgPath, "utf8"));
+  try {
+    writeFileSync(pkgPath, JSON.stringify({ ...pkg, private: true }, null, 2) + "\n");
+    assert.match(run(root, "--check").stderr, /package\.json is "private"/);
+    const { publishConfig: _drop, ...noAccess } = pkg;
+    writeFileSync(pkgPath, JSON.stringify(noAccess, null, 2) + "\n");
+    assert.match(run(root, "--check").stderr, /publishConfig\.access/);
+    writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + "\n");
+    writeFileSync(join(root, "README.md"), readFileSync(join(root, "README.md"), "utf8").replace("npm install -g t3code-session-manager\n", ""));
+    assert.match(run(root, "--check").stderr, /README\.md has no `npm install -g t3code-session-manager`/);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });

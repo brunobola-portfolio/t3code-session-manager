@@ -27,7 +27,7 @@ import { resolveLang } from "../assistant/i18n.ts";
 import { defaultBinPath, detectConhost } from "./schedule.ts";
 import { spawnSuccessor, type SpawnLike } from "./successor.ts";
 import { appendSyncLog } from "./sync.ts";
-import { defaultUpdateSource, installKind, updateRunner, type InstallKind } from "./update.ts";
+import { defaultUpdateSource, installKind, isRegistryInstall, ownPackageName, ownRepositoryUrl, updateRunner, type InstallKind } from "./update.ts";
 import { classify, newestRelease, readUpdateState, releaseVersions, writeUpdateState, type UpdateState } from "./updater.ts";
 
 export const UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
@@ -182,18 +182,25 @@ export interface WatcherCheckOptions {
 }
 
 /**
- * The daily check as the watcher runs it: this install's kind and version, config.json read fresh, package.json's
- * GitHub repository as the default source, git and npm through updateRunner, the update child started like a successor
+ * The daily check as the watcher runs it: this install's kind and version, config.json read fresh, the npm registry
+ * (an install that came from it) or package.json's GitHub repository as the default source, git and npm through
+ * updateRunner, the update child started like a successor
  * (detached, hidden, without CLAUDE_CONFIG_DIR) from this install's bin, a major announced once per version, and the
  * log lines in logs/sync.log.
  */
+/** The default source of this install: its npm package when npm installed it from the registry, else GitHub. */
+function registryAwareDefault(): UpdateSource | null {
+  const name = ownPackageName();
+  return defaultUpdateSource(ownRepositoryUrl(), { name, installed: isRegistryInstall(installRoot().replace(/[\\/]+$/, "")) });
+}
+
 export function watcherUpdateCheck(o: WatcherCheckOptions): (stopped?: () => boolean) => Promise<DailyCheckResult> {
   const c = dailyUpdateCheck({
     stateDir: o.stateDir,
     installed: o.installed ?? packageVersion,
     kind: o.kind ?? installKind(installRoot().replace(/[\\/]+$/, "")),
     config: () => loadConfig(o.stateDir, o.home),
-    defaultSource: o.defaultSource !== undefined ? o.defaultSource : defaultUpdateSource(),
+    defaultSource: o.defaultSource !== undefined ? o.defaultSource : registryAwareDefault(),
     run: o.run ?? updateRunner(o.platform, o.env),
     platform: o.platform,
     now: o.now,

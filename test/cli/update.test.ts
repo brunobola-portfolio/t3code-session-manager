@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { main, type Io } from "../../src/cli/main.ts";
 import { updateCommand, type UpdateDeps } from "../../src/cli/commands/update.ts";
 import { changelogCommand } from "../../src/cli/commands/changelog.ts";
-import { installKind, npmEnv, releaseSpec } from "../../src/ops/update.ts";
+import { installKind, isRegistryInstall, npmEnv, releaseSpec } from "../../src/ops/update.ts";
 import { readUpdateState, writeUpdateState, type UpdateSource, type WatcherOps } from "../../src/ops/updater.ts";
 import { dailyUpdateCheck } from "../../src/ops/autoUpdate.ts";
 import { readSyncStatus } from "../../src/ops/syncStatus.ts";
@@ -59,7 +59,7 @@ function stepClock(): Clock {
  * A global install whose version npm changes: GitHub answers `tags` (null: offline), the folder FOLDER has `tags` too and
  * shows `changelog(...)` for any tag; no watcher runs (restart returns false: no health wait).
  */
-async function harness(t: { after: (fn: () => Promise<void>) => void }, o: { installed?: string; tags?: string[] | null; root?: string; npmCode?: number } = {}) {
+async function harness(t: { after: (fn: () => Promise<void>) => void }, o: { installed?: string; tags?: string[] | null; root?: string; npmCode?: number; registry?: string[] | null; fromRegistry?: boolean } = {}) {
   const base = await mkdtemp(join(tmpdir(), "t3sm-update-"));
   t.after(() => rm(base, { recursive: true, force: true }));
   const state = join(base, "state");
@@ -71,7 +71,7 @@ async function harness(t: { after: (fn: () => Promise<void>) => void }, o: { ins
   const run: CommandRunner = async (cmd, args) => {
     calls.push({ cmd, args });
     if (cmd === "git" && args[0] === "ls-remote") return tags === null ? fail() : ok(tags.map((v, i) => `${String(i).repeat(40)}\trefs/tags/${v}`).join("\n"));
-    if (cmd === "npm" && args[0] === "view") return fail(1);
+    if (cmd === "npm" && args[0] === "view") return o.registry ? ok(JSON.stringify(o.registry)) : fail(1, "npm error code E404");
     if (cmd === "git" && args[0] === "-C" && args[2] === "tag") return tags === null ? fail() : ok(tags.join("\n"));
     if (cmd === "git" && args[0] === "-C" && args[2] === "show") {
       const v = /^v(.+):CHANGELOG\.md$/.exec(args[3] ?? "")?.[1];
@@ -81,7 +81,7 @@ async function harness(t: { after: (fn: () => Promise<void>) => void }, o: { ins
     if (cmd === "npm" && args[0] === "install") {
       if ((o.npmCode ?? 0) !== 0) return fail(o.npmCode, "npm ERR! boom");
       const spec = args.at(-1)!;
-      st.installed = spec === "." ? st.branch.slice(1) : /#v(.+)$/.exec(spec)![1]!;
+      st.installed = spec === "." ? st.branch.slice(1) : (/#v(.+)$/.exec(spec) ?? /@(\d[^@]*)$/.exec(spec))![1]!;
       return ok();
     }
     return fail(127, "not found");
@@ -96,6 +96,8 @@ async function harness(t: { after: (fn: () => Promise<void>) => void }, o: { ins
     watcher,
     clock: stepClock(),
     repositoryUrl: REPO_URL,
+    packageName: "demo-app",
+    fromRegistry: o.fromRegistry ?? false,
     readChangelog: () => changelog(["0.3.1", "0.3.0", "0.2.1"].filter((v) => v <= st.installed)),
     tmp: { make: async () => mkdtempSync(join(base, "clone-")), remove: (p) => rm(p, { recursive: true, force: true }) },
   };
@@ -306,7 +308,7 @@ test("update from the npx cache explains how to install once and installs nothin
   const f = fakeIo({ env: h.env });
   assert.equal(await updateCommand([], f.io, h.deps), 0);
   assert.deepEqual(h.calls, []);
-  assert.match(f.out(), /npm install -g --install-links github:demo-owner\/demo-app#semver:\*/);
+  assert.match(f.out(), /npm install -g demo-app/);
 });
 
 test("update rejects unknown options and --yes with --dry-run", async (t) => {
@@ -521,4 +523,49 @@ test("update --yes whose watcher could not be restarted: installed (exit 0), and
     const out = f.out().replace(/\s+/g, " ");
     for (const w of words) assert.ok(out.includes(w), `${lang}: ${w}`);
   }
+});
+
+// ---------- the npm registry ----------
+
+const NPM_SRC: UpdateSource = { kind: "npm", name: "demo-app" };
+
+test("isRegistryInstall: the package the Release workflow published to npm says so in dist/build.json", async (t) => {
+  const base = await mkdtemp(join(tmpdir(), "t3sm-origin-"));
+  t.after(() => rm(base, { recursive: true, force: true }));
+  const root = join(base, "node_modules", "demo-app");
+  mkdirSync(join(root, "dist"), { recursive: true });
+  const stamp = (o: object | string): void => writeFileSync(join(root, "dist", "build.json"), typeof o === "string" ? o : JSON.stringify(o));
+  assert.equal(isRegistryInstall(root), false, "no build.json: not known to come from the registry");
+  stamp({ version: "0.4.0", builtAt: "2026-11-20T10:00:00.000Z", channel: "npm" });
+  assert.equal(isRegistryInstall(root), true);
+  stamp({ version: "0.4.0", builtAt: "2026-11-20T10:00:00.000Z" });
+  assert.equal(isRegistryInstall(root), false, "built by npm from a GitHub tag: no channel");
+  stamp("{ not json");
+  assert.equal(isRegistryInstall(root), false);
+});
+
+test("update --yes from the npm registry: the default source of a registry install, its versions, then what is new", async (t) => {
+  const h = await harness(t, { fromRegistry: true, registry: ["0.2.1", "0.3.0", "0.3.1", "0.4.0-rc.1"] });
+  const f = fakeIo({ env: h.env });
+  assert.equal(await updateCommand(["--yes"], f.io, h.deps), 0);
+  assert.deepEqual(h.calls.filter((c) => c.cmd === "npm" && c.args[0] === "view").map((c) => c.args), [["view", "demo-app", "versions", "--json"]]);
+  assert.deepEqual(h.npmInstalls(), ["demo-app@0.3.1"]);
+  assert.match(f.out(), /npm demo-app/);
+  assert.match(f.out(), /Notes for 0\.3\.1\./);
+  assert.deepEqual((await readUpdateState(h.state))?.source, NPM_SRC);
+});
+
+test("--source npm moves a GitHub install to the npm registry; --check names the source", async (t) => {
+  const h = await harness(t, { registry: ["0.3.0", "0.3.1"] });
+  await writeUpdateState(h.state, { source: GH, lastCheckAt: null, previous: null, available: null, skip: [] });
+  const f = fakeIo({ env: h.env });
+  assert.equal(await updateCommand(["--source", "npm", "--yes"], f.io, h.deps), 0);
+  assert.deepEqual(h.npmInstalls(), ["demo-app@0.3.1"]);
+  assert.deepEqual((await readUpdateState(h.state))?.source, NPM_SRC);
+  const c = fakeIo({ env: h.env });
+  assert.equal(await updateCommand(["--check"], c.io, h.deps), 0);
+  assert.match(c.out(), /npm demo-app/);
+  const bad = fakeIo({ env: h.env });
+  assert.equal(await updateCommand(["--source", "npmjs"], bad.io, h.deps), 2);
+  assert.match(bad.err(), /--source takes npm or github/);
 });

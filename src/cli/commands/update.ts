@@ -22,7 +22,7 @@ import type { CommandRunner } from "../../core/run.ts";
 import { compareSemver, parseSemver } from "../../core/semver.ts";
 import type { UpdateSource } from "../../core/types.ts";
 import { renderSections, sectionsBetween } from "../../core/changelog.ts";
-import { defaultUpdateSource, installKind, ownRepositoryUrl, releaseSpec, updateRunner } from "../../ops/update.ts";
+import { defaultUpdateSource, installKind, isRegistryInstall, ownPackageName, ownRepositoryUrl, updateRunner } from "../../ops/update.ts";
 import {
   QUERY_TIMEOUT_MS, classify, newestRelease, parseReleaseSpec, readPendingUpdate, readUpdateState, releaseVersions, runUpdate, sourceProblem, watcherOps,
   type PendingUpdate, type TempDirs, type UpdateOutcome, type UpdateStep, type UpdaterDeps, type WatcherOps,
@@ -63,6 +63,10 @@ export interface UpdateDeps {
   readHeartbeat?: (stateDir: string) => Promise<Heartbeat | null>;
   /** package.json's repository URL (default: this install's): the GitHub source when nothing else is known. */
   repositoryUrl?: string;
+  /** package.json's name (default: this install's): the npm package a registry install updates from. */
+  packageName?: string;
+  /** Whether this install is the package published to npm (default: `channel` in `root`/dist/build.json). */
+  fromRegistry?: boolean;
   /** The installed CHANGELOG.md, read after an update from GitHub (default: <root>/CHANGELOG.md). */
   readChangelog?: () => string | null;
   /** --auto-run: the OS notifier for a failed update (default: the real one, only when `home` is the real one). */
@@ -75,11 +79,12 @@ export interface UpdateDeps {
 /** Errors runUpdate returns before journaling anything: nothing was attempted, nothing to report in status. */
 const NOT_ATTEMPTED = new Set(["busy", "not-newer", "invalid-version", "no-source"]);
 
-const describe = (s: UpdateSource, lang: Lang = "en"): string => (s.kind === "github" ? `GitHub ${s.repo}` : cliT(lang, "update.folder", { path: s.path }));
+const describe = (s: UpdateSource, lang: Lang = "en"): string =>
+  s.kind === "npm" ? `npm ${s.name}` : s.kind === "github" ? `GitHub ${s.repo}` : cliT(lang, "update.folder", { path: s.path });
 
 interface Ctx {
   io: Io; dir: string; home: string; root: string; platform: NodeJS.Platform; run: CommandRunner; clock: Clock;
-  readVersion: () => string; defaultSource: UpdateSource | null; repoUrl: string; deps: UpdateDeps;
+  readVersion: () => string; defaultSource: UpdateSource | null; repoUrl: string; packageName: string; deps: UpdateDeps;
 }
 
 export async function updateCommand(args: string[], io: Io, deps: UpdateDeps = {}): Promise<number> {
@@ -91,7 +96,7 @@ export async function updateCommand(args: string[], io: Io, deps: UpdateDeps = {
   const source = p.values.get("--source");
   const auto = p.values.get("--auto");
   const bad = (m: string): number => { io.stderr(`${m} Run \`t3sm update --help\`.\n`); return 2; };
-  if (source !== undefined && source !== "github") return bad(`--source takes github (a checkout on this computer: --from <folder>), not ${JSON.stringify(source)}.`);
+  if (source !== undefined && source !== "github" && source !== "npm") return bad(`--source takes npm or github (a checkout on this computer: --from <folder>), not ${JSON.stringify(source)}.`);
   if (auto !== undefined && auto !== "on" && auto !== "off") return bad(`--auto takes on or off, not ${JSON.stringify(auto)}.`);
   if (from !== undefined && source !== undefined) return bad("Use either --from or --source.");
   const chooses = from !== undefined || source !== undefined;
@@ -103,12 +108,14 @@ export async function updateCommand(args: string[], io: Io, deps: UpdateDeps = {
   const home = deps.home ?? homedir();
   const platform = deps.platform ?? process.platform;
   const repoUrl = deps.repositoryUrl ?? ownRepositoryUrl();
+  const packageName = deps.packageName ?? ownPackageName();
+  const fromRegistry = deps.fromRegistry ?? isRegistryInstall(root);
   const c: Ctx = {
-    io, dir: stateDir(io.env, home), home, root, platform, deps, repoUrl,
+    io, dir: stateDir(io.env, home), home, root, platform, deps, repoUrl, packageName,
     run: deps.run ?? updateRunner(platform, io.env),
     clock: deps.clock ?? realClock,
     readVersion: deps.readVersion ?? (() => (JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as { version: string }).version),
-    defaultSource: defaultUpdateSource(repoUrl),
+    defaultSource: defaultUpdateSource(repoUrl, { name: packageName, installed: fromRegistry }),
   };
   // The watcher's own child never warns: nobody reads its output.
   if (!has("--auto-run")) await warnIfElevated(io, deps.elevated ?? (deps.home === undefined ? realIsElevated : async () => false), "update");
@@ -118,7 +125,7 @@ export async function updateCommand(args: string[], io: Io, deps: UpdateDeps = {
     if (!has("--yes")) { usageLine(io, "usage.autoRunYes"); return 2; }
     return autoRun(c);
   }
-  return manual(c, from !== undefined ? { kind: "folder", path: from } : source === "github" ? "github" : null, has("--yes"), has("--dry-run"));
+  return manual(c, from !== undefined ? { kind: "folder", path: from } : source === "github" || source === "npm" ? source : null, has("--yes"), has("--dry-run"));
 }
 
 // ---------- --auto on|off ----------
@@ -157,6 +164,7 @@ function kindWords(ui: CliUi, installed: string, latest: string): string {
 function goBackHint(ui: CliUi, p: PendingUpdate): string | null {
   const r = parseReleaseSpec(p.previous.spec);
   if (r === null) return null;
+  if (r.source.kind === "npm") return ui.t("update.goBackGithub", { version: r.version, command: `npm install -g ${r.source.name}@${r.version}` });
   if (r.source.kind === "github") return ui.t("update.goBackGithub", { version: r.version, command: `npm install -g --install-links github:${r.source.repo}#v${r.version}` });
   return ui.t("update.goBackFolder", { version: r.version, path: r.source.path });
 }
@@ -304,7 +312,7 @@ export function renderNotes(ui: CliUi, sections: ReturnType<typeof sectionsBetwe
   return renderMarkdown(ui, renderSections(sections), width);
 }
 
-async function manual(c: Ctx, choice: UpdateSource | "github" | null, yes: boolean, dryRun: boolean): Promise<number> {
+async function manual(c: Ctx, choice: UpdateSource | "github" | "npm" | null, yes: boolean, dryRun: boolean): Promise<number> {
   const { io } = c;
   const ui = cliUi(io);
   const { s, t } = ui;
@@ -318,12 +326,10 @@ async function manual(c: Ctx, choice: UpdateSource | "github" | null, yes: boole
     return 0;
   }
   if (kind === "npx") {
-    let spec = "github:<repository>#semver:*";
-    try { spec = releaseSpec(c.repoUrl); } catch { /* no GitHub URL */ }
-    say([...note("info", t("update.npx", { version: installed })), ...cmd(`npm install -g --install-links ${spec}`), ...textLines(s, t("update.npxThen"), ui.width, 2)]);
+    say([...note("info", t("update.npx", { version: installed })), ...cmd(`npm install -g ${c.packageName || "t3code-session-manager"}`), ...textLines(s, t("update.npxThen"), ui.width, 2)]);
     return 0;
   }
-  if (choice !== null && choice !== "github") {
+  if (choice !== null && choice !== "github" && choice !== "npm") {
     const why = sourceProblem(choice, c.platform);
     if (why !== null) { io.stderr(`${why}\n`); return 2; }
   }
@@ -332,7 +338,9 @@ async function manual(c: Ctx, choice: UpdateSource | "github" | null, yes: boole
     return 2;
   }
   const state = await readUpdateState(c.dir);
-  const source = choice === "github" ? c.defaultSource : choice ?? state?.source ?? c.defaultSource;
+  const source = choice === "github" ? defaultUpdateSource(c.repoUrl)
+    : choice === "npm" ? (c.packageName !== "" ? { kind: "npm" as const, name: c.packageName } : null)
+    : choice ?? state?.source ?? c.defaultSource;
   if (source === null) {
     io.stderr(`${t("update.noSource")}\n`);
     return 1;
@@ -372,7 +380,7 @@ async function manual(c: Ctx, choice: UpdateSource | "github" | null, yes: boole
     say(note("ok", t("update.updated", { from: installed, to: latest })));
     // Installed, but the watcher could not be restarted into it (it did not stop, or the scheduler call failed).
     if (r.error !== undefined) say(note("warn", t("update.notRestarted", { error: shownText(r.error, 300) })));
-    if (source.kind === "github") {
+    if (source.kind !== "folder") {
       const text = (c.deps.readChangelog ?? (() => { try { return readFileSync(join(c.root, "CHANGELOG.md"), "utf8"); } catch { return null; } }))();
       const sections = text === null ? [] : sectionsBetween(text, installed, latest);
       say(sections.length > 0 ? ["", ...fitLine(s("title", t("update.whatsNew")), ui.width), "", ...renderNotes(ui, sections)] : note("info", t("update.whatsNewLater", { version: installed })));

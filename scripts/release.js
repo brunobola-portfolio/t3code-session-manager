@@ -288,6 +288,12 @@ export function check() {
   problems.push(...repoUrlProblems());
   problems.push(...commandFileProblems());
   problems.push(...helpTopicProblems());
+  // Published to the npm registry by the Release workflow: never private, always public, and the README says how.
+  if (pkg.private === true) problems.push('package.json is "private": npm would refuse to publish it');
+  if (pkg.publishConfig?.access !== "public") problems.push('package.json publishConfig.access should be "public"');
+  if (existsSync(join(ROOT, "README.md")) && !read("README.md").includes(`npm install -g ${pkg.name}`)) {
+    problems.push(`README.md has no \`npm install -g ${pkg.name}\` install line`);
+  }
   if (Array.isArray(pkg.files) && !pkg.files.includes("commands/")) problems.push('package.json "files" does not include "commands/" (the plugin commands would not ship)');
   let pins = 0;
   for (const rel of pinnedDocs()) {

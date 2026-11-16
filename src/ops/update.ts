@@ -5,7 +5,7 @@
 import { spawn, type ChildProcess, type ChildProcessWithoutNullStreams, type SpawnOptionsWithStdioTuple } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { win32 } from "node:path";
+import { join, win32 } from "node:path";
 import type { CommandRunner } from "../core/run.ts";
 import { driveSystemRoot } from "../core/sysroot.ts";
 import type { UpdateSource } from "../core/types.ts";
@@ -39,8 +39,32 @@ export function ownRepositoryUrl(): string {
   } catch { return ""; }
 }
 
-/** The source t3sm updates from when nothing is remembered: the GitHub repository in package.json (null: not one). */
-export function defaultUpdateSource(repositoryUrl: string = ownRepositoryUrl()): UpdateSource | null {
+/** This t3sm's own npm package name, from its package.json ("" when it cannot be read). */
+export function ownPackageName(): string {
+  try {
+    const n = (JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")) as { name?: unknown }).name;
+    return typeof n === "string" ? n : "";
+  } catch { return ""; }
+}
+
+/**
+ * Whether the package at `root` is the one published to the npm registry: the Release workflow builds it with
+ * `channel: "npm"` in dist/build.json (scripts/build.js). npm itself keeps no record of where a global package came
+ * from, and a build from a GitHub tag or a checkout has no channel. Read-only, no network; false when unknown.
+ */
+export function isRegistryInstall(root: string): boolean {
+  try {
+    const stamp: unknown = JSON.parse(readFileSync(join(root, "dist", "build.json"), "utf8"));
+    return typeof stamp === "object" && stamp !== null && (stamp as { channel?: unknown }).channel === "npm";
+  } catch { return false; }
+}
+
+/**
+ * The source t3sm updates from when nothing is remembered: the npm registry for an install that came from it (its
+ * package name), otherwise the GitHub repository in package.json (null: neither is known).
+ */
+export function defaultUpdateSource(repositoryUrl: string = ownRepositoryUrl(), registry?: { name: string; installed: boolean }): UpdateSource | null {
+  if (registry?.installed && registry.name !== "") return { kind: "npm", name: registry.name };
   try { return { kind: "github", repo: repoSlug(repositoryUrl) }; } catch { return null; }
 }
 

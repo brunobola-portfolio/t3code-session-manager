@@ -2,8 +2,10 @@
 
 ## Supported versions
 
-Only the latest release receives fixes. Update with `t3sm update` (an `npm install -g` of the newest release tag), or
-run the pinned command with the newer tag (`npx -y github:brunobola-portfolio/t3code-session-manager#v0.3.1 …`).
+Only the latest release receives fixes. Update with `t3sm update` (an `npm install -g` of the newest release), or run
+`npx -y t3code-session-manager@<version> …` with the newer version. Every npm release is published from its GitHub tag
+by the Release workflow, with provenance; from GitHub, the pinned command is
+`npx -y github:brunobola-portfolio/t3code-session-manager#v0.3.1 …`.
 
 ## Reporting a vulnerability
 
@@ -15,10 +17,10 @@ You will get an answer within seven days.
 
 t3sm runs locally, as you, and sends nothing about your sessions anywhere: it talks to T3 Code on your own machine
 (loopback only). There is no telemetry, no model call, and no runtime dependency. Its only network call is the release
-lookup for updates: `git ls-remote --tags` on its GitHub repository (or `npm view` when git cannot), once a day from
+lookup for updates: `npm view` on the npm registry (an install from GitHub: `git ls-remote --tags` on its repository), once a day from
 the background watcher (`update.auto`, on by default; `t3sm update --auto off` turns it off) and when you run
-`t3sm update` or `t3sm update --check`. Installing a release runs `npm install -g --install-links` of that `vX.Y.Z` tag
-(from GitHub, or `git clone` of a local checkout first), so npm downloads it: by hand after you confirm, or by itself
+`t3sm update` or `t3sm update --check`. Installing a release runs `npm install -g` of that exact version (from the
+registry, the `vX.Y.Z` tag from GitHub, or `git clone` of a local checkout first), so npm downloads it: by hand after you confirm, or by itself
 for a patch or minor release when automatic updates are on. Only `t3sm update` and its automatic child start npm.
 The optional `/t3sm` plugin install in `t3sm start` runs `claude plugin` commands, after your yes.
 

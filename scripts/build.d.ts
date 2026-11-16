@@ -5,4 +5,4 @@ export function rewriteImports(code: string): string;
  * Writes outDir (emptied first) with one .js per .ts under srcDir, plus outDir/build.json `{version, builtAt}`.
  * Returns the number of .js files written.
  */
-export function build(srcDir: string, outDir: string, meta?: { version?: string; builtAt?: string; helpDir?: string }): number;
+export function build(srcDir: string, outDir: string, meta?: { version?: string; builtAt?: string; helpDir?: string; channel?: "npm" }): number;

@@ -18,12 +18,15 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: write
+      # npm provenance and Trusted Publishing: the registry checks that this workflow, on this repository, built it.
+      id-token: write
     steps:
       - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v7
         with:
           node-version: 24
+          registry-url: https://registry.npmjs.org
 
       - name: Tag matches the version in every manifest, pin and the changelog
         run: |
@@ -49,16 +52,35 @@ jobs:
           npm test
           npm run build
 
+      - name: Publish to npm (with provenance)
+        env:
+          # Only for the first publish: once the package exists, npm's Trusted Publisher for this workflow replaces it
+          # (no secret at all). npm tries OIDC first, so an empty token is fine.
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          name="$(node -p "require('./package.json').name")"
+          version="$(node -p "require('./package.json').version")"
+          if npm view "$name@$version" version >/dev/null 2>&1; then
+            echo "$name@$version is already on npm; nothing to publish"
+            exit 0
+          fi
+          # The published build says it came from npm, so an install of it keeps updating from the registry.
+          T3SM_BUILD_CHANNEL=npm npm run build
+          node -e "const b=require('./dist/build.json'); if (b.channel !== 'npm' || b.version !== '$version') process.exit(1)"
+          npm publish --provenance --access public --ignore-scripts
+          npm view "$name@$version" version
+
       - name: Publish release notes from CHANGELOG.md
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           repo="$(node scripts/release.js --repo)"
+          name="$(node -p "require('./package.json').name")"
           node scripts/release.js --notes > notes.md
           cat >> notes.md <<NOTES
 
-          **Try it** (Node 22.18+, T3 Code open): \`npx -y github:$repo#$GITHUB_REF_NAME doctor\`, then \`plan\`, then \`apply\`.
-          Install the command: \`npm install -g --install-links github:$repo#$GITHUB_REF_NAME\`.
+          **Install** (Node 22.18+): \`npm install -g $name\`, then run \`t3sm\` with T3 Code open. No install: \`npx -y $name@${GITHUB_REF_NAME#v} doctor\`.
+          From GitHub instead: \`npm install -g --install-links github:$repo#$GITHUB_REF_NAME\`.
           Claude Code skill: \`/plugin marketplace add $repo\` then \`/plugin install t3sm@t3code-session-manager\`.
           NOTES
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then

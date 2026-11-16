@@ -425,14 +425,14 @@ Examples:
   t3sm organize --undo 20261114-120000-abcd --dry-run
   t3sm organize --undo 20261114-120000-abcd --yes
 `,
-  update: `Usage: t3sm update [--from <folder> | --source github] [--yes | --dry-run]
+  update: `Usage: t3sm update [--from <folder> | --source npm|github] [--yes | --dry-run]
        t3sm update --check
        t3sm update --auto on|off [--dry-run]
 
-Update t3sm to the newest release of its source: GitHub's vX.Y.Z tags (the repository in package.json), or the tags on
-main of a checkout on this computer. It first shows what is new (a folder: that tag's CHANGELOG.md; GitHub: after the
-install, from the CHANGELOG.md it installed), then asks. The install is \`npm install -g --install-links\` of that tag;
-the background watcher is stopped (by its own control, never by name) and started again on the new version, and if no
+Update t3sm to the newest release of its source: the npm registry (an install that came from it), GitHub's vX.Y.Z
+tags (the repository in package.json), or the tags on main of a checkout on this computer. It first shows what is new
+(a folder: that tag's CHANGELOG.md; npm and GitHub: after the install, from the CHANGELOG.md it installed), then asks.
+The install is \`npm install -g\` of that exact version; the background watcher is stopped (by its own control, never by name) and started again on the new version, and if no
 heartbeat of it comes within 2 minutes the previous version is reinstalled. Every update is journaled. t3sm never
 downgrades. A git checkout or the npx cache only gets instructions. In a shell run as Administrator, t3sm warns that
 the update is installed for that user only.
@@ -440,8 +440,8 @@ the update is installed for that user only.
 Once a day the background watcher also looks (update.auto, default on): a newer patch or minor release (0.x minors
 included) is installed by itself, a major one is only announced; a failed or rolled-back update shows in \`t3sm
 status\` (\`t3sm help updates\`), and the automatic check skips a rolled-back version (t3sm update can still install
-it). Looking up the releases (git ls-remote, or npm view) is t3sm's only network call; installing a release downloads
-it with npm.
+it). Looking up the releases (npm view, or git ls-remote for GitHub) is t3sm's only network call; installing a release
+downloads it with npm.
 
 Options:
   --check            Only look: installed version, the newest release and its
@@ -451,7 +451,8 @@ Options:
   --from <folder>    Update from this checkout (a local absolute path such as
                      D:\\code\\t3sm; never a network folder); remembered for
                      the next updates once the new version is in
-  --source github    Update from GitHub again (remembered the same way)
+  --source npm       Update from the npm registry (remembered the same way)
+  --source github    Update from GitHub's release tags (remembered the same way)
   --auto on|off      Turn the daily automatic update on or off in config.json
                      (run t3sm start first if there is none). A preference
                      switch like \`projects unset\`: it needs no --yes
