@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-16
+
 t3sm is on npm: `npm install -g t3code-session-manager` installs it without git, and it keeps itself up to date from
 there. Installs from GitHub keep working and can move over with `t3sm update --source npm`.
 
