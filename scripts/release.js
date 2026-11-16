@@ -3,7 +3,8 @@
  * Release helper. Zero dependencies.
  *
  *   node scripts/release.js --check   every version (package-lock.json included), install pin, github.com URL of this
- *                                     project and the top CHANGELOG entry agree (CI runs this)
+ *                                     project and the top CHANGELOG entry agree, and new CHANGELOG entries keep the
+ *                                     house style of docs/changelog-style.md (CI runs this)
  *   node scripts/release.js --notes   print the CHANGELOG section of the current version (the Release workflow uses it)
  *   node scripts/release.js 0.2.0     bump every version and install pin, date or stub the CHANGELOG entry, and
  *                                     print the git commands to run next (it never runs git itself)
@@ -148,6 +149,91 @@ export function changelogSection(version) {
   return { date: m[1], body: (next === -1 ? rest : rest.slice(0, next)).trim() };
 }
 
+/** The house style of CHANGELOG.md (docs/changelog-style.md), checked on `## [Unreleased]` and on every release. */
+/** Keep a Changelog headings, in the order they must appear. */
+export const CHANGELOG_SECTIONS = ["Added", "Changed", "Deprecated", "Removed", "Fixed", "Security"];
+const SUMMARY_MAX = 300;
+const BULLET_MAX = 320;
+const BULLETS_PER_SECTION = 6;
+const BULLETS_PER_RELEASE = 12;
+
+/** Style problems of one changelog section body, each prefixed with its label ("Unreleased", "0.3.2"). */
+function sectionStyleProblems(label, body) {
+  const problems = [];
+  const say = (msg) => problems.push(`CHANGELOG.md ${label}: ${msg}`);
+  const short = (s) => (s.length > 40 ? `${s.slice(0, 40)}...` : s);
+  const lines = body.split("\n");
+  const firstH3 = lines.findIndex((l) => l.startsWith("### "));
+  const intro = firstH3 === -1 ? lines : lines.slice(0, firstH3);
+  if (intro.some((l) => /^\s*[-*] /.test(l))) say("the summary is a short paragraph, not a list");
+  const summary = intro.join(" ").replace(/\s+/g, " ").trim();
+  if (summary) {
+    const sentences = summary.split(/(?<=[.!?])\s+(?=[A-Z`*])/).length;
+    if (sentences > 2 || summary.length > SUMMARY_MAX) {
+      say(`the summary has ${sentences} sentences and ${summary.length} characters; keep it to 2 sentences and ${SUMMARY_MAX} characters`);
+    }
+  }
+  let lastOrder = -1;
+  let total = 0;
+  let section = null;
+  let count = 0;
+  let bullet = null;
+  const closeBullet = () => {
+    if (bullet === null) return;
+    const text = bullet.replace(/\s+/g, " ").trim();
+    if (!/^\*\*[^*]+\*\*/.test(text)) say(`"${short(text)}" starts without a **bold headline**`);
+    if (text.length > BULLET_MAX) say(`"${short(text)}" is ${text.length} characters; keep a bullet to ${BULLET_MAX} (details belong in the docs)`);
+    bullet = null;
+  };
+  const closeSection = () => {
+    closeBullet();
+    if (section !== null && count > BULLETS_PER_SECTION) say(`"### ${section}" has ${count} bullets; keep it to ${BULLETS_PER_SECTION}`);
+    if (section !== null && count === 0) say(`"### ${section}" is empty`);
+  };
+  for (const line of lines.slice(intro.length)) {
+    if (line.startsWith("### ")) {
+      closeSection();
+      section = line.slice(4).trim();
+      count = 0;
+      const order = CHANGELOG_SECTIONS.indexOf(section);
+      if (order === -1) say(`"### ${section}" is not one of ${CHANGELOG_SECTIONS.join(", ")}`);
+      else if (order <= lastOrder) say(`"### ${section}" comes after "### ${CHANGELOG_SECTIONS[lastOrder]}"; the order is ${CHANGELOG_SECTIONS.join(", ")}`);
+      else lastOrder = order;
+      continue;
+    }
+    if (/^#{1,6} /.test(line)) { closeBullet(); say(`"${short(line.trim())}": only "### <section>" headings inside a release`); continue; }
+    if (/^\s+[-*] /.test(line)) { say(`"${short(line.trim())}" is a nested bullet; keep one level`); continue; }
+    if (/^[-*] /.test(line)) { closeBullet(); bullet = line.slice(2); count++; total++; continue; }
+    if (line.trim() === "") { closeBullet(); continue; }
+    if (bullet !== null) bullet += ` ${line.trim()}`;
+    else say(`"${short(line.trim())}" is loose text under "### ${section}"; write it as a bullet`);
+  }
+  closeSection();
+  if (total > BULLETS_PER_RELEASE) say(`${total} bullets; keep a release to ${BULLETS_PER_RELEASE} and group the rest`);
+  return problems;
+}
+
+/** Style problems of `## [Unreleased]` and of every `## [X.Y.Z]` release. */
+export function changelogStyleProblems(text) {
+  const problems = [];
+  let label = null;
+  let buf = [];
+  const flush = () => { if (label) problems.push(...sectionStyleProblems(label, buf.join("\n").trim())); };
+  for (const line of text.replace(/\r\n/g, "\n").split("\n")) {
+    if (line.startsWith("## ")) {
+      flush();
+      buf = [];
+      const v = /^## \[([^\]]+)\]/.exec(line)?.[1];
+      label = v === "Unreleased" ? "Unreleased" : v && SEMVER.test(v) ? v : null;
+      continue;
+    }
+    if (/^\[[^\]]+\]:\s/.test(line)) continue; // link references belong to no section
+    if (label) buf.push(line);
+  }
+  flush();
+  return problems;
+}
+
 /** The first released `## [X.Y.Z]` heading (skipping `## [Unreleased]`). */
 function topChangelogVersion() {
   const m = /^## \[(\d+\.\d+\.\d+)\]/m.exec(read("CHANGELOG.md"));
@@ -196,6 +282,7 @@ export function check() {
   if (!section) problems.push(`CHANGELOG.md has no "## [${version}] - YYYY-MM-DD" entry`);
   else if (!section.body) problems.push(`CHANGELOG.md entry for ${version} is empty`);
   else if (/\bTODO\b/.test(section.body)) problems.push(`CHANGELOG.md entry for ${version} still says TODO`);
+  problems.push(...changelogStyleProblems(read("CHANGELOG.md")));
   if (pins === 0) problems.push("no `github:<repo>#vX.Y.Z` install pin found in the docs");
   return problems;
 }
@@ -250,7 +337,7 @@ export function bump(next, today = new Date().toISOString().slice(0, 10)) {
     changed.push("CHANGELOG.md");
   } else {
     // nothing written yet: add a stub under Unreleased (or at the top) for the maintainer to fill in
-    const stub = `## [${next}] - ${today}${eol}${eol}### Changed${eol}${eol}- TODO: describe this release.${eol}${eol}`;
+    const stub = `## [${next}] - ${today}${eol}${eol}### Changed${eol}${eol}- **TODO.** Describe this release.${eol}${eol}`;
     const first = u ? u.index + u[0].length + (afterU.length - afterU.trimStart().length) : log.search(/^## \[/m);
     log = first === -1 ? `${log.trimEnd()}${eol}${eol}${stub}` : log.slice(0, first) + stub + log.slice(first);
     write("CHANGELOG.md", log);

@@ -26,7 +26,7 @@ function fixture(): string {
   w("README.md", `[![CI](${URL_}/actions/workflows/ci.yml/badge.svg)](${URL_}/actions)\n\nnpx -y github:${REPO}#v0.1.0 doctor\n\nSee also https://github.com/someone/other-project.\n`);
   w("SECURITY.md", `Report at ${URL_}/security.\n`);
   w(".github/ISSUE_TEMPLATE/config.yml", `contact_links:\n  - url: ${URL_}/discussions\n`);
-  w("CHANGELOG.md", "# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - 2026-11-11\n\n### Added\n\n- First release.\n");
+  w("CHANGELOG.md", "# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - 2026-11-11\n\n### Added\n\n- **First release.**\n");
   w("docs/help/held.md", "# Held: a project waits\n");
   w("docs/help/held.pt.md", "# À espera: um projeto espera\n");
   return root;
@@ -112,4 +112,71 @@ test("release check: every help topic in docs/help has its English file and its 
   writeFileSync(join(root, "docs", "help", "held.md"), "# Held\n");
   writeFileSync(join(root, "docs", "help", "errors.pt.md"), "# Erros\n");
   assert.deepEqual(helpTopicProblems(root).sort(), ["docs/help/errors.md is missing (the English topic)", "docs/help/held.pt.md is missing (the Portuguese twin)"]);
+});
+
+// The changelog style (docs/changelog-style.md) is checked on `## [Unreleased]` and on every release after 0.3.1.
+const withLog = (body: string) => {
+  const root = fixture();
+  writeFileSync(join(root, "CHANGELOG.md"), `# Changelog\n\n## [Unreleased]\n\n${body}\n## [0.1.0] - 2026-11-11\n\n### Added\n\n- **First release.**\n`);
+  return root;
+};
+
+test("release --check: a changelog entry in the house style passes", () => {
+  const root = withLog([
+    "One clear sentence on what this release means for you.",
+    "",
+    "### Added",
+    "",
+    "- **`t3sm demo` shows a sample run.** It writes nothing; see `t3sm help demo`.",
+    "",
+    "### Fixed",
+    "",
+    "- **Enter now keeps your answer.** Before, it saved nothing.",
+    "  The next run asks again only if you quit first.",
+    "",
+  ].join("\n"));
+  try {
+    const r = run(root, "--check");
+    assert.equal(r.status, 0, r.stderr);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("release --check: flags a changelog entry out of the house style (bold lead, length, sections, order, nesting)", () => {
+  const long = "word ".repeat(80).trim();
+  const root = withLog([
+    "First sentence. Second sentence. A third sentence makes the summary too long.",
+    "",
+    "### Fixed",
+    "",
+    "- No bold headline here.",
+    `- **Too long.** ${long}`,
+    "  - a nested bullet",
+    "",
+    "### Added",
+    "",
+    "- **Added after Fixed.** Wrong order.",
+    "",
+    "### Improvements",
+    "",
+    "- **Unknown section.** Not a Keep a Changelog heading.",
+    "",
+  ].join("\n"));
+  try {
+    const r = run(root, "--check");
+    assert.equal(r.status, 1);
+    for (const want of [/Unreleased: the summary/, /starts without a \*\*bold headline\*\*/, /is \d+ characters/, /nested/, /"### Added" comes after/, /"### Improvements" is not one of/]) {
+      assert.match(r.stderr, want);
+    }
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("release --check: the style applies to every release, not only Unreleased; link references are ignored", () => {
+  const root = fixture();
+  try {
+    writeFileSync(join(root, "CHANGELOG.md"), "# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - 2026-11-11\n\n### Fixed\n\n- an old entry without its bold headline.\n\n[0.1.0]: https://example.com/v0.1.0\n");
+    const r = run(root, "--check");
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, /0\.1\.0: .*bold headline/);
+    assert.doesNotMatch(r.stderr, /example\.com/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });

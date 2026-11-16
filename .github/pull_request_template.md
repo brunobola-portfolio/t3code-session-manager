@@ -13,4 +13,4 @@
 - [ ] Fixtures and docs contain only synthetic data (no real paths, names, emails or project names)
 - [ ] Docs updated if behaviour, options or the status of a harness changed (README and README.pt.md together)
 - [ ] `npm run assets` run and `docs/assets/` committed if the art or the plan summary changed
-- [ ] `CHANGELOG.md` updated under `## [Unreleased]` for user-visible changes
+- [ ] `CHANGELOG.md` updated under `## [Unreleased]` for user-visible changes, in the shape of `docs/changelog-style.md`

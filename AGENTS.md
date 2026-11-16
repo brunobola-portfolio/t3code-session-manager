@@ -207,7 +207,9 @@ Read [docs/adding-a-harness.md](docs/adding-a-harness.md); `src/sources/opencode
 - Every command or option you show must exist; run it. Status tables say only what was run (live, fixtures,
   planned).
 - After changing the art or the CLI's plan summary, run `npm run assets` and commit `docs/assets/`.
-- User-visible changes go under `## [Unreleased]` in `CHANGELOG.md`; `npm run release:check` must print OK.
+- User-visible changes go under `## [Unreleased]` in `CHANGELOG.md`, in the house style of
+  [docs/changelog-style.md](docs/changelog-style.md) (a 2-sentence summary; Keep a Changelog sections in order; short
+  bullets that open with a bold headline); `npm run release:check` enforces it and must print OK.
 
 ## Commits and pull requests
 
