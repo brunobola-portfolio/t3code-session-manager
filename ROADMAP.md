@@ -1,6 +1,6 @@
 # Roadmap
 
-What comes after 0.3.0, grouped by how sure it is. Each item says the problem it solves, the approach in one line and
+What comes after 0.4, grouped by how sure it is. Each item says the problem it solves, the approach in one line and
 its status. **Next** is committed, **Later** is wanted but not scheduled, **Ideas** are open questions. Nothing here
 is a promise of a date. Suggestions and votes: open an issue. What already works: the **Works with** table in the
 [README](README.md#works-with) and [docs/harnesses.md](docs/harnesses.md).
@@ -16,6 +16,12 @@ T3 Code** (blocked on something T3 Code does not offer yet), **help wanted**.
 | Stable T3 Code releases | Only T3 Code nightlies were tested live; stable releases are not tested yet | Run the live checks against each stable release and add the ones that pass to the tested list | planned |
 | macOS and Linux live runs | On macOS and Linux only unit tests have run (in CI), not a real import | Run the gated live tests and one real pilot import on each, and record the results in the docs | planned, help wanted |
 | Timings of a full import | No full-size `apply` has been timed, so the README cannot say how long one takes | Publish measured figures from real imports in the CHANGELOG and the FAQ | planned |
+
+## Done in 0.4
+
+Moved out of the plan: t3sm on npm (`npm install -g t3code-session-manager`, no git needed), updates from where it
+was installed, and releases built by GitHub Actions with provenance, staged on npm and approved with 2FA. See the
+[CHANGELOG](CHANGELOG.md).
 
 ## Done in 0.3.0
 

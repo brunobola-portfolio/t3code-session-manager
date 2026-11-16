@@ -55,17 +55,12 @@ GitHub accepts PNG, JPG or GIF (not SVG), at least 640×320, ideally 1280×640, 
       `/plugin install t3sm@t3code-session-manager`, then ask "check my T3 Code sessions": the skill runs
       `t3sm doctor`.
 
-## Release notes for 0.3.0
+## Release notes
 
-The GitHub release takes its notes from the changelog section. The highlights to read first, in this order:
-
-- `t3sm organize` (and `--undo`): archive automated sessions, readable titles, history inside each project, pin recent
-  projects, delete empty projects t3sm created. Optional, previewed, journaled, undoable.
-- Conversations from folders T3 Code refuses (home, Downloads, `Documents/Codex`) are copied whole into the
-  project they worked on, or into General. Continuations made outside T3 Code after the import do not come in.
-- `t3sm status`, optional system notifications, and `/t3sm:status|sync|organize|import` inside T3 Code.
-- Does not refuse an untested T3 Code version: it warns once and goes ahead.
-- Checks before publishing: `npm run release:check` prints OK and `docs/assets/` has no drift.
+The GitHub release takes its notes from the version's CHANGELOG section (`node scripts/release.js --notes`), written
+in the shape of [changelog-style.md](changelog-style.md): a two-sentence summary for someone deciding whether to
+update, then short bullets that open with a bold headline. The workflow adds how to install it (npm, GitHub, the
+Claude Code plugin). Read the section once more before tagging: it is the first thing people see.
 
 ## Release routine
 
@@ -101,7 +96,6 @@ access settings: "Require two-factor authentication and disallow tokens". The pa
 ## Announcement text (short)
 
 > t3sm brings every Claude Code, Codex, Pi and OpenCode session into T3 Code as resumable threads, each under the
-> Claude subscription it was run with. Review a plan, apply in waves, undo with one command. MIT.
-> New in 0.3.0: `t3sm organize` brings the imported history back into each project, archives the automated noise
-> and gives conversations readable titles. Every part is optional, and it never touches what you changed by hand.
-> `npx -y t3code-session-manager doctor`
+> Claude subscription it was run with. It writes a plan first, imports through T3 Code's own importer, journals every
+> change and undoes any run with one command. MIT, zero runtime dependencies.
+> New in 0.4: on npm, with provenance. `npm install -g t3code-session-manager`, then `t3sm`.
