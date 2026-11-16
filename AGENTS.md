@@ -13,7 +13,8 @@ moves their file times for a moment: journaled, restored, reversible. How it wor
 ## Stack
 
 TypeScript run directly by Node >= 22.18 (native type stripping), tests with `node:test`, zero runtime
-dependencies, MIT. CI: Windows, macOS and Linux with Node 22 and 24.
+dependencies, MIT. CI: Windows, macOS and Linux with Node 22, 24 and 26 (a pull request runs six of the nine
+jobs; main, a weekly run and a manual run, all nine).
 
 ## Setup and commands
 

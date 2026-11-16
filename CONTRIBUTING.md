@@ -92,7 +92,7 @@ In PowerShell: `$env:T3_E2E=1; node --test --test-timeout=180000 test/e2e/apply.
      git grep -n -I -i -P --untracked "@(gmail|outlook|hotmail|icloud)\.com" -- .
      ```
 
-- **Cross-platform.** CI runs Ubuntu, macOS and Windows on Node 22 and 24. Path handling goes through
+- **Cross-platform.** CI runs Ubuntu, macOS and Windows on Node 22, 24 and 26. Path handling goes through
   `src/core/paths.ts`.
 - **Honest docs.** The status tables say only what was run. Mark anything unverified as such.
 - **Changelog.** Describe user-visible changes under `## [Unreleased]` in `CHANGELOG.md`, short and in the shape

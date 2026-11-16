@@ -4,6 +4,10 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Weekly, on the full matrix: a new runner image, Node release or npm breaks here first, not in a release.
+  schedule:
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -20,15 +24,21 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-        node: [22, 24]
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        # 22.18 is the oldest supported Node, 24 and 26 the LTS lines users run.
+        node: [22, 24, 26]
+        # Pull requests run one macOS job (hosted macOS runners can queue for minutes) and Node 26 on Linux only;
+        # main, the weekly run and a manual run cover all nine.
+        exclude: ${{ fromJSON(github.event_name == 'pull_request' && '[{"os":"macos-latest","node":24},{"os":"macos-latest","node":26},{"os":"windows-latest","node":26}]' || '[]') }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node }}
       - run: npm ci
+      # The same on every OS and Node: once is enough.
       - run: npm run typecheck
+        if: matrix.os == 'ubuntu-latest' && matrix.node == 24
       - run: npm test
       - run: npm run build
       - name: Versions, install pins and changelog agree
