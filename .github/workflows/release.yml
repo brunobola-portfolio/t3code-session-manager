@@ -52,10 +52,10 @@ jobs:
           npm test
           npm run build
 
-      - name: Publish to npm (with provenance)
+      - name: Stage the release on npm (with provenance; a maintainer approves it with 2FA)
         env:
-          # Only for the first publish: once the package exists, npm's Trusted Publisher for this workflow replaces it
-          # (no secret at all). npm tries OIDC first, so an empty token is fine.
+          # npm's Trusted Publisher for this workflow (OIDC, stage-only) needs no secret; NPM_TOKEN is only the fallback
+          # while it is not configured. npm tries OIDC first, so an empty token is fine.
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           # The published build says it came from npm, so an install of it keeps updating from the registry. Set for
           # the whole step: npm runs `prepare` again on pack and publish (npm 10 even with --ignore-scripts).
@@ -63,17 +63,23 @@ jobs:
         run: |
           name="$(node -p "require('./package.json').name")"
           version="$(node -p "require('./package.json').version")"
+          # Staged publishing needs npm 11.15 or newer, pinned here whatever the runner bundles.
+          npm_cli() { npx -y npm@11.21.2 "$@"; }
           if npm view "$name@$version" version >/dev/null 2>&1; then
-            echo "$name@$version is already on npm; nothing to publish"
+            echo "$name@$version is already on npm; nothing to stage"
             exit 0
           fi
-          # Pack once, check the tarball itself, and publish exactly that file.
+          if npm_cli stage list "$name" --json 2>/dev/null | grep -q "\"$version\""; then
+            echo "::notice::$name@$version is already staged: approve it on npmjs.com (Staged Packages) with 2FA"
+            exit 0
+          fi
+          # Pack once, check the tarball itself, and stage exactly that file.
           tgz="$(npm pack --silent --pack-destination "$RUNNER_TEMP" | tail -n 1)"
           tar -xzOf "$RUNNER_TEMP/$tgz" package/dist/build.json | node -e "
             const b = JSON.parse(require('fs').readFileSync(0, 'utf8'));
             if (b.channel !== 'npm' || b.version !== '$version') { console.error('not a channel npm build of $version:', b); process.exit(1); }"
-          npm publish "$RUNNER_TEMP/$tgz" --provenance --access public
-          npm view "$name@$version" version
+          npm_cli stage publish "$RUNNER_TEMP/$tgz" --provenance --access public
+          echo "::notice::Staged $name@$version with provenance. Approve it with 2FA: npmjs.com -> $name -> Staged Packages -> Approve"
 
       - name: Publish release notes from CHANGELOG.md
         env:

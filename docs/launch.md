@@ -79,14 +79,21 @@ node scripts/release.js 0.2.0    # bumps package.json, package-lock.json, the pl
 2. Commit on a `release/vX.Y.Z` branch, open a pull request, merge it once `ci-ok` is green.
 3. On `main`: `git tag -a vX.Y.Z -m vX.Y.Z && git push origin vX.Y.Z`.
 4. The [Release workflow](../.github/workflows/release.yml) checks that the tag matches every manifest and pin and is
-   on `main`, runs the tests, publishes the package to npm with provenance (skipped when that version is already
-   there), and publishes the GitHub release with the changelog section as notes.
+   on `main`, runs the tests, **stages** the package on npm with provenance (skipped when that version is already
+   published or staged), and publishes the GitHub release with the changelog section as notes.
+5. Approve the staged version with 2FA: npmjs.com -> `t3code-session-manager` -> Staged Packages -> Approve (or
+   `npm stage approve <stage-id>`). Only then is it installable, and the watchers start updating to it.
 
-**npm publishing.** The workflow publishes as `t3code-session-manager` (public, `publishConfig.access`). The first
-release used a temporary granular token (`NPM_TOKEN` repository secret); from then on npm's Trusted Publisher for
-`release.yml` on this repository authenticates it through OIDC (`id-token: write`), with no secret: on npmjs.com,
-package Settings -> Trusted Publisher -> GitHub Actions, workflow `release.yml`; then delete the token and the secret.
-The package is also on GitHub (`npx github:`) and in the plugin marketplace.
+**npm publishing.** The package is `t3code-session-manager` (public, `publishConfig.access`), owned by the `bolalabs`
+npm account. Every release goes through npm's [staged publishing](https://docs.npmjs.com/staged-publishing): the
+workflow runs `npm stage publish` (npm 11.21.2, pinned) on the exact tarball it checked (`channel: "npm"` in
+`dist/build.json`), so nothing reaches users before a maintainer approves it with 2FA, and the provenance links it to
+the tag's commit and this workflow. Authentication is npm's Trusted Publisher for `release.yml` on this repository
+(OIDC through `id-token: write`, no secret), restricted to stage-only: on npmjs.com, package Settings -> Trusted
+Publisher -> GitHub Actions, workflow `release.yml`, staging only. The `NPM_TOKEN` repository secret is only the
+fallback while that is not configured; delete it (and the token on npmjs.com) once it is. Recommended in the package's
+access settings: "Require two-factor authentication and disallow tokens". The package is also on GitHub
+(`npx github:`) and in the plugin marketplace.
 
 ## Announcement text (short)
 
