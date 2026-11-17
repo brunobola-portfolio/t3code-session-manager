@@ -76,7 +76,9 @@ t3sm apply                         # tudo
 Se o plano listar **cópias-espelho** (mirror copies) ou o doctor mostrar **pastas de backup**, corre o `t3sm dedupe`
 ou o `t3sm quarantine` antes do `apply`, cada um primeiro com `--dry-run` (reversíveis; vê
 [Escolher a subscrição](#escolher-a-subscrição)). O `apply` mostra o resumo e espera por `yes`. No `plan.md`, revê a
-tabela **Project accounts**: diz que subscrição cada projeto vai usar. Passo a passo, com todas as verificações:
+tabela **Project accounts**: diz que subscrição cada projeto vai usar. Com milhares de sessões, o `t3sm plan --html`
+escreve também o `plan.html` ao lado: um ficheiro local para abrir no browser, com filtros por projeto, conta, ação e
+razão para ignorar e uma caixa de pesquisa (não carrega nada da rede). Passo a passo, com todas as verificações:
 [docs/switching-from-vscode.pt.md](docs/switching-from-vscode.pt.md).
 
 </details>
@@ -411,6 +413,7 @@ desfeita.
 | Comando | O que faz |
 | :-- | :-- |
 | `t3sm scan` | Conta as sessões por agente e por conta, sem o T3 Code; só escreve a cache de descoberta do t3sm. **Flagged** conta as sessões com uma observação (em uso, uma linha corrompida, sem pasta, uma cópia de backup ou comprimida, um sub-agente…); o `plan.md` diz o que acontece a cada uma |
+| `t3sm stats` | O que tens: sessões por agente, por conta do Claude Code e por mês, o que foi importado e convertido, e o que o último plano ignora. Contado na tua máquina e não enviado para lado nenhum (o t3sm não tem telemetria); só lê, não precisa do T3 Code; `--json` |
 | `t3sm runs` | Lista as execuções do journal (exemplo acima) |
 | `t3sm rollback --run <id>` | Desfaz uma execução; `--dry-run` lista o que desfaria. O `--yes` exige `--run` |
 | `t3sm recover <id da sessão>` | Traz de volta uma conversa começada no T3 Code cuja thread apagaste, quando o t3sm não o consegue saber sozinho (o `t3sm status` lista-as): uma cópia fiel com um id novo, importada para o seu projeto. Se a thread ainda existir no T3 Code, isto cria um duplicado. Pergunta primeiro; `--dry-run`; desfaz-se com `rollback` |
@@ -426,8 +429,8 @@ desfeita.
 | `t3sm help [<tópico>]` | O que uma mensagem quer dizer, porque acontece e o que fazer (`not-imported`, `held`, `decisions`, `history`, `updates`, `watcher`, ...). Só lê |
 
 Todos os comandos têm `--help` e aceitam `--lang en|pt` e `--no-color`. Sem `--lang`, o t3sm segue o `T3SM_LANG`,
-depois o `"language"` do `config.json`, depois a língua do sistema, senão inglês. O `--json`, o `plan.md`, o journal e
-o `logs/sync.log` ficam sempre em inglês. O significado de cada razão para ignorar uma sessão está escrito ao lado dela
+depois o `"language"` do `config.json`, depois a língua do sistema, senão inglês. O `--json`, o `plan.md`, o `plan.html`, o
+journal e o `logs/sync.log` ficam sempre em inglês. O significado de cada razão para ignorar uma sessão está escrito ao lado dela
 no `plan.md`; cada ecrã que mostra um problema indica o tópico do `t3sm help` que o explica
 ([docs/troubleshooting.md](docs/troubleshooting.md), em inglês, é o índice).
 

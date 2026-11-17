@@ -18,6 +18,12 @@ T3 Code** (blocked on something T3 Code does not offer yet), **help wanted**.
 | macOS and Linux live runs | On macOS and Linux only unit tests have run (in CI), not a real import | Run the gated live tests and one real pilot import on each, and record the results in the docs | planned, help wanted |
 | Timings of a full import | No full-size `apply` has been timed, so the README cannot say how long one takes | Publish measured figures from real imports in the CHANGELOG and the FAQ | planned |
 
+## Done in 0.5
+
+Moved out of the ideas, not released yet: `t3sm stats`, a local summary of the sessions per agent, account and month
+and of what was imported (nothing is sent anywhere; t3sm has no telemetry), and `t3sm plan --html`, which also writes
+`plan.html` with filters and a search box. See the [CHANGELOG](CHANGELOG.md).
+
 ## Done in 0.4
 
 Moved out of the plan: t3sm on npm (`npm install -g t3code-session-manager`, no git needed), updates from where it
@@ -50,8 +56,6 @@ notifications, the `/t3sm` commands inside T3 Code, and no longer refusing an un
 | :-- | :-- | :-- | :-- |
 | Settled inside a project | T3 Code shows only unsettled threads in a project, so imported history needs `organize` to be visible | An upstream request to T3 Code for an option to show settled threads inside the project | depends on T3 Code |
 | Richer timeline | Imported threads show at most 200 messages and no tool activity (commands, file edits) | Import the full timeline, including tool activity, if T3 Code adds an import surface for it | depends on T3 Code |
-| HTML plan report | `plan.md` is long for machines with thousands of sessions | An optional `plan.html` with filters per project, account and skip reason, written next to `plan.md` | idea |
-| Usage summary | People want to see what they have (sessions per agent, account and month) | A local `t3sm stats` command computed from discovery and the journal. Nothing is sent anywhere; t3sm has no telemetry | idea |
 
 ## Contributions wanted
 

@@ -77,7 +77,9 @@ If the plan lists **mirror copies** or doctor reports **backup folders**, run `t
 or `t3sm quarantine` before `apply`, each with `--dry-run` first (reversible; see
 [Choosing your subscription](#choosing-your-subscription)). `apply` shows the summary
 and waits for `yes`. In `plan.md`, check the **Project accounts** table: it says which
-subscription each project will use. Step by step, with every check:
+subscription each project will use. With thousands of sessions, `t3sm plan --html` also
+writes `plan.html` next to it: one local file to open in a browser, with filters by project,
+account, action and skip reason and a search box (it loads nothing from the network). Step by step, with every check:
 [docs/switching-from-vscode.md](docs/switching-from-vscode.md).
 
 </details>
@@ -444,6 +446,7 @@ Every change is journaled and undoable.
 | Command | What it does |
 | :-- | :-- |
 | `t3sm scan` | Counts the sessions per agent and account, without T3 Code; it writes only t3sm's discovery cache. **Flagged** counts sessions with a remark (in use, a corrupt line, no folder, a backup or compressed copy, a sub-agent…); `plan.md` says what happens to each |
+| `t3sm stats` | What you have: sessions per agent, per Claude Code account and per month, what was imported and converted, and what the latest plan skips. Counted on your machine and sent nowhere (t3sm has no telemetry); read-only, no T3 Code needed; `--json` |
 | `t3sm runs` | Lists the runs in the journal (sample above) |
 | `t3sm rollback --run <id>` | Undoes a run; `--dry-run` lists what it would undo. `--yes` requires `--run` |
 | `t3sm recover <session id>` | Brings back a conversation started in T3 Code whose thread you deleted, when t3sm cannot tell by itself (`t3sm status` lists them): a faithful copy with a new id, imported into its project. If the thread still exists in T3 Code, this makes a duplicate. Asks first; `--dry-run`; undone by `rollback` |
@@ -460,7 +463,7 @@ Every change is journaled and undoable.
 
 Every command has `--help` and takes `--lang en|pt` and `--no-color`. Without `--lang`, t3sm
 follows `T3SM_LANG`, then `"language"` in `config.json`, then your system's language, else
-English. `--json`, `plan.md`, the journal and `logs/sync.log` are always English. What each
+English. `--json`, `plan.md`, `plan.html`, the journal and `logs/sync.log` are always English. What each
 skip reason in `plan.md` means is written next to it there; every screen that shows a problem
 names the `t3sm help` topic that explains it ([docs/troubleshooting.md](docs/troubleshooting.md)
 is their index).

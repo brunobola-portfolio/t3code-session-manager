@@ -6,6 +6,16 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+See what you have with `t3sm stats`, counted on your machine and sent nowhere. `t3sm plan --html` also writes a
+plan.html you can filter and search in a browser.
+
+### Added
+
+- **`t3sm stats` shows what you have.** Sessions per agent, per Claude Code account and per month, plus what t3sm
+  imported and converted; read-only, no T3 Code needed, nothing is sent anywhere. `--json` for scripts.
+- **`t3sm plan --html` also writes plan.html.** One file to open in a browser, next to plan.md, with filters by
+  project, account, action and skip reason and a search box; it loads nothing from the network.
+
 ## [0.4.1] - 2026-11-16
 
 Every release is now staged on npm with provenance and goes live only after a maintainer approves it with 2FA. The
