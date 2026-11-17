@@ -217,6 +217,8 @@ Read [docs/adding-a-harness.md](docs/adding-a-harness.md); `src/sources/opencode
 - Conventional commits (`feat:`, `fix:`, `docs:`, `test:`, `refactor:`, `chore:`), small and focused, one concern
   each. Stage files by explicit path, never `git add -A`, when other work is in the tree.
 - CI must be green (`ci-ok`). Fill in `.github/pull_request_template.md`.
+- No tool attribution in pull requests: a PR title or description never says "Generated with Claude Code" (or any
+  other tool). It describes the change, nothing else.
 
 ## Ask a human before
 

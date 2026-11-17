@@ -594,7 +594,8 @@ delas, as pastas de quarentena `~/.claude*/session-manager-quarantine/`. As thre
 
 ## Contribuir
 
-Issues e pull requests são bem-vindos; começa pelo [CONTRIBUTING.md](CONTRIBUTING.md). Acrescentar um agente é uma
+Perguntas, ideias e como te correu: [Discussions](https://github.com/brunobola-portfolio/t3code-session-manager/discussions). Issues e pull requests são bem-vindos; começa pelo
+[CONTRIBUTING.md](CONTRIBUTING.md). Acrescentar um agente é uma
 tarefa autónoma: [docs/adding-a-harness.md](docs/adding-a-harness.md). Problemas de segurança:
 [SECURITY.md](SECURITY.md). Para confirmares uma versão ao vivo na tua máquina, passo a passo:
 [docs/testing-0.3.pt.md](docs/testing-0.3.pt.md).

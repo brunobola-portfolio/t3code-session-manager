@@ -6,3 +6,6 @@ contact_links:
   - name: Troubleshooting guide
     url: https://github.com/brunobola-portfolio/t3code-session-manager/blob/main/docs/troubleshooting.md
     about: One entry per doctor check, with the fix.
+  - name: Questions, ideas and how it went for you
+    url: https://github.com/brunobola-portfolio/t3code-session-manager/discussions
+    about: Ask, suggest, or share a run on macOS or Linux in Discussions.

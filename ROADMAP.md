@@ -2,7 +2,8 @@
 
 What comes after 0.4, grouped by how sure it is. Each item says the problem it solves, the approach in one line and
 its status. **Next** is committed, **Later** is wanted but not scheduled, **Ideas** are open questions. Nothing here
-is a promise of a date. Suggestions and votes: open an issue. What already works: the **Works with** table in the
+is a promise of a date. Suggestions and votes:
+[Discussions](https://github.com/brunobola-portfolio/t3code-session-manager/discussions/categories/ideas). What already works: the **Works with** table in the
 [README](README.md#works-with) and [docs/harnesses.md](docs/harnesses.md).
 
 Status words: **in progress** (being built now), **planned** (agreed, not started), **needs design**, **depends on
@@ -38,7 +39,7 @@ notifications, the `/t3sm` commands inside T3 Code, and no longer refusing an un
 | Smaller modules | The largest modules (`apply`, `importer`, `merge`, `rollback`, `doctor`) are about 700 lines each, which makes review slow | Split them by step without changing behaviour; the existing tests must pass unchanged | planned |
 | Export and backup | Imported threads live only in T3 Code; there is no copy you can keep | `t3sm export` reads threads through T3 Code's API and writes a portable copy in a folder you choose | needs design |
 | Review page | Deciding many changes at once is easier on a page than in a terminal list | `t3sm review`: a local page for bulk decisions, built on the organize plan | needs design |
-| AI titles | Some titles stay technical when the transcript has no usable first message | Optional titles from T3 Code's own `thread.regenerateTitle`, off by default, with the cost stated | needs design |
+| Titles written by T3 Code | Some imported titles stay technical (a command, a path, a pasted log) when the transcript has no usable first message | Opt-in, at import and in `organize`: T3 Code rewrites the title with its own text model (`thread.metadata.update` with `regenerateTitle`, the surface t3sm already uses). Only technical titles, a cap per run, the count and the model shown before anything runs, undone like any organize title, never in unattended sync | planned |
 | Origin tags | T3 Code cannot filter by where a conversation came from | `thread.tag.set` with `vscode`, `cli`, `codex` or the account, once T3 Code filters by tag | depends on T3 Code |
 | `/t3sm` for other agents | The in-T3 commands exist only for Claude Code | The same commands for Codex and other agents T3 Code supports, once they have a command format | depends on T3 Code |
 | Installers | Installing needs Node.js and an `npx` or `npm install -g` line | A winget package for Windows and a Homebrew formula for macOS and Linux | planned |

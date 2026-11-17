@@ -639,7 +639,8 @@ and, once you are sure you do not need them, the quarantine folders
 
 ## Contributing
 
-Issues and pull requests are welcome; start with [CONTRIBUTING.md](CONTRIBUTING.md).
+Questions, ideas and how it went for you: [Discussions](https://github.com/brunobola-portfolio/t3code-session-manager/discussions). Issues and pull requests are welcome; start with
+[CONTRIBUTING.md](CONTRIBUTING.md).
 Adding an agent is a self-contained task: [docs/adding-a-harness.md](docs/adding-a-harness.md).
 To check a release live on your own machine, step by step: [docs/testing-0.3.md](docs/testing-0.3.md).
 Security reports: [SECURITY.md](SECURITY.md).
