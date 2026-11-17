@@ -34,34 +34,36 @@
 // latestUserMessageAt is newer than the baseline file's mtime) but no record after the baseline carries "t3-code",
 // T3's marker may have changed: `no-t3-marker`, never merged. Sessions t3sm did not import have no baseline: never
 // candidates.
+//
+// Next to it: mergeBranch.ts (reading the branch), mergeCache.ts (verdicts and pending counts) and revision.ts (the
+// write, import and swap steps merge shares with follow).
 
-import { createReadStream } from "node:fs";
-import { link, mkdir, open, readFile, rm, unlink, utimes } from "node:fs/promises";
-import { createHash } from "node:crypto";
+import { rm, utimes } from "node:fs/promises";
 import path from "node:path";
 import type { Config, HarnessId, JournalEntry, PlanItem } from "../core/types.ts";
 import type { Journal } from "../core/journal.ts";
 import { effectiveWrites, importedIndex, near } from "../core/journal.ts";
-import { revisionUuid, uuidV5 } from "../core/uuid.ts";
-import { MoveRefused, atomicWrite, publishNoClobber, sha256File, statSafe, sweepWriteTemps, writeTempPath, type LinkFs } from "../core/fsutil.ts";
+import { revisionUuid } from "../core/uuid.ts";
+import { sha256File, statSafe, type LinkFs } from "../core/fsutil.ts";
 import { pathKey } from "../core/paths.ts";
-import { DEFAULT_BATCH } from "../core/config.ts";
 import { isActive } from "../core/activity.ts";
 import type { T3Api, T3Project, T3Thread } from "../t3/api.ts";
-import { exposureOf, liveExposure } from "../apply/apply.ts";
-import { runWaves, type BumpFile } from "../apply/importer.ts";
-import { buildWaves, rootKey } from "../apply/waves.ts";
+import type { BumpFile } from "../apply/restore.ts";
 import { WRITTEN_MAX_AGE_MS, writtenMtime } from "../apply/materialize.ts";
-import { JournalWriteError } from "./quarantine.ts";
+import { firstLineLength, readBranch, type BranchProblem, type TranscriptBranch } from "./mergeBranch.ts";
+import { readCache, writeCache, type Verdict } from "./mergeCache.ts";
+import { appendOrStop, importRevision, prepareRevision, publishRevision, removeIfOurs, swapThreads, sweepStaleTemps, type PreparedRevision } from "./revision.ts";
 
+export { readBranch, type BranchNode, type BranchProblem, type TranscriptBranch } from "./mergeBranch.ts";
+export { readMergePending, setMergePending, type MergePending } from "./mergeCache.ts";
+export {
+  appendOrStop, importRevision, prepareRevision, provenanceText, publishRevision, removeIfOurs, swapThreads, sweepStaleTemps,
+  type PreparedRevision, type RevisionImportCtx, type RevisionImportOutcome,
+} from "./revision.ts";
 export { revisionUuid };
 
 /** sync merges at most this many sessions per cycle. */
 export const MERGES_PER_CYCLE = 20;
-const T3_ENTRYPOINT = "t3-code";
-
-// unsettled: an unreadable line after the chain (a record being written, or a torn tail): skipped this run, like active.
-export type BranchProblem = "broken-chain" | "corrupt-lines" | "compacted" | "unsettled";
 
 export type MergeSkipReason =
   | BranchProblem
@@ -87,282 +89,6 @@ export type MergeSkipReason =
 export const DEFERRED_REASONS: ReadonlySet<MergeSkipReason> = new Set(["project-in-use", "over-cap", "clock-jump", "file-busy", "aborted"]);
 /** Failures worth an exit code 5. */
 export const FAILED_REASONS: ReadonlySet<MergeSkipReason> = new Set(["copy-failed", "import-failed", "import-unverified", "archive-failed"]);
-
-// ---------------- reading the branch ----------------
-
-export interface BranchNode {
-  uuid: string; parent: string | null; type: string;
-  /** A message the user sees: user/assistant, not isMeta / isCompactSummary / isVisibleInTranscriptOnly. */
-  visible: boolean;
-  /** A compaction boundary (`compact_boundary`, or `logicalParentUuid` set). */
-  compact: boolean;
-  entrypoint: string | null;
-  /** Byte offset and length (newline included) of the record's line in the source. */
-  offset: number; length: number;
-  timestamp: string | null; cwd: string | null;
-}
-
-export interface TranscriptBranch {
-  /** The record `claude --resume` continues from (null: no record with a uuid). */
-  leaf: string | null;
-  leafSource: "last-prompt" | "file-order" | null;
-  /** Root -> leaf. */
-  chain: BranchNode[];
-  /** Why no revision may be written from this chain (null: it is whole). */
-  problem: BranchProblem | null;
-  /** Visible messages on the chain after the baseline whose entrypoint is a string other than "t3-code" (R1). */
-  addedMessages: number;
-  /** A record after the baseline carries entrypoint "t3-code". */
-  t3MarkerAfter: boolean;
-  /** Other leaves whose branch holds visible messages that are not on the chain (orphaned for T3 and the CLI alike). */
-  divergedLeaves: number;
-  /** Of those, the ones holding terminal work after the baseline (a visible message from an entrypoint other than T3). */
-  orphanedTerminal: number;
-  /** Newest timestamp on the chain. */
-  lastActivity: string | null;
-  corruptLines: number;
-}
-
-interface Line { offset: number; buf: Buffer }
-
-/** Every line of a file with its byte offset, streamed (a line is held only while it is yielded). */
-async function* fileLines(file: string): AsyncGenerator<Line> {
-  const s = createReadStream(file, { highWaterMark: 1 << 20 });
-  let pending: Buffer[] = [];
-  let pendingLen = 0;
-  let start = 0;
-  for await (const chunk of s as AsyncIterable<Buffer>) {
-    let from = 0;
-    for (;;) {
-      const nl = chunk.indexOf(0x0a, from);
-      if (nl === -1) {
-        if (from < chunk.length) { pending.push(chunk.subarray(from)); pendingLen += chunk.length - from; }
-        break;
-      }
-      const part = chunk.subarray(from, nl + 1);
-      const buf = pendingLen > 0 ? Buffer.concat([...pending, part]) : part;
-      yield { offset: start, buf };
-      start += buf.length;
-      pending = [];
-      pendingLen = 0;
-      from = nl + 1;
-    }
-  }
-  if (pendingLen > 0) yield { offset: start, buf: Buffer.concat(pending) };
-}
-
-function parseLine(buf: Buffer, offset: number): Record<string, unknown> | null {
-  let text = buf.toString("utf8");
-  if (offset === 0 && text.charCodeAt(0) === 0xfeff) text = text.slice(1);
-  text = text.replace(/\r?\n$/, "");
-  if (text.trim() === "") return null;
-  try {
-    const v: unknown = JSON.parse(text);
-    return typeof v === "object" && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * The branch `claude --resume` would continue (S3 §6), whether it can be copied whole, and the positive evidence of
- * terminal work on it after `importedSize` (the baseline: the transcript's size when t3sm imported or last merged it).
- */
-export async function readBranch(file: string, opts: { importedSize?: number | null } = {}): Promise<TranscriptBranch> {
-  const nodes = new Map<string, BranchNode>();
-  const lastPrompts: string[] = [];
-  const corruptAt: number[] = [];
-  let lastNode: string | null = null;
-  let t3MarkerAfter = false;
-  const baseline = opts.importedSize ?? 0;
-  for await (const { offset, buf } of fileLines(file)) {
-    const o = parseLine(buf, offset);
-    if (o === null) {
-      if (buf.toString("utf8").trim() !== "") corruptAt.push(offset);
-      continue;
-    }
-    if (offset >= baseline && o.entrypoint === T3_ENTRYPOINT) t3MarkerAfter = true;
-    if (o.type === "last-prompt") {
-      if (typeof o.leafUuid === "string" && o.leafUuid !== "") lastPrompts.push(o.leafUuid);
-      continue; // never a node
-    }
-    if (typeof o.uuid !== "string" || o.uuid === "" || o.isSidechain === true) continue;
-    if (!nodes.has(o.uuid)) {
-      const type = typeof o.type === "string" ? o.type : "";
-      nodes.set(o.uuid, {
-        uuid: o.uuid, parent: typeof o.parentUuid === "string" && o.parentUuid !== "" ? o.parentUuid : null, type,
-        visible: (type === "user" || type === "assistant") && o.isMeta !== true && o.isCompactSummary !== true && o.isVisibleInTranscriptOnly !== true,
-        compact: o.subtype === "compact_boundary" || (typeof o.logicalParentUuid === "string" && o.logicalParentUuid !== ""),
-        entrypoint: typeof o.entrypoint === "string" ? o.entrypoint : null,
-        offset, length: buf.length,
-        timestamp: typeof o.timestamp === "string" ? o.timestamp : null, cwd: typeof o.cwd === "string" ? o.cwd : null,
-      });
-    }
-    lastNode = o.uuid;
-  }
-
-  const res: TranscriptBranch = {
-    leaf: null, leafSource: null, chain: [], problem: null, addedMessages: 0, t3MarkerAfter, divergedLeaves: 0, orphanedTerminal: 0, lastActivity: null,
-    corruptLines: corruptAt.length,
-  };
-  // The newest last-prompt whose leafUuid resolves wins; an unresolvable newer one does not hide an older valid one.
-  let fromPrompt: string | null = null;
-  for (let i = lastPrompts.length - 1; i >= 0 && fromPrompt === null; i--) if (nodes.has(lastPrompts[i]!)) fromPrompt = lastPrompts[i]!;
-  const leaf = fromPrompt ?? lastNode;
-  if (leaf === null) return res;
-  res.leaf = leaf;
-  res.leafSource = fromPrompt !== null ? "last-prompt" : "file-order";
-
-  const chain: BranchNode[] = [];
-  const seen = new Set<string>();
-  let id: string | null = leaf;
-  while (id !== null) {
-    if (seen.has(id)) { res.problem = "broken-chain"; break; } // cycle
-    const n = nodes.get(id);
-    if (!n) { res.problem = "broken-chain"; break; } // a parent that is not in the file
-    seen.add(id);
-    chain.push(n);
-    id = n.parent;
-  }
-  res.chain = chain.reverse();
-  if (res.problem === null && res.chain.some((n) => n.compact)) res.problem = "compacted";
-  if (res.problem === null && corruptAt.length > 0) {
-    const lo = Math.min(...res.chain.map((n) => n.offset));
-    const hi = Math.max(...res.chain.map((n) => n.offset + n.length));
-    if (corruptAt.some((o) => o >= lo && o < hi)) res.problem = "corrupt-lines";
-    else if (corruptAt.some((o) => o >= hi)) res.problem = "unsettled";
-  }
-  const onChain = new Set(res.chain.map((n) => n.uuid));
-  res.addedMessages = res.chain.filter((n) => n.visible && n.offset >= baseline && n.entrypoint !== null && n.entrypoint !== T3_ENTRYPOINT).length;
-  for (let i = res.chain.length - 1; i >= 0 && res.lastActivity === null; i--) res.lastActivity = res.chain[i]!.timestamp;
-
-  // Other leaves: report the ones whose own segment (up to the chain or an already walked node) holds messages.
-  const parents = new Set<string>();
-  for (const n of nodes.values()) if (n.parent !== null) parents.add(n.parent);
-  const walked = new Set<string>(onChain);
-  for (const n of nodes.values()) {
-    if (parents.has(n.uuid) || n.uuid === leaf) continue;
-    let msg = false;
-    let terminal = false;
-    for (let x: BranchNode | undefined = n; x && !walked.has(x.uuid); x = x.parent !== null ? nodes.get(x.parent) : undefined) {
-      walked.add(x.uuid);
-      if (x.visible) msg = true;
-      if (x.visible && x.offset >= baseline && x.entrypoint !== null && x.entrypoint !== T3_ENTRYPOINT) terminal = true;
-    }
-    if (msg) res.divergedLeaves++;
-    if (terminal) res.orphanedTerminal++;
-  }
-  return res;
-}
-
-// ---------------- verdict cache ----------------
-
-type Verdict = Pick<TranscriptBranch, "problem" | "addedMessages" | "t3MarkerAfter" | "divergedLeaves" | "orphanedTerminal" | "lastActivity"> & { empty: boolean };
-/** count: mergeable now; orphaned: sessions whose only terminal work sits on a side branch (never merged). */
-export interface MergePending { count: number; orphaned: number; at: string }
-interface CacheFile { version: 2; verdicts: Record<string, Verdict>; pending?: MergePending }
-
-const cachePath = (stateDir: string): string => path.join(stateDir, "cache", "merge.json");
-
-async function readCache(stateDir: string | undefined): Promise<CacheFile> {
-  if (!stateDir) return { version: 2, verdicts: {} };
-  try {
-    const u = JSON.parse(await readFile(cachePath(stateDir), "utf8")) as CacheFile;
-    if (u && u.version === 2 && typeof u.verdicts === "object" && u.verdicts !== null) return u;
-  } catch { /* missing or unreadable: start over */ }
-  return { version: 2, verdicts: {} };
-}
-
-async function writeCache(stateDir: string | undefined, c: CacheFile): Promise<void> {
-  if (!stateDir) return;
-  try {
-    await mkdir(path.dirname(cachePath(stateDir)), { recursive: true });
-    await atomicWrite(cachePath(stateDir), JSON.stringify(c) + "\n");
-  } catch { /* a cache is never worth failing a merge */ }
-}
-
-/** Sessions continued in a terminal and mergeable, as last counted by sync or `t3sm merge` (null: never counted). */
-export async function readMergePending(stateDir: string): Promise<MergePending | null> {
-  const c = await readCache(stateDir);
-  return c.pending && typeof c.pending.count === "number" ? { ...c.pending, orphaned: c.pending.orphaned ?? 0 } : null;
-}
-
-/** Records the pending counts (orphaned kept when omitted). */
-export async function setMergePending(stateDir: string | undefined, count: number, at: Date, orphaned?: number): Promise<void> {
-  if (!stateDir) return;
-  const c = await readCache(stateDir);
-  const next = { count, orphaned: orphaned ?? c.pending?.orphaned ?? 0 };
-  if (c.pending?.count !== next.count || c.pending?.orphaned !== next.orphaned) { c.pending = { ...next, at: at.toISOString() }; await writeCache(stateDir, c); }
-}
-
-// ---------------- writing the revision ----------------
-
-export interface PreparedRevision { tmp: string; sha256: string; size: number; firstLineBytes: number }
-
-export function provenanceText(nativeId: string, at: Date): string {
-  return `Merged revision of session ${nativeId} on ${at.toISOString()} by t3code-session-manager.`;
-}
-
-/**
- * Writes the revision to a temp file next to the source (`.<revisionUuid>.<pid>.<rand>.tmp`, not a `.jsonl`, so no
- * scanner takes it): the provenance record, then the chain root->leaf read back by offset. Same input, same bytes.
- * `at` is the date in the provenance text (executeMerges passes the source's mtime).
- */
-export async function prepareRevision(
-  source: string, branch: TranscriptBranch, o: { nativeId: string; revisionUuid: string; at: Date; cwd?: string | null },
-): Promise<PreparedRevision> {
-  if (branch.chain.length === 0) throw new Error("the transcript has no record with a uuid");
-  if (branch.problem !== null) throw new Error(`refusing to write a revision from a ${branch.problem} transcript`);
-  const rev = o.revisionUuid;
-  const provUuid = uuidV5(`rev-provenance:${rev}`);
-  const cwd = o.cwd ?? branch.chain.find((n) => n.cwd !== null)?.cwd ?? null;
-  const ts = branch.chain.find((n) => n.timestamp !== null)?.timestamp ?? o.at.toISOString();
-  const prov: Record<string, unknown> = {
-    parentUuid: null, type: "user", isMeta: true, message: { role: "user", content: provenanceText(o.nativeId, o.at) },
-    uuid: provUuid, timestamp: ts,
-  };
-  if (cwd !== null) prov.cwd = cwd;
-  prov.sessionId = rev;
-  const first = JSON.stringify(prov) + "\n";
-
-  const tmp = writeTempPath(path.dirname(source), rev);
-  const hash = createHash("sha256");
-  let size = 0;
-  const src = await open(source, "r");
-  try {
-    const out = await open(tmp, "wx");
-    try {
-      const put = async (s: string): Promise<void> => {
-        const b = Buffer.from(s, "utf8");
-        hash.update(b);
-        size += b.length;
-        await out.write(b);
-      };
-      await put(first);
-      for (const [i, n] of branch.chain.entries()) {
-        const buf = Buffer.alloc(n.length);
-        const { bytesRead } = await src.read(buf, 0, n.length, n.offset);
-        const rec = parseLine(buf.subarray(0, bytesRead), n.offset);
-        if (rec === null || rec.uuid !== n.uuid) throw new Error(`${source} changed while the revision was written`);
-        rec.sessionId = rev;
-        if (i === 0) rec.parentUuid = provUuid;
-        await put(JSON.stringify(rec) + "\n");
-      }
-      await out.sync();
-    } finally {
-      await out.close();
-    }
-  } catch (e) {
-    await rm(tmp, { force: true }).catch(() => {});
-    throw e;
-  } finally {
-    await src.close();
-  }
-  return { tmp, sha256: hash.digest("hex"), size, firstLineBytes: Buffer.byteLength(first) };
-}
-
-/** Removes revision temp files (`.<rev>.<pid>.<rand>.tmp`) left in `dir` by a t3sm process that is gone. */
-export const sweepStaleTemps = sweepWriteTemps;
 
 // ---------------- candidates ----------------
 
@@ -568,133 +294,6 @@ export async function findMergeCandidates(items: PlanItem[], deps: MergeDeps): P
 
 // ---------------- merging ----------------
 
-/** Removes a file while it is still exactly what t3sm wrote. */
-export async function removeIfOurs(file: string, sha: string): Promise<boolean> {
-  try {
-    if ((await sha256File(file)) !== sha) return false;
-    await rm(file, { force: true });
-    return true;
-  } catch {
-    return false; // gone, or unreadable: left as it is
-  }
-}
-
-type WrittenExtra = Pick<WrittenEntry, "revisionOf" | "source" | "rehomeOf">;
-
-/**
- * The revision write (merge, and follow: src/ops/follow.ts). `tmp` (next to `target`, not a .jsonl) is journaled as
- * `file-written` BEFORE it is published, then published without clobbering (link + unlink only: never replaces a file at
- * the target, never falls back to rename) and given `mtimeMs`. Not published: the temp is removed and the write is
- * cancelled with `file-write-aborted`, so the journal never claims a file t3sm did not write.
- */
-export async function publishRevision(o: {
-  tmp: string; target: string; sha256: string; mtimeMs: number; journal: Journal; runId: string; entry: WrittenExtra; linkFs?: LinkFs;
-}): Promise<"published" | "target-exists" | "copy-failed"> {
-  await o.journal.append({ t: "file-written", runId: o.runId, path: o.target, sha256: o.sha256, mtimeMs: o.mtimeMs, ...o.entry });
-  try {
-    await publishNoClobber(o.tmp, o.target, o.linkFs ?? { link, unlink });
-  } catch (e) {
-    await rm(o.tmp, { force: true }).catch(() => {});
-    await o.journal.append({ t: "file-write-aborted", runId: o.runId, path: o.target });
-    return e instanceof MoveRefused && e.code === "EEXIST" ? "target-exists" : "copy-failed";
-  }
-  await utimes(o.target, o.mtimeMs / 1000, o.mtimeMs / 1000);
-  return "published";
-}
-
-export interface RevisionImportCtx {
-  api: T3Api; journal: Journal; runId: string; now: () => number; platform: NodeJS.Platform;
-  projectId: string; projectRoot: string;
-  /** T3's provider instances (read once per run by the caller). */
-  providers: Awaited<ReturnType<T3Api["providerInstances"]>>;
-  /** Every discovered session T3 could import while the revision imports (exposure). */
-  exposureItems: PlanItem[];
-  accountHomes?: Record<string, string>;
-  batch?: Config["batch"];
-  aborted?: () => boolean;
-  onPendingFiles?: (files: BumpFile[] | null) => void;
-  /** The api runWaves talks to (default `api`); follow's refresh mode passes a view of it. */
-  wavesApi?: T3Api;
-}
-
-/** What importRevision did: imported (in T3's thread list), unverified (T3 may have it), or why it was not imported. */
-export type RevisionImportOutcome = "imported" | "import-unverified" | "project-in-use" | "clock-jump" | "file-busy" | "copy-failed" | "active" | "import-failed" | "aborted";
-
-/**
- * The import step (merge and follow): one item through runWaves (bump / park / restore, exposure, held projects), alone
- * in its project's wave. The file is never removed here: the caller removes it (removeIfOurs) when it was not imported.
- */
-export async function importRevision(item: PlanItem, o: RevisionImportCtx): Promise<RevisionImportOutcome> {
-  const batch = o.batch ?? DEFAULT_BATCH;
-  const cost = (x: PlanItem): number => x.session.cwdOffsetBytes;
-  const homes = o.accountHomes ?? {};
-  const provs = o.providers;
-  const waves = await runWaves({
-    api: o.wavesApi ?? o.api, journal: o.journal, runId: o.runId, now: o.now, platform: o.platform, batch, cost,
-    projectIds: new Map([[o.projectRoot, o.projectId]]),
-    importRoots: new Map([[rootKey(o.projectRoot, o.platform), o.projectRoot]]),
-    instanceAvailability: new Map(provs.map((p) => [p.instanceId, p.availability] as const)),
-    exposure: exposureOf(o.exposureItems, provs, o.platform),
-    liveExposure: liveExposure(() => provs, o.platform, undefined, { accountHome: (id) => (Object.hasOwn(homes, id) ? homes[id] : undefined) }),
-    aborted: o.aborted,
-    onPendingFiles: o.onPendingFiles,
-    onProgress: () => {},
-  }, buildWaves([item], batch, cost, { platform: o.platform }));
-  if (waves.imported.includes(item)) return "imported";
-  if (waves.unverified.includes(item)) return "import-unverified"; // T3 may have it: the caller keeps the file
-  const deferred = waves.deferred.find((d) => d.item === item);
-  if (deferred) {
-    return deferred.reason === "project-in-use" || deferred.reason === "clock-jump" || deferred.reason === "file-busy" ? deferred.reason : deferred.reason === "missing" ? "copy-failed" : "active";
-  }
-  if (waves.failed.some((f) => f.item === item)) return "import-failed";
-  return "aborted";
-}
-
-/**
- * The archive step (merge and follow): only once the new thread is confirmed in T3's thread list (read once more right
- * before the old thread is touched). A rolled-back earlier swap left the new thread archived: unarchived first
- * (journaled), so the session always keeps one active thread. `beforeArchive` (follow: carry the old thread's title and
- * settled state) runs on the fresh new thread; its errors propagate. Then the old thread is archived and journaled
- * `thread-archived`. The caller journals what the swap was for (`merged`).
- */
-export async function swapThreads(o: {
-  api: T3Api; journal: Journal; runId: string; oldThreadId: string; newThreadId: string;
-  /** false: do not archive the old thread (follow: the copy changed meanwhile); the new thread is left as it is. */
-  beforeArchive?: (fresh: T3Thread) => Promise<boolean | void>;
-}): Promise<"swapped" | "import-unverified" | "archive-failed" | "cancelled"> {
-  const listed = await o.api.listThreads().catch(() => null);
-  const fresh = listed?.find((t) => t.id === o.newThreadId);
-  if (!fresh) return "import-unverified";
-  if (fresh.archived) {
-    try {
-      await o.api.unarchiveThread(o.newThreadId);
-    } catch {
-      return "archive-failed";
-    }
-    await appendOrStop(o.journal, { t: "thread-unarchived", runId: o.runId, threadId: o.newThreadId }, `the unarchive of ${o.newThreadId}`);
-  }
-  if (o.beforeArchive && (await o.beforeArchive({ ...fresh, archived: false })) === false) return "cancelled";
-  try {
-    await o.api.archiveThread(o.oldThreadId);
-  } catch {
-    return "archive-failed";
-  }
-  await appendOrStop(o.journal, { t: "thread-archived", runId: o.runId, threadId: o.oldThreadId }, `the archive of ${o.oldThreadId}`);
-  return "swapped";
-}
-
-/**
- * Journals a change T3 Code already holds. A failure is a JournalWriteError: the run stops (merge, follow and sync
- * never go on with T3 holding a change the journal did not hear of, which no rollback could undo).
- */
-export async function appendOrStop(j: Journal, e: JournalEntry, what: string): Promise<void> {
-  try {
-    await j.append(e);
-  } catch (err) {
-    throw new JournalWriteError(`Could not write the journal (${err instanceof Error ? err.message : String(err)}) after T3 Code accepted ${what}; stopped.`);
-  }
-}
-
 /** Writes, imports and swaps the threads of each candidate, one at a time (see the header for the order). */
 export async function executeMerges(candidates: MergeCandidate[], deps: MergeDeps): Promise<MergeResult> {
   const now = deps.now ?? Date.now;
@@ -822,9 +421,4 @@ export async function executeMerges(candidates: MergeCandidate[], deps: MergeDep
     skip(outcome);
   }
   return res;
-}
-
-async function firstLineLength(file: string): Promise<number> {
-  for await (const { buf } of fileLines(file)) return buf.length;
-  return 0;
 }

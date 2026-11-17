@@ -51,7 +51,9 @@ import { scanJsonl } from "../sources/jsonl.ts";
 import { proposeTitle } from "../organize/titles.ts";
 import { failureText } from "../organize/apply.ts";
 import { JournalWriteError } from "./quarantine.ts";
-import { IMPORT_THREAD, appendOrStop, importRevision, publishRevision, readBranch, removeIfOurs, standingMerges, swapThreads, type RevisionImportOutcome } from "./merge.ts";
+import { IMPORT_THREAD, standingMerges } from "./merge.ts";
+import { readBranch } from "./mergeBranch.ts";
+import { appendOrStop, importRevision, publishRevision, removeIfOurs, swapThreads, type RevisionImportOutcome } from "./revision.ts";
 
 /** sync follows at most this many rehome copies per cycle (each one is a wave of its own). */
 export const FOLLOWS_PER_CYCLE = 10;
