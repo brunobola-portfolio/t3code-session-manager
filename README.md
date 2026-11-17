@@ -332,6 +332,7 @@ uses only the commands T3 Code offers for this, and every part is optional.
 | :-- | :-- | :-: |
 | Automated sessions | Archives the ones started by scripts (Agent SDK), and those of a project t3sm created in a temp or system folder | on |
 | Titles | Replaces a title that is a technical first message (`<command-name>`, `<ide_…>`) with a readable one, at most 80 characters | on |
+| Titles written by T3 Code | With `--ai-titles`: T3 Code writes, with its own text model, the titles that stay technical (no usable first message). It spends your provider's tokens; the summary says how many, the model and the cap first (`--ai-titles-max`, 50 per run). Never in `t3sm sync` | off |
 | History in projects | The [history rule](#the-history-rule): the last 90 days shown inside each project, at least 10 per project, the rest settled. T3 Code's own auto-settle setting is **not** changed unless you ask | 90 days, at least 10 |
 | Pin | Pins the 5 projects with the most recent activity, and unpins the ones t3sm pinned that are no longer among them | on |
 | Empty projects | Deletes empty projects that t3sm created | on |
@@ -349,7 +350,8 @@ interactive screen), `--no-pin <ids>`, `--no-delete`, `--no-archive-folders` (le
 conversations of projects t3sm created in temporary or system folders unarchived), `--history <days|all|off>` and
 `--min <n>` (the history rule for this run only), and `--auto-settle <1..90|off>` if you also want T3 Code's own
 option for the conversations you start there set to that many days, or off (recorded, and undone by `--undo`).
-The defaults and the `config.json` keys are in
+`--ai-titles` (with `--ai-titles-max <n>`) asks T3 Code for the titles that stay technical; `t3sm help ai-titles`
+explains it. The defaults and the `config.json` keys are in
 [docs/configuration.md](docs/configuration.md#organize). The guided set-up (`t3sm start`)
 asks the same questions, one at a time, with your real numbers.
 
@@ -454,7 +456,7 @@ Every change is journaled and undoable.
 | `t3sm journal compact` | Makes `journal.jsonl` smaller: drops the file-time entries of runs that ended more than 90 days ago (`--older-than <days>`) and had nothing pending, keeps the old journal as a backup next to it. `runs`, `rollback`, `organize --undo` and recovery see the same history. Asks first; `--dry-run` |
 | `t3sm accounts` | Accounts found and their T3 Code instances |
 | `t3sm projects` | Every project folder with its account and why; `projects set "<folder>" <account>` changes it (a route, and the T3 Code project's default, reversible); `projects unset` removes the route; `projects rename --suggest` proposes clean names for the projects t3sm created (before -> after, asks first, undone by `organize --undo`) |
-| `t3sm organize` | Tidies imported history in T3 Code ([above](#organize-your-history)); `--dry-run`, `--undo`, `--only`, `--plain` |
+| `t3sm organize` | Tidies imported history in T3 Code ([above](#organize-your-history)); `--dry-run`, `--undo`, `--only`, `--plain`, `--ai-titles` |
 | `t3sm status` | Says whether t3sm needs you, and what to run. Read-only; exit 10 when it needs you; `--json` |
 | `t3sm start` | The guided assistant (also plain `t3sm` on a terminal) |
 | `t3sm schedule` | `install [--watch]`, `remove`, `restart` (stops and starts the watcher safely), `status`; the writing ones ask, or take `--yes`, and have `--dry-run` |

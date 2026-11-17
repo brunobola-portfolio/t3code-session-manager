@@ -49,6 +49,10 @@ the rules below (read-only form first, then a question, then the write only afte
   `--history <days|all|off>` and `--min <n>` (the history rule for this run only: the last
   1-3650 days, and at least 0-1000 chats per project) and `--auto-settle <1..90|off>` (changes
   T3 Code's own auto-settle setting); keep the ones of the dry run when you run it with `--yes`.
+  `--ai-titles` (with `--ai-titles-max <n>`, 1-500, default 50) also asks T3 Code to write the titles
+  that stay technical with its own text model: it spends the user's provider tokens. Add it only when
+  the user asks for it, and show the dry run's line (how many, the model, the cap) before the yes.
+  `--no-ai-titles` skips it for one run when `organize.aiTitles.enabled` is on.
 - `/t3sm:import`: `t3sm plan` and `t3sm apply --dry-run`, then `t3sm apply --yes`.
 
 For `/t3sm:sync` and `/t3sm:import`, the conversation running them is "in use", so t3sm skips
@@ -66,7 +70,7 @@ conversation a new title or show it inside its project.
 These commands change files or T3 Code: `apply`, `dedupe`, `quarantine`, `merge --all`,
 `merge --session <id>`, `recover <session id>`, `rollback`, `accounts --apply`, `accounts --rename`,
 `accounts --init`, `schedule install`, `schedule remove`, `schedule restart`, `sync` (without `--dry-run`),
-`organize`, `organize --undo`, `projects rename --suggest`, `projects set`, `projects unset`,
+`organize` (with or without `--ai-titles`), `organize --undo`, `projects rename --suggest`, `projects set`, `projects unset`,
 `doctor --repair`, `journal compact` (it rewrites t3sm's journal, keeping a backup) and `update` without `--check` or
 `--dry-run` (it reinstalls t3sm itself with npm;
 also `update --from <folder>`, `update --source npm` and `update --source github`), and `update --auto on|off` (a preference switch in config.json, like `projects unset`: it needs no `--yes`,
@@ -86,7 +90,7 @@ but still ask first).
 
 Read-only, safe to run without asking: `doctor`, `scan`, `stats` (or `stats --json`), `plan` (or `plan --html`), `apply --dry-run`,
 `accounts` (no option; emails are masked, do not add `--show-emails` unless asked), `runs`, `status` (or `status --json`), `merge` (no option) or `merge --dry-run`, `recover <session id> --dry-run`, `sync --dry-run`,
-`organize --dry-run`, `organize --undo --dry-run`, `projects` (no option),
+`organize --dry-run` (also with `--ai-titles`: a dry run asks T3 Code for nothing), `organize --undo --dry-run`, `projects` (no option),
 `projects rename --suggest --dry-run`, `journal compact --dry-run`, `schedule status`, `schedule install|remove|restart --dry-run`, `update --check`, `update --dry-run`, `changelog`
 (or `changelog --since <version>`), `help` (or `help <topic>`: what a message means and what to do, in the user's
 language), every `--help`. `update --check` and `update --dry-run` look up

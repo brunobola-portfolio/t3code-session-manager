@@ -15,7 +15,10 @@ first, write only after a yes.
    Always run t3sm with `CLAUDE_CONFIG_DIR` removed, as above: t3sm reads every Claude account itself. If `t3sm` is not installed, use the pinned release described in the `t3code-sessions` skill instead. Exit code 3
    means T3 Code is not running: ask the user to open it from the Start menu or their launcher.
 2. Summarise the preview in plain words: one line per kind of change (how many, why), and the projects whose
-   sidebar changes most. Say that every change is journaled and can be undone.
+   sidebar changes most. Say that every change is journaled and can be undone. If the user asked for titles written
+   by T3 Code (`--ai-titles`, with `--ai-titles-max <n>`), the preview has a line saying how many titles T3 Code
+   would write, with which model, and the cap: repeat it, and say plainly that it spends the user's provider tokens.
+   Never add `--ai-titles` unless the user asked for it.
 3. Say what this means for the conversation you are in. Organize has no "in use" hold (that applies to import and
    sync): it may give this conversation a new title or show it inside its project, like any other imported
    conversation. If the preview lists it, say so before asking.

@@ -313,6 +313,7 @@ que o T3 Code oferece para isto, e cada parte é opcional.
 | :-- | :-- | :-: |
 | Sessões automáticas | Arquiva as começadas por scripts (Agent SDK), e as de um projeto que o t3sm criou numa pasta temporária ou do sistema | ligado |
 | Títulos | Troca um título que é uma primeira mensagem técnica (`<command-name>`, `<ide_…>`) por um legível, com no máximo 80 carateres | ligado |
+| Títulos escritos pelo T3 Code | Com `--ai-titles`: o T3 Code escreve, com o seu próprio modelo de texto, os títulos que continuam técnicos (sem primeira mensagem utilizável). Gasta tokens do teu fornecedor; o resumo diz primeiro quantos, o modelo e o limite (`--ai-titles-max`, 50 por execução). Nunca no `t3sm sync` | desligado |
 | Histórico nos projetos | A [regra do histórico](#a-regra-do-histórico): os últimos 90 dias à vista dentro de cada projeto, pelo menos 10 por projeto, o resto em Settled. A passagem automática para Settled do T3 Code **não** muda, a não ser que peças | 90 dias, pelo menos 10 |
 | Fixar | Fixa os 5 projetos com atividade mais recente, e deixa de fixar os que o t3sm fixou e já não estão entre eles | ligado |
 | Projetos vazios | Apaga os projetos vazios que o t3sm criou | ligado |
@@ -328,7 +329,9 @@ uma lista onde podes desmarcar uma a uma. Opções: `--only "<pasta>"` (um proje
 texto, sem ecrã interativo), `--no-pin <ids>`, `--no-delete`, `--no-archive-folders` (não arquiva as conversas dos
 projetos que o t3sm criou em pastas temporárias ou de sistema), `--history <dias|all|off>` e `--min <n>` (a regra do
 histórico só para esta execução) e `--auto-settle <1..90|off>`, se também quiseres que a opção do próprio T3 Code para
-as conversas que lá começares fique nesse número de dias, ou desligada (fica registado, e o `--undo` desfaz). Os valores por omissão e
+as conversas que lá começares fique nesse número de dias, ou desligada (fica registado, e o `--undo` desfaz). O
+`--ai-titles` (com `--ai-titles-max <n>`) pede ao T3 Code os títulos que continuam técnicos; o `t3sm help ai-titles`
+explica. Os valores por omissão e
 as chaves do `config.json` estão em [docs/configuration.md](docs/configuration.md#organize) (em inglês). O assistente
 guiado (`t3sm start`) faz as mesmas perguntas, uma de cada vez, com os teus números reais.
 
@@ -421,7 +424,7 @@ desfeita.
 | `t3sm journal compact` | Torna o `journal.jsonl` mais pequeno: retira os registos de datas de ficheiros das execuções que terminaram há mais de 90 dias (`--older-than <dias>`) sem nada pendente, e guarda o journal antigo numa cópia de segurança ao lado. O `runs`, o `rollback`, o `organize --undo` e a recuperação veem a mesma história. Pergunta primeiro; `--dry-run` |
 | `t3sm accounts` | Contas encontradas e as respetivas instâncias no T3 Code |
 | `t3sm projects` | Cada pasta de projeto com a sua conta e porquê; `projects set "<pasta>" <conta>` muda-a (uma rota, e a conta por omissão do projeto no T3 Code, reversível); `projects unset` remove a rota; `projects rename --suggest` propõe nomes limpos para os projetos que o t3sm criou (antes -> depois, pergunta primeiro, desfeito pelo `organize --undo`) |
-| `t3sm organize` | Arruma o histórico importado no T3 Code ([acima](#organizar-o-histórico)); `--dry-run`, `--undo`, `--only`, `--plain` |
+| `t3sm organize` | Arruma o histórico importado no T3 Code ([acima](#organizar-o-histórico)); `--dry-run`, `--undo`, `--only`, `--plain`, `--ai-titles` |
 | `t3sm status` | Diz se o t3sm precisa de ti, e o que correr. Só lê; sai com 10 quando precisa de ti; `--json` |
 | `t3sm start` | O assistente guiado (também `t3sm` sozinho num terminal) |
 | `t3sm schedule` | `install [--watch]`, `remove`, `restart` (para e volta a arrancar o vigilante em segurança), `status`; os que escrevem perguntam, ou aceitam `--yes`, e têm `--dry-run` |

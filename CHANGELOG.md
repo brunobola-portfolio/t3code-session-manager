@@ -6,8 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
-See what you have with `t3sm stats`, open the plan as a page you can filter with `t3sm plan --html`, and make the
-journal smaller with `t3sm journal compact`. Everything new is read-only or asks first, and nothing is sent anywhere.
+See what you have with `t3sm stats`, filter the plan in a browser with `t3sm plan --html`, and let T3 Code
+rewrite technical titles when you ask (`t3sm organize --ai-titles`). `t3sm journal compact` keeps the journal small.
 
 ### Added
 
@@ -15,6 +15,9 @@ journal smaller with `t3sm journal compact`. Everything new is read-only or asks
   imported and converted; read-only, no T3 Code needed, nothing is sent anywhere. `--json` for scripts.
 - **`t3sm plan --html` also writes plan.html.** One file to open in a browser, next to plan.md, with filters by
   project, account, action and skip reason and a search box; it loads nothing from the network.
+- **T3 Code can write the titles that stay technical.** `t3sm organize --ai-titles` first says how many, with which
+  model and the cap per run (`--ai-titles-max`, 50), since it spends your provider's tokens; `--undo` puts the old
+  titles back, and sync never asks. See `t3sm help ai-titles`.
 - **`t3sm journal compact` makes journal.jsonl smaller.** It folds runs that ended more than 90 days ago
   (`--older-than <days>`), never one with anything pending, keeps the old journal as a backup next to it, and asks
   first; `--dry-run` shows how much it saves.

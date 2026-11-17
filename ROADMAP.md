@@ -22,8 +22,11 @@ T3 Code** (blocked on something T3 Code does not offer yet), **help wanted**.
 
 Built, not released yet: `t3sm stats`, a local summary of the sessions per agent, account and month and of what
 was imported (nothing is sent anywhere; t3sm has no telemetry); `t3sm plan --html`, which also writes `plan.html`
-with filters and a search box; and `t3sm journal compact`, which drops the file-time entries of old, finished runs
-and keeps a backup (rollback, undo and recovery see the same history). See the [CHANGELOG](CHANGELOG.md).
+with filters and a search box; `t3sm journal compact`, which drops the file-time entries of old, finished runs and
+keeps a backup (rollback, undo and recovery see the same history); and titles written by T3 Code in
+`t3sm organize --ai-titles` (opt-in, a cap per run, the count and the model shown first, undone like any organize
+title, never in unattended sync; a live check against T3 Code is still due before the release). See the
+[CHANGELOG](CHANGELOG.md).
 
 ## Done in 0.4
 
@@ -45,7 +48,7 @@ notifications, the `/t3sm` commands inside T3 Code, and no longer refusing an un
 | Smaller modules | The largest modules (`apply`, `importer`, `merge`, `rollback`, `doctor`) are about 700 lines each, which makes review slow | Split them by step without changing behaviour; the existing tests must pass unchanged | planned |
 | Export and backup | Imported threads live only in T3 Code; there is no copy you can keep | `t3sm export` reads threads through T3 Code's API and writes a portable copy in a folder you choose | needs design |
 | Review page | Deciding many changes at once is easier on a page than in a terminal list | `t3sm review`: a local page for bulk decisions, built on the organize plan | needs design |
-| Titles written by T3 Code | Some imported titles stay technical (a command, a path, a pasted log) when the transcript has no usable first message | Opt-in, at import and in `organize`: T3 Code rewrites the title with its own text model (`thread.metadata.update` with `regenerateTitle`, the surface t3sm already uses). Only technical titles, a cap per run, the count and the model shown before anything runs, undone like any organize title, never in unattended sync | planned |
+| Titles written by T3 Code at import | `t3sm organize --ai-titles` covers imported titles that stay technical, but only after the import | The same opt-in in `t3sm apply`, with the same rules (a cap per run, the count and the model shown first, never in unattended sync) | planned |
 | Origin tags | T3 Code cannot filter by where a conversation came from | `thread.tag.set` with `vscode`, `cli`, `codex` or the account, once T3 Code filters by tag | depends on T3 Code |
 | `/t3sm` for other agents | The in-T3 commands exist only for Claude Code | The same commands for Codex and other agents T3 Code supports, once they have a command format | depends on T3 Code |
 | Installers | Installing needs Node.js and an `npx` or `npm install -g` line | A winget package for Windows and a Homebrew formula for macOS and Linux | planned |
