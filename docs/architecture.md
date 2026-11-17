@@ -34,7 +34,8 @@ discover → plan → (review) → materialise → register → import in waves 
 5. **Register** (`src/ops/accounts.ts`). T3 Code's default instance is pinned to `~/.claude` when its settings name no
    folder, missing instances are created with `server.updateSettings`, missing projects through T3 Code's API, and
    each new project's default instance is set. Each change is journaled with its previous value.
-6. **Import in waves** (`src/apply/importer.ts`), described below.
+6. **Import in waves** (`src/apply/importer.ts`; next to it `exposure.ts`, `budget.ts` and `restore.ts`), described
+   below.
 7. **Verify.** After each wave the project's threads are listed; every planned session must have its thread
    `import:<instance>:<session id>`. A session T3 Code did not take is retried once in a later wave, then reported
    with a reason. If threads cannot be listed, no further wave starts.

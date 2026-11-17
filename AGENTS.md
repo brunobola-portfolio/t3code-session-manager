@@ -71,10 +71,14 @@ and the other agents' folders from the home folder, so `T3SM_HOME` alone still r
   (`SourceAdapter`, `Env`, adapter errors), `registry.ts`, shared JSONL scanning and discovery cache.
 - `src/plan/`: `planner.ts` (one action per session), `ownership.ts` (which account owns a copy or a project),
   `dedupe.ts` (mirror copies), `report.ts` (`plan.md` and summaries).
-- `src/apply/`: `apply.ts` (orchestration), `importer.ts` (waves: bump, park, scan, import, restore, verify),
-  `waves.ts`, `materialize.ts` and `claudeWriter.ts` (converted transcripts).
-- `src/ops/`: `accounts`, `discoverAccounts`, `doctor`, `merge`, `follow` (rehome copies follow their original),
-  `quarantine` (and dedupe), `rollback`, `sync`,
+- `src/apply/`: `apply.ts` (orchestration; `applyTypes.ts` its deps and result, `checks.ts` the read-only checks,
+  `rehomeFolders.ts`, `projects.ts`, `steps.ts` write-phase helpers), `importer.ts` (waves: bump, park, scan, import,
+  restore, verify; `exposure.ts` what T3 Code could import, `budget.ts` its metadata budget, `restore.ts` putting file
+  times back, `busy.ts`), `waves.ts`, `materialize.ts` and `claudeWriter.ts` (converted transcripts).
+- `src/ops/`: `accounts`, `discoverAccounts`, `doctor` (`doctorCheck` a check and its wording, `doctorChecks`,
+  `doctorDeps`), `merge` (`mergeBranch`, `mergeCache`), `revision` (the write, import and swap steps merge and follow
+  share), `follow` (rehome copies follow their original), `quarantine` (and dedupe), `rollback` (`rollbackTypes`,
+  `rollbackEntries`, `rollbackMerges`, `rollbackInstances`, `rollbackRuns`), `sync`,
   `watch` (the watcher, its single-instance endpoint, token and heartbeat), `watcherControl` (`stopWatcher`: the stop
   request, then a verified pid), `successor` (starting the next watcher), `notify`, `plugin`, `elevated`,
   `watcherHealth` (the watcher's state from its heartbeat: one classification for `status` and `doctor`),
@@ -118,8 +122,8 @@ Each names where it is enforced, then the test that pins it.
 
 1. Journal (fsync'd) before any file-time change; no journal, no change. `src/core/journal.ts` (`Journal`),
    `src/apply/importer.ts` (`runWaves`); `test/apply/importer.test.ts` ("written before any utimes").
-2. Restore moved file times in `finally`, on errors and Ctrl+C. `src/apply/importer.ts` (`runWaves`,
-   `restoreSync`); `test/apply/importer.test.ts` ("importSessions throws").
+2. Restore moved file times in `finally`, on errors and Ctrl+C. `src/apply/importer.ts` (`runWaves`),
+   `src/apply/restore.ts` (`restoreAll`, `restoreSync`); `test/apply/importer.test.ts` ("importSessions throws").
 3. Every writing command takes the lock, then recovers, before contacting T3 Code. `src/core/lock.ts`
    (`acquireLock`), `src/core/journal.ts` (`recoverPendingMtimes`); `test/core/journal.test.ts`,
    `test/ops/sync.test.ts`.
@@ -139,7 +143,7 @@ Each names where it is enforced, then the test that pins it.
 9. Session tokens live in memory only: never logged, printed, persisted or echoed in errors. `src/t3/auth.ts`
    (`issueSessionToken`, `revokeSession`), `src/t3/errors.ts` (`pinSecret`, `redact`); `test/t3/auth.test.ts`.
 10. Accept only a loopback T3 Code origin. `src/t3/runtime.ts` (`parseLocalOrigin`); `test/t3/runtime.test.ts`.
-11. Child processes never inherit `CLAUDE_CONFIG_DIR`. `src/t3/auth.ts` (`childEnv`), `src/ops/doctor.ts`;
+11. Child processes never inherit `CLAUDE_CONFIG_DIR`. `src/t3/auth.ts` (`childEnv`), `src/ops/doctorDeps.ts`;
     `test/t3/auth.test.ts`.
 12. Writes ask: a writing command on a non-terminal without `--yes` exits 2; `--dry-run` writes nothing.
     `src/cli/commands/*.ts`; `test/cli/ops.test.ts`, `test/apply/dry-run.test.ts`.

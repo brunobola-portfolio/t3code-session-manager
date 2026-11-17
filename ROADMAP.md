@@ -25,7 +25,8 @@ was imported (nothing is sent anywhere; t3sm has no telemetry); `t3sm plan --htm
 with filters and a search box; `t3sm journal compact`, which drops the file-time entries of old, finished runs and
 keeps a backup (rollback, undo and recovery see the same history); and titles written by T3 Code in
 `t3sm organize --ai-titles` (opt-in, a cap per run, the count and the model shown first, undone like any organize
-title, never in unattended sync; a live check against T3 Code is still due before the release). See the
+title, never in unattended sync; a live check against T3 Code is still due before the release). The largest
+modules (`apply`, `importer`, `merge`, `rollback`, `doctor`) are split by step, with no change in behaviour. See the
 [CHANGELOG](CHANGELOG.md).
 
 ## Done in 0.4
@@ -45,7 +46,6 @@ notifications, the `/t3sm` commands inside T3 Code, and no longer refusing an un
 | Item | Problem | Approach | Status |
 | :-- | :-- | :-- | :-- |
 | Merging compacted sessions | A session compacted (`/compact`) after its import is never merged, so its terminal work stays out of T3 Code | Find a revision format that keeps every turn the compaction summarised, then merge like any other session | needs design |
-| Smaller modules | The largest modules (`apply`, `importer`, `merge`, `rollback`, `doctor`) are about 700 lines each, which makes review slow | Split them by step without changing behaviour; the existing tests must pass unchanged | planned |
 | Export and backup | Imported threads live only in T3 Code; there is no copy you can keep | `t3sm export` reads threads through T3 Code's API and writes a portable copy in a folder you choose | needs design |
 | Review page | Deciding many changes at once is easier on a page than in a terminal list | `t3sm review`: a local page for bulk decisions, built on the organize plan | needs design |
 | Titles written by T3 Code at import | `t3sm organize --ai-titles` covers imported titles that stay technical, but only after the import | The same opt-in in `t3sm apply`, with the same rules (a cap per run, the count and the model shown first, never in unattended sync) | planned |
