@@ -22,20 +22,32 @@
 // imported are deferred `clock-jump`, and the next wave (or run) starts afresh with a new start.
 //
 // The caller MUST hold the state-dir lock and have run recoverPendingMtimes.
+//
+// Next to it: exposure.ts (what T3 could import, scanned per root), budget.ts (T3's metadata budget per wave),
+// restore.ts (putting file times back) and busy.ts (files another program holds open).
 
-import { statSync, utimesSync } from "node:fs";
 import { stat, utimes } from "node:fs/promises";
-import type { Config, HarnessId, PlanItem, SourceFile } from "../core/types.ts";
+import type { Config, PlanItem, SourceFile } from "../core/types.ts";
 import type { Journal } from "../core/journal.ts";
 import { near } from "../core/journal.ts";
 import { statSafe } from "../core/fsutil.ts";
-import { pathKey as pathKeyOf } from "../core/paths.ts";
-import { ACTIVE_WINDOW_MS, CWD_SCAN_MAX_BYTES } from "../sources/types.ts";
-import { inImportWindow, isActive } from "../core/activity.ts";
+import { CWD_SCAN_MAX_BYTES } from "../sources/types.ts";
+import { isActive } from "../core/activity.ts";
 import { DEFAULT_BATCH } from "../core/config.ts";
 import type { T3Api } from "../t3/api.ts";
 import { RpcError } from "../t3/errors.ts";
-import { WAVE_COST_CAP, buildWaves, bumpTargets, byOriginalMtime, itemRoot, rootKey, waveItems, type Wave } from "./waves.ts";
+import { buildWaves, bumpTargets, byOriginalMtime, itemRoot, rootKey, waveItems, type Wave } from "./waves.ts";
+import { exposureIndex, type ActiveFile, type ExposedTranscript, type Identity, type Parked } from "./exposure.ts";
+import { rootsWithinBudget } from "./budget.ts";
+import { restoreAll, type BumpFile } from "./restore.ts";
+import { isBusy, retryBusy } from "./busy.ts";
+
+export {
+  exposureIndex, type ActiveFile, type ExposedTranscript, type ExposureIndex, type Parked,
+} from "./exposure.ts";
+export { sourceOf, type MetadataSource } from "./budget.ts";
+export { restoreSync, type BumpFile } from "./restore.ts";
+export { BUSY_RETRY_MS, isBusy, retryBusy } from "./busy.ts";
 
 export { IMPORT_WINDOW_MS } from "../core/activity.ts";
 /** Parked files sit this far in the future during their project's wave (T3 skips future mtimes). */
@@ -60,135 +72,6 @@ export type FailReason = "cwd-unreadable-in-t3" | "instance-unavailable" | "proj
  * file-busy: a transcript of the project stayed locked (EBUSY / EPERM / EACCES) through the retries; the root waits.
  */
 export type DeferReason = "active" | "changed" | "missing" | "project-in-use" | "clock-jump" | "file-busy";
-
-/** Error codes of a file another program holds open (antivirus, sync client, an editor) on Windows. */
-const BUSY_CODES = new Set(["EBUSY", "EPERM", "EACCES"]);
-export const isBusy = (e: unknown): boolean => BUSY_CODES.has((e as NodeJS.ErrnoException)?.code ?? "");
-/** Waits between tries of a busy file: tried once, then again after 100, 300 and 1000 ms. */
-export const BUSY_RETRY_MS = [100, 300, 1000];
-
-/** `fn`, retried while it fails with a busy-file error; the last error is thrown. */
-export async function retryBusy<T>(fn: () => Promise<T>, delays: readonly number[] = BUSY_RETRY_MS): Promise<T> {
-  for (let i = 0; ; i++) {
-    try {
-      return await fn();
-    } catch (e) {
-      if (!isBusy(e) || i >= delays.length) throw e;
-      await new Promise((r) => setTimeout(r, delays[i]));
-    }
-  }
-}
-
-/**
- * A discovered transcript T3 could import into the project of its cwd (agentSessions.import takes EVERY in-window
- * transcript of a root, from every instance; S2 §3): plan items of any action, mirror and backup copies, excluded ones.
- * `threadIds` / `refs` (`<instanceId>:<nativeId>`) say how T3 would represent it; one present = already in T3.
- */
-export interface ExposedTranscript {
-  path: string; cwd: string; threadIds: string[]; refs: string[];
-  /** Identity for a follow-up import-attempt when the file changed under us and could not be parked. */
-  harness?: HarnessId; nativeId?: string;
-  /** Bytes T3's metadata pass reads to find its cwd (discovery's cwdOffsetBytes); unknown: min(size, 1 MiB). */
-  cost?: number;
-}
-
-interface Identity { harness: HarnessId; nativeId: string; threadId: string }
-interface Candidate { path: string; keys: Set<string>; threadIds: string[]; refs: string[]; id: Identity | null; cost: number | null; harness: HarnessId | null }
-/** A transcript parked for a wave: fresh stat, identity, and what it costs T3's metadata pass of its source. */
-export interface Parked { st: SourceFile; id: Identity | null; cost: number; source: MetadataSource }
-/** T3 budgets metadata per source (S2 §4): converted OpenCode sessions are Claude transcripts. */
-export type MetadataSource = "claude" | "codex" | "pi";
-export function sourceOf(h: HarnessId | null | undefined): MetadataSource {
-  return h === "codex" || h === "pi" ? h : "claude";
-}
-/** The metadata source of an item's file: a convert-import's file is a Claude transcript, whatever its harness. */
-function itemSource(it: PlanItem): HarnessId {
-  return it.action.kind === "convert-import" ? "claude" : it.session.harness;
-}
-/** What T3 reads of a file to find its cwd: never more than the file, never more than 1 MiB (S2 §4). */
-function metadataCost(cost: number | null, size: number): number {
-  return Math.max(0, Math.min(cost ?? size, size, CWD_SCAN_MAX_BYTES));
-}
-
-/** The transcript that holds its project: being written (mtime within ACTIVE_WINDOW_MS of now). */
-export interface ActiveFile { path: string; mtimeMs: number; harness: HarnessId | null }
-
-export interface ExposureIndex {
-  /**
-   * The exposed transcripts of a root right now: inside the window, not already in T3, not in `exclude` (path keys
-   * of the wave's own items). The clock is read right after each stat. inUse: one of them has an mtime within
-   * ACTIVE_WINDOW_MS of that clock, either side (a session written during the scan gets an mtime slightly AHEAD of
-   * an earlier clock reading; T3 would import it now): the caller holds the root. Only an mtime more than
-   * ACTIVE_WINDOW_MS in the future counts as parked (a crash leftover at now + 7 days, which T3 skips) and is
-   * ignored. park: the rest, with fresh stats. active (with inUse): the file that made the root in use, as stat'ed.
-   */
-  scan(k: string, root: string, clock: () => number, exclude: ReadonlySet<string>, wave: number): Promise<{ inUse: boolean; busy?: boolean; active?: ActiveFile; park: Parked[] }>;
-  pathKey(p: string): string;
-}
-
-/** Static exposure (plan items of any action + `entries`) plus the optional wave-time listing `live` (new files). */
-export function exposureIndex(o: {
-  entries: ExposedTranscript[]; items: PlanItem[]; platform: NodeJS.Platform;
-  inT3: (threadIds: string[], refs: string[]) => boolean;
-  live?: (root: string, wave: number) => Promise<ExposedTranscript[]>;
-  /** Waits between tries of a busy file (default BUSY_RETRY_MS). */
-  busyRetryMs?: readonly number[];
-}): ExposureIndex {
-  const key = (r: string): string => rootKey(r, o.platform);
-  const pathKey = (p: string): string => pathKeyOf(p, o.platform);
-  const byPath = new Map<string, Candidate>();
-  const add = (path: string, k: string, threadIds: string[], refs: string[], id: Identity | null, cost: number | null, harness: HarnessId | null): void => {
-    const pk = pathKey(path);
-    const c = byPath.get(pk) ?? { path, keys: new Set<string>(), threadIds: [], refs: [], id: null, cost: null, harness: null };
-    c.keys.add(k);
-    c.threadIds.push(...threadIds);
-    c.refs.push(...refs);
-    c.id ??= id;
-    c.cost ??= cost;
-    c.harness ??= harness;
-    byPath.set(pk, c);
-  };
-  const idOf = (x: ExposedTranscript): Identity | null =>
-    x.harness && x.nativeId && x.threadIds[0] ? { harness: x.harness, nativeId: x.nativeId, threadId: x.threadIds[0] } : null;
-  for (const x of o.entries) add(x.path, key(x.cwd), x.threadIds, x.refs, idOf(x), x.cost ?? null, x.harness ?? null);
-  for (const it of o.items) {
-    if (it.action.kind === "skip") continue;
-    const s = it.session;
-    const id = { harness: s.harness, nativeId: s.nativeId, threadId: it.action.expectedThreadId };
-    add(s.file.path, key(it.action.projectRoot), [it.action.expectedThreadId], [], id, s.cwdOffsetBytes, itemSource(it));
-    if (s.cwd) add(s.file.path, key(s.cwd), [], [], id, s.cwdOffsetBytes, itemSource(it));
-  }
-  return {
-    pathKey,
-    async scan(k, root, clock, exclude, wave) {
-      const cands = [...byPath.values()].filter((c) => c.keys.has(k));
-      for (const x of (await o.live?.(root, wave).catch(() => [])) ?? []) {
-        if (!byPath.has(pathKey(x.path))) cands.push({ path: x.path, keys: new Set([k]), threadIds: x.threadIds, refs: x.refs, id: idOf(x), cost: x.cost ?? null, harness: x.harness ?? null });
-      }
-      const park: Parked[] = [];
-      const seen = new Set<string>();
-      for (const c of cands) {
-        const pk = pathKey(c.path);
-        if (seen.has(pk) || exclude.has(pk) || o.inT3(c.threadIds, c.refs)) continue;
-        seen.add(pk);
-        let st: SourceFile | null;
-        try {
-          st = await retryBusy(() => statSafe(c.path), o.busyRetryMs);
-        } catch (e) {
-          if (isBusy(e)) return { inUse: false, busy: true, park: [] }; // cannot tell where it is: hold the root
-          continue;
-        }
-        if (st === null) continue;
-        const t = clock(); // at stat time, never before the awaits
-        if (st.mtimeMs > t + ACTIVE_WINDOW_MS) continue; // parked (a leftover at +7 days): T3 skips it
-        if (!inImportWindow(st.mtimeMs, t)) continue; // outside the window: T3 cannot take it
-        if (isActive(st.mtimeMs, t)) return { inUse: true, active: { path: c.path, mtimeMs: st.mtimeMs, harness: c.harness }, park: [] }; // recent, or up to 10 min ahead
-        park.push({ st, id: c.id, cost: metadataCost(c.cost, st.size), source: sourceOf(c.harness) });
-      }
-      return { inUse: false, park };
-    },
-  };
-}
 
 export interface Progress {
   wave: number; totalWaves: number; projects: number; sessions: number;
@@ -264,26 +147,6 @@ export interface WavesResult {
   parked: number;
 }
 
-export interface BumpFile { path: string; atimeMs: number; mtimeMs: number; targetMtimeMs: number }
-
-/**
- * Synchronous restore for a forced exit: puts back every file still at its bump target (same guard as the async
- * restore: a file anywhere else was never bumped or was written meanwhile, and is left alone). Never throws. The
- * journal stays the safety net: no mtime-restore is written here; the next run's recoverPendingMtimes finds these
- * files at their originals and marks them restored.
- */
-export function restoreSync(files: BumpFile[]): number {
-  let n = 0;
-  for (const f of files) {
-    try {
-      if (!near(statSync(f.path).mtimeMs, f.targetMtimeMs)) continue;
-      utimesSync(f.path, f.atimeMs / 1000, f.mtimeMs / 1000);
-      n++;
-    } catch { /* left pending for recoverPendingMtimes */ }
-  }
-  return n;
-}
-
 function threadIdOf(i: PlanItem): string | null {
   return i.action.kind === "skip" ? null : i.action.expectedThreadId;
 }
@@ -304,43 +167,6 @@ function inferBatch(waves: Wave[]): Config["batch"] {
     for (const p of w.projects) filesPerProject = Math.max(filesPerProject, p.items.length);
   }
   return { filesPerProject: filesPerProject || DEFAULT_BATCH.filesPerProject, projectsPerWave: projectsPerWave || DEFAULT_BATCH.projectsPerWave };
-}
-
-const errText = (e: unknown): string => (e instanceof Error ? e.message : String(e));
-
-/**
- * Put every file back where the journal says it was. Never throws for a single file; returns the paths that are
- * resolved (restored, gone, never moved, or modified by someone else meanwhile) and the errors (left pending for
- * recoverPendingMtimes).
- */
-async function restoreAll(
-  files: BumpFile[], setTimes: NonNullable<WaveCtx["utimes"]>, statFn: NonNullable<WaveCtx["stat"]>, skipped: ReadonlySet<string>,
-  busyRetryMs?: readonly number[],
-): Promise<{ resolved: string[]; errors: { path: string; error: string }[] }> {
-  const resolved: string[] = [];
-  const errors: { path: string; error: string }[] = [];
-  for (const f of files) {
-    // Never bumped (written to or gone before its utimes) and already journaled restored: never touched, even if a
-    // coarse-timestamp filesystem makes its fresh mtime look like the target.
-    if (skipped.has(f.path)) continue;
-    try {
-      let cur: { mtimeMs: number } | null;
-      try {
-        cur = await retryBusy(() => statFn(f.path), busyRetryMs);
-      } catch (e) {
-        if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
-        cur = null;
-      }
-      // Still at our target: put it back. Anywhere else: either our utimes never ran (it is at its original) or
-      // someone wrote to it during the wave (it is newer); never move it backwards.
-      if (cur !== null && near(cur.mtimeMs, f.targetMtimeMs)) await retryBusy(() => setTimes(f.path, f.atimeMs / 1000, f.mtimeMs / 1000), busyRetryMs);
-      resolved.push(f.path);
-    } catch (e) {
-      if ((e as NodeJS.ErrnoException).code === "ENOENT") resolved.push(f.path);
-      else errors.push({ path: f.path, error: errText(e) });
-    }
-  }
-  return { resolved, errors };
 }
 
 /**
@@ -497,26 +323,7 @@ export async function runWaves(ctx: WaveCtx, waves: Wave[]): Promise<WavesResult
     // bumped ones and spend the same per-source 64 MiB. Roots join the wave in order (oldest item first) while every
     // source's bumped + parked cost stays within WAVE_COST_CAP; the next root waits for a later wave (its items go
     // back to the pool, untouched). The first root always goes, alone and with a warning when it alone is over.
-    const spent = new Map<MetadataSource, number>();
-    const parkedSeen = new Set<string>();
-    const keep = new Set<string>();
-    for (const k of [...new Set(ready.map((r) => key(itemRoot(r.item))))]) {
-      const add = new Map<MetadataSource, number>();
-      const plus = (src: MetadataSource, n: number): void => void add.set(src, (add.get(src) ?? 0) + n);
-      for (const r of ready) if (key(itemRoot(r.item)) === k) plus(sourceOf(itemSource(r.item)), metadataCost(cost(r.item), r.st.size));
-      for (const p of parkedOf.get(k) ?? []) if (!parkedSeen.has(exposure.pathKey(p.st.path))) plus(p.source, p.cost);
-      const over = [...add].some(([src, n]) => (spent.get(src) ?? 0) + n > WAVE_COST_CAP);
-      if (over && keep.size > 0) break;
-      keep.add(k);
-      for (const [src, n] of add) spent.set(src, (spent.get(src) ?? 0) + n);
-      for (const p of parkedOf.get(k) ?? []) parkedSeen.add(exposure.pathKey(p.st.path));
-      if (over) {
-        const mib = (n: number): string => (n / 1024 / 1024).toFixed(1);
-        const worst = Math.max(...spent.values());
-        ctx.onNotice?.(`Warning: ${itemRoot(ready.find((r) => key(itemRoot(r.item)) === k)!.item)}: its sessions and the copies parked while it imports cost ${mib(worst)} MiB of T3 Code's 64 MiB read budget; some may not be imported this run (they are retried once, then reported).`);
-        break;
-      }
-    }
+    const keep = rootsWithinBudget(ready, parkedOf, { key, cost, pathKey: exposure.pathKey, onNotice: (line) => ctx.onNotice?.(line) });
     if (keep.size < new Set(ready.map((r) => key(itemRoot(r.item)))).size) {
       for (const r of ready) if (!keep.has(key(itemRoot(r.item)))) pool.push(r.item); // a later wave, re-stat'ed then
       pool.sort(byOriginalMtime);
