@@ -24,235 +24,31 @@
 // first, only where T3 still shows the value t3sm set; T3 Code is reached first, before any file is touched.
 // Idempotent: every step checks the current state (or a later journal entry) first, and a rollback that changes
 // nothing writes nothing to the journal.
+//
+// Next to it: rollbackTypes.ts (deps and report), rollbackEntries.ts (the entry checks), rollbackMerges.ts (which
+// merges are undone), rollbackInstances.ts (instance restores) and rollbackRuns.ts (runs and their summaries).
 
-import { lstat, mkdir, readdir, rm, rmdir } from "node:fs/promises";
-import { basename, dirname, isAbsolute, join } from "node:path";
+import { mkdir, readdir, rm, rmdir } from "node:fs/promises";
+import { basename, dirname } from "node:path";
 import type { JournalEntry } from "../core/types.ts";
-import { effectiveWrites, newRunId, type Journal } from "../core/journal.ts";
+import { effectiveWrites, newRunId } from "../core/journal.ts";
 import { sha256File, statSafe } from "../core/fsutil.ts";
-import { pathKey, sameCwd } from "../core/paths.ts";
+import { pathKey } from "../core/paths.ts";
 import { ConfigError } from "../core/config.ts";
-import { COMPACT_COMMAND } from "../core/compact.ts";
 import { isActive } from "../core/activity.ts";
 import type { T3Api } from "../t3/api.ts";
 import { T3NotRunning } from "../t3/errors.ts";
 import { organizeGate } from "../t3/compat.ts";
-import { OrganizeReadError, undoOrganizeEntries, type OrganizeUndoItem } from "../organize/apply.ts";
-import {
-  JournalWriteError, MoveRefused, QUARANTINE_DIR, hasDotDot, isInside, moveEntry, moveFailure, nodeMoveFs, pruneEmptyQuarantineDirs, subdirOf,
-  type MoveFs,
-} from "./quarantine.ts";
+import { OrganizeReadError, undoOrganizeEntries } from "../organize/apply.ts";
+import { JournalWriteError, MoveRefused, moveEntry, moveFailure, nodeMoveFs, pruneEmptyQuarantineDirs } from "./quarantine.ts";
+import type { InstanceChange, KeptReason, RollbackDeps, RollbackReport } from "./rollbackTypes.ts";
+import { convertedFileOk, exists, foldersUpTo, isObj, isStr, malformed, msg, quarantineHome, sameFile, selection } from "./rollbackEntries.ts";
+import { planMergeUndo } from "./rollbackMerges.ts";
+import { restoreInstance } from "./rollbackInstances.ts";
+import { isCompactionRun, isRollbackRun } from "./rollbackRuns.ts";
 
-export interface RollbackDeps {
-  journal: Journal;
-  /** Expanded homes of the configured accounts: the only places a rollback touches files. */
-  accountHomes: string[];
-  /** Opens T3 Code (only when the run touched T3). Omitted or failing: the T3 part is reported as not done. */
-  connect?: () => Promise<T3Api>;
-  now?: () => number;
-  /** Restore instance displayName / accentColor / homePath from the journaled deltas. */
-  instances?: boolean;
-  /** Archive (never delete) the threads the run imported that are still active. */
-  archiveThreads?: boolean;
-  /** Report what would be undone; write nothing (T3 is only read). */
-  dryRun?: boolean;
-  fs?: MoveFs;
-  platform?: NodeJS.Platform;
-  /** Organize changes on an unverified T3 Code version: no warning (`--allow-untested`). */
-  allowUntested?: boolean;
-  onNotice?: (line: string) => void;
-}
-
-type KeptReason = "revision continued" | "revision in use" | "revision rewritten" | "T3 Code unreachable" | `followed again by run ${string}; roll back ${string} first`;
-
-export interface InstanceChange {
-  instanceId: string;
-  kind: "pinned" | "updated";
-  previous: unknown;
-  next: unknown;
-  /** listed: shown only (no --instances); already: T3 already has the previous value. */
-  status: "listed" | "restored" | "already" | "changed-since" | "not-restorable" | "failed";
-  note?: string;
-}
-
-export interface RollbackReport {
-  /** The rollback's own run id; null when nothing was written (dry run, or nothing left to undo). */
-  runId: string | null;
-  targetRunId: string;
-  /** The target's run-start command, when it has one. */
-  command: string | null;
-  filesRemoved: string[];
-  filesKeptModified: string[];
-  /** Changed within the last 10 minutes (in use): kept; run rollback again later. */
-  filesKeptActive: string[];
-  /** Destination folders the run created for rehome copies, removed (would be, in a dry run) because they were empty. */
-  foldersRemoved: string[];
-  /** Such folders kept because something is in them now. */
-  foldersKept: string[];
-  /** Rewritten by a later run: left alone. */
-  filesKeptRewritten: string[];
-  /** Rehome copies a follow rewrote in place (refresh mode): kept, since their T3 thread already holds those records. */
-  filesKeptRefreshed: string[];
-  unquarantined: string[];
-  unquarantineConflicts: { from: string; to: string }[];
-  /** Back at the original path already (an earlier rollback crashed before journaling, or moved by hand). */
-  alreadyRestored: string[];
-  /** Neither in quarantine nor at the original path (moved elsewhere by hand). */
-  unquarantineMissing: string[];
-  unquarantineFailed: { path: string; reason: string }[];
-  defaultsRestored: string[];
-  defaultsSkipped: { projectId: string; reason: string }[];
-  instanceChanges: InstanceChange[];
-  instancesCreated: string[];
-  projectsCreated: { projectId: string; root: string }[];
-  /** Threads this run imported (or attempted) that T3 Code still has. Never deleted by t3sm. */
-  threadsToReview: string[];
-  /** false: T3 could not be read, threadsToReview lists every journaled candidate. */
-  threadsVerified: boolean;
-  threadsArchived: string[];
-  /**
-   * Copies the run parked (future file time) during a wave, never meant to be imported, whose thread exists in T3 Code
-   * (it may predate the run). Listed for review only: never archived, never counted as imported.
-   */
-  parkedThreads: string[];
-  /** Threads the run archived (a merge's old thread) that are active again. */
-  threadsUnarchived: string[];
-  /** Merges left in place because their revision was continued (or is in use) since: both threads stay as they are. */
-  mergesKept: { nativeId: string; revisionFile: string; reason: KeptReason }[];
-  /**
-   * Threads left active although the rollback would have archived them, because archiving would leave their session
-   * (original thread + merge revision threads) without any active thread. Review them in T3 Code.
-   */
-  needsReview: { threadId: string; reason: string }[];
-  /** Organize changes of the run, newest first: reverted (would be, in a dry run), user-changed (left alone), already, failed. */
-  organize: OrganizeUndoItem[];
-  /** Why the T3 part was not done (e.g. "T3 Code not running"); null when T3 was reachable or not needed. */
-  t3Unavailable: string | null;
-  /** Includes every malformed or out-of-bounds journal entry that was skipped. */
-  errors: string[];
-}
-
-const isObj = (u: unknown): u is Record<string, unknown> => typeof u === "object" && u !== null && !Array.isArray(u);
-const isStr = (u: unknown): u is string => typeof u === "string" && u !== "";
-const strOrNull = (u: unknown): boolean => u === null || typeof u === "string";
-const msg = (e: unknown): string => (e instanceof Error ? e.message : String(e));
-
-/** `path`, then each parent up to and including `created` (deepest first); null when `created` is not one of them. */
-function foldersUpTo(path: string, created: string): string[] | null {
-  const out: string[] = [];
-  for (let d = path; ; d = dirname(d)) {
-    out.push(d);
-    if (pathKey(d) === pathKey(created)) return out;
-    if (dirname(d) === d) return null;
-  }
-}
-
-/** Newest run with a run-start that is not itself a rollback or a journal compaction (neither is ever rolled back). */
-export function latestRunId(entries: JournalEntry[]): string | null {
-  for (let i = entries.length - 1; i >= 0; i--) {
-    const e = entries[i]!;
-    if (e.t === "run-start" && typeof e.command === "string" && !e.command.startsWith("rollback") && e.command !== COMPACT_COMMAND) return e.runId;
-  }
-  return null;
-}
-
-/** Entry kinds whose rollback changes T3 Code through something other than organize's commands. */
-const OTHER_T3_KINDS: ReadonlySet<string> = new Set(["project-default-set", "instance-pinned", "instance-updated", "imported", "import-attempt", "merged", "followed", "thread-archived", "thread-unarchived"]);
-
-/**
- * The rollback of `runId` touches T3 Code only through organize's commands (it has organize changes and nothing else
- * for T3). Such a rollback runs on any T3 Code version with organizeGate's one warning (ruling R18), so the caller
- * connects with allowUntested and lets organizeGate speak.
- */
-export function organizeOnlyRun(entries: JournalEntry[], runId: string): boolean {
-  const mine = entries.filter((e) => e.runId === runId);
-  return mine.some((e) => e.t === "organize-change") && !mine.some((e) => OTHER_T3_KINDS.has(e.t));
-}
-
-/** The run-start command of `runId` marks it as a rollback run (those are never rolled back). */
-export function isRollbackRun(entries: JournalEntry[], runId: string): boolean {
-  return entries.some((e) => e.t === "run-start" && e.runId === runId && typeof e.command === "string" && e.command.startsWith("rollback"));
-}
-
-/** `runId` is a journal compaction (`t3sm journal compact`): it changed only journal.jsonl and is never rolled back. */
-export function isCompactionRun(entries: JournalEntry[], runId: string): boolean {
-  return entries.some((e) => e.t === "run-start" && e.runId === runId && e.command === COMPACT_COMMAND);
-}
-
-function selection(u: unknown): { instanceId: string | null; model: string | undefined } {
-  if (!isObj(u)) return { instanceId: null, model: undefined };
-  const id = typeof u.instanceId === "string" ? u.instanceId : typeof u.provider === "string" ? u.provider : null;
-  return { instanceId: id, model: typeof u.model === "string" ? u.model : undefined };
-}
-
-/** Two paths name the same regular file (same device and inode: hard links). */
-async function sameFile(a: string, b: string): Promise<boolean> {
-  const [x, y] = await Promise.all([lstat(a, { bigint: true }), lstat(b, { bigint: true })]);
-  return x.isFile() && y.isFile() && x.dev === y.dev && x.ino === y.ino && x.ino !== 0n;
-}
-
-async function exists(p: string): Promise<boolean> {
-  try {
-    await lstat(p);
-    return true;
-  } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === "ENOENT") return false;
-    throw e;
-  }
-}
-
-/** The account home a quarantined entry belongs to, or why it is not acted on. */
-function quarantineHome(e: { from?: unknown; to?: unknown }, homes: string[], platform: NodeJS.Platform): { home: string } | { error: string } {
-  if (!isStr(e.from) || !isStr(e.to)) return { error: "from/to missing or not strings" };
-  if (hasDotDot(e.from) || hasDotDot(e.to)) return { error: "path with `..`" };
-  for (const h of homes) {
-    const q = join(h, QUARANTINE_DIR);
-    const toOk = isInside(e.to, join(q, "backups"), platform) || isInside(e.to, join(q, "mirror"), platform);
-    if (toOk && isInside(e.from, join(h, "projects"), platform)) return { home: h };
-  }
-  return { error: `${e.from} -> ${e.to} is outside the configured account folders` };
-}
-
-/** A converted transcript path: <H>/projects/<dir>/<name>.jsonl for a configured home H. */
-function convertedFileOk(path: unknown, homes: string[], platform: NodeJS.Platform): boolean {
-  if (!isStr(path) || hasDotDot(path) || !basename(path).endsWith(".jsonl")) return false;
-  return homes.some((h) => {
-    const rel = subdirOf(join(h, "projects"), dirname(path), platform);
-    return rel !== null && rel !== "" && !rel.includes("/");
-  });
-}
-
-/** Why an entry of the target run is malformed (null: well-formed). Path bounds are checked where they are used. */
-function malformed(e: JournalEntry): string | null {
-  const o = e as unknown as Record<string, unknown>;
-  switch (e.t) {
-    case "file-written":
-      if (o.revisionOf !== undefined && !(isObj(o.revisionOf) && isStr(o.revisionOf.nativeId))) return "revisionOf invalid";
-      return isStr(o.path) && typeof o.sha256 === "string" && /^[0-9a-f]{64}$/.test(o.sha256) ? null : "path/sha256 missing or invalid";
-    case "quarantined": return isStr(o.from) && isStr(o.to) ? null : "from/to missing or not strings";
-    case "project-default-set": return isStr(o.projectId) ? null : "projectId missing";
-    case "project-created": return isStr(o.projectId) && typeof o.root === "string" ? null : "projectId/root missing";
-    case "instance-created": return isStr(o.instanceId) ? null : "instanceId missing";
-    case "folder-created": {
-      if (!isStr(o.path) || !isStr(o.created) || hasDotDot(o.path) || hasDotDot(o.created) || !isAbsolute(o.path)) return "path/created missing or not absolute";
-      return foldersUpTo(o.path, o.created) === null ? "created is not the folder or one of its parents" : null;
-    }
-    case "organize-change": return isStr(o.kind) && isStr(o.target) ? null : "kind/target missing";
-    case "imported": return isStr(o.threadId) ? null : "threadId missing";
-    case "import-attempt": return Array.isArray(o.items) && (o.parked === undefined || Array.isArray(o.parked)) ? null : "items missing";
-    case "thread-archived": return isStr(o.threadId) ? null : "threadId missing";
-    case "thread-unarchived": return isStr(o.threadId) ? null : "threadId missing";
-    case "merged": return isStr(o.nativeId) && isStr(o.revisionFile) && isStr(o.oldThreadId) && isStr(o.newThreadId) ? null : "nativeId/revisionFile/oldThreadId/newThreadId missing";
-    case "followed": return isStr(o.original) && isStr(o.copy) && isStr(o.oldThread) && (o.mode === "refresh" || o.mode === "revision") ? null : "original/copy/oldThread/mode missing";
-    case "instance-pinned":
-      return isStr(o.instanceId) && isObj(o.previous) && strOrNull(o.previous.homePath) && isObj(o.next) && typeof o.next.homePath === "string" ? null : "instanceId/previous/next invalid";
-    case "instance-updated": {
-      const d = (u: unknown): boolean => isObj(u) && strOrNull(u.displayName) && strOrNull(u.accentColor) && strOrNull(u.homePath);
-      return isStr(o.instanceId) && d(o.previous) && d(o.next) ? null : "instanceId/previous/next invalid";
-    }
-    default: return null;
-  }
-}
+export type { InstanceChange, RollbackDeps, RollbackReport } from "./rollbackTypes.ts";
+export { isCompactionRun, isRollbackRun, latestRunId, listRuns, organizeOnlyRun, type RunSummary } from "./rollbackRuns.ts";
 
 export async function rollbackRun(targetRunId: string, deps: RollbackDeps): Promise<RollbackReport> {
   const j = deps.journal;
@@ -525,48 +321,7 @@ export async function rollbackRun(targetRunId: string, deps: RollbackDeps): Prom
   for (const f of r.filesKeptModified) kept.set(keyOf(f), "revision continued");
   for (const f of r.filesKeptActive) kept.set(keyOf(f), "revision in use");
   for (const f of r.filesKeptRewritten) kept.set(keyOf(f), "revision rewritten");
-  const removed = new Set(r.filesRemoved.map(keyOf));
-  const gone = async (file: string): Promise<boolean> => removed.has(keyOf(file)) || !(await exists(file).catch(() => true));
-  const swaps: { old: string | null; rev: string | null }[] = [];
-  const addSwap = (old: string | null, rev: string | null): void => {
-    if (swaps.some((x) => x.old === old && x.rev === rev)) return;
-    swaps.push({ old, rev });
-  };
-  const keptOld = new Set<string>();
-  for (const { e } of mine) {
-    if (e.t !== "merged") continue;
-    const why = kept.get(keyOf(e.revisionFile));
-    if (why) { r.mergesKept.push({ nativeId: e.nativeId, revisionFile: e.revisionFile, reason: why }); keptOld.add(e.oldThreadId); continue; }
-    if (!(await gone(e.revisionFile))) {
-      r.errors.push(`merge of ${e.nativeId} not undone: its revision ${e.revisionFile} is still there`);
-      keptOld.add(e.oldThreadId);
-      continue;
-    }
-    addSwap(e.oldThreadId, e.newThreadId);
-  }
-  const revisionsOfRun = mine.flatMap(({ e }) => (e.t === "file-written" && e.revisionOf && isStr(e.path) ? [{ path: e.path, nativeId: e.revisionOf.nativeId, rev: basename(e.path, ".jsonl") }] : []));
-  const mergedOld = new Set(mine.flatMap(({ e }) => (e.t === "merged" ? [e.oldThreadId] : [])));
-  for (const { e } of mine) {
-    if (e.t !== "thread-archived" || keptOld.has(e.threadId) || mergedOld.has(e.threadId)) continue;
-    // The run's own revision thread, archived back by a follow that stopped before its swap (the copy changed during
-    // the import): it stays archived; there is no old thread to bring back.
-    if (revisionsOfRun.some((w) => e.threadId.endsWith(`:${w.rev}`))) continue;
-    let keep = false;
-    let any = false;
-    for (const w of revisionsOfRun) {
-      if (!e.threadId.endsWith(`:${w.nativeId}`)) continue;
-      if (kept.has(keyOf(w.path))) { keep = true; continue; }
-      any = true;
-      addSwap(e.threadId, `${e.threadId.slice(0, -w.nativeId.length)}${w.rev}`);
-    }
-    if (!keep && !any) addSwap(e.threadId, null);
-  }
-  for (const { e } of mine) {
-    if (e.t !== "thread-unarchived") continue;
-    const w = revisionsOfRun.find((x) => e.threadId.endsWith(`:${x.rev}`));
-    if (!w || kept.has(keyOf(w.path)) || !(await gone(w.path))) continue;
-    if (!swaps.some((x) => x.rev === e.threadId)) addSwap(null, e.threadId);
-  }
+  const { swaps, revisionsOfRun } = await planMergeUndo(mine, kept, r, keyOf);
 
   // Session lineages (Task 23): an original thread and the revision threads merged from it. THE invariant of every
   // archive below (one guard, `mayArchive`): never archive a thread if that leaves its lineage without an active thread,
@@ -759,120 +514,4 @@ export async function rollbackRun(targetRunId: string, deps: RollbackDeps): Prom
     await j.append({ t: "run-end", runId: rb, at, status: partial ? "partial" : "ok" });
   }
   return r;
-}
-
-const DEFAULT_INSTANCE = "claudeAgent";
-
-async function restoreInstance(
-  api: T3Api,
-  e: Extract<JournalEntry, { t: "instance-pinned" | "instance-updated" }>,
-  c: InstanceChange,
-  x: { dry: boolean; platform: NodeJS.Platform; begin: () => Promise<string>; j: Journal },
-): Promise<void> {
-  const cur = (await api.providerInstances()).find((i) => i.instanceId === e.instanceId);
-  if (!cur) { c.status = "not-restorable"; c.note = "the instance no longer exists"; return; }
-  const same = (a: string | null, b: string | null): boolean => (a === null || b === null ? a === b : sameCwd(a, b, x.platform));
-
-  if (e.t === "instance-pinned") {
-    const prev = e.previous.homePath;
-    if (e.instanceId === DEFAULT_INSTANCE) { c.status = "not-restorable"; c.note = "claudeAgent stays pinned to ~/.claude"; return; }
-    if (prev === null) { c.status = "not-restorable"; c.note = "it had no explicit home before; T3 Code has no way to unpin"; return; }
-    if (same(cur.homePath, prev)) { c.status = "already"; return; }
-    if (!same(cur.homePath, e.next.homePath)) { c.status = "changed-since"; c.note = `home is now ${cur.homePath ?? "unset"}`; return; }
-    if (!x.dry) {
-      const id = await x.begin();
-      await api.pinInstanceHome(e.instanceId, prev);
-      await x.j.append({ t: "instance-pinned", runId: id, instanceId: e.instanceId, previous: { homePath: cur.homePath }, next: { homePath: prev } });
-    }
-    c.status = "restored";
-    return;
-  }
-
-  const prev = e.previous, next = e.next;
-  // A null previous (no explicit label/colour before) cannot be written back: T3 Code has no "clear" for it.
-  const cannotClear = prev.accentColor === null && cur.accentColor !== null;
-  const note = cannotClear ? "the accent colour cannot be cleared through T3 Code; change it in T3 Code's settings" : undefined;
-  const homeBack = prev.homePath !== null && next.homePath !== null && !same(prev.homePath, next.homePath) && e.instanceId !== DEFAULT_INSTANCE;
-  const ap: { displayName?: string; accentColor?: string } = {};
-  if (prev.displayName !== null && prev.displayName !== cur.displayName) ap.displayName = prev.displayName;
-  if (prev.accentColor !== null && prev.accentColor !== cur.accentColor) ap.accentColor = prev.accentColor;
-  const homeNeeded = homeBack && !same(cur.homePath, prev.homePath);
-  if (ap.displayName === undefined && ap.accentColor === undefined && !homeNeeded) {
-    c.status = cannotClear && cur.accentColor === next.accentColor && cur.displayName === (next.displayName ?? cur.displayName) ? "not-restorable" : "already";
-    c.note = note;
-    return;
-  }
-  if ((next.displayName !== null && cur.displayName !== next.displayName) || cur.accentColor !== next.accentColor) {
-    c.status = "changed-since";
-    c.note = `now ${JSON.stringify(cur.displayName)} ${cur.accentColor ?? "no colour"}`;
-    return;
-  }
-  const notes: string[] = note ? [note] : [];
-  if (!x.dry) {
-    const id = await x.begin();
-    if (ap.displayName !== undefined || ap.accentColor !== undefined) await api.updateInstanceAppearance(e.instanceId, ap);
-    if (homeBack) await api.pinInstanceHome(e.instanceId, prev.homePath!);
-    await x.j.append({
-      t: "instance-updated", runId: id, instanceId: e.instanceId,
-      previous: { displayName: cur.displayName, accentColor: cur.accentColor, homePath: cur.homePath },
-      next: { displayName: ap.displayName ?? cur.displayName, accentColor: ap.accentColor ?? cur.accentColor, homePath: homeBack ? prev.homePath : cur.homePath },
-    });
-  }
-  c.status = "restored";
-  if (notes.length) c.note = notes.join("; ");
-}
-
-// ---------------- runs ----------------
-
-export interface RunSummary {
-  runId: string;
-  at: string | null;
-  command: string | null;
-  /** run-end status, "incomplete" (started, no run-end) or "-" (no run-start: an `accounts` change). */
-  status: string;
-  rolledBackBy: string | null;
-  /** Projects the run left for later because a conversation of theirs was in use (its run-end; absent when none). */
-  held?: number;
-  /** organized: changes `t3sm organize` made (organize-change); organizeReverted: organize changes an undo put back. */
-  counts: {
-    imported: number; importFailed: number; filesWritten: number; quarantined: number; unquarantined: number; defaults: number; instances: number;
-    projects: number; archived: number; merged: number; organized: number; organizeReverted: number;
-  };
-}
-
-/** One summary per run id, in journal order (mtime-bump/restore bookkeeping alone does not make a run). */
-export function listRuns(entries: JournalEntry[]): RunSummary[] {
-  const byId = new Map<string, RunSummary>();
-  const get = (id: string): RunSummary => {
-    let s = byId.get(id);
-    if (!s) {
-      s = { runId: id, at: null, command: null, status: "-", rolledBackBy: null, counts: { imported: 0, importFailed: 0, filesWritten: 0, quarantined: 0, unquarantined: 0, defaults: 0, instances: 0, projects: 0, archived: 0, merged: 0, organized: 0, organizeReverted: 0 } };
-      byId.set(id, s);
-    }
-    return s;
-  };
-  for (const e of entries) {
-    if (e.t === "mtime-bump" || e.t === "mtime-restore" || e.t === "update") continue; // update: t3sm update, not a run to roll back
-    const s = get(e.runId);
-    switch (e.t) {
-      case "run-start": s.at = e.at; s.command = e.command; if (s.status === "-") s.status = "incomplete"; break;
-      case "run-end": s.status = e.status; if (typeof e.held === "number" && e.held > 0) s.held = e.held; break;
-      case "imported": s.counts.imported++; break;
-      case "import-failed": s.counts.importFailed++; break;
-      case "file-written": break; // counted below from the writes that really happened (effectiveWrites)
-      case "merged": s.counts.merged++; break;
-      case "quarantined": s.counts.quarantined++; break;
-      case "unquarantined": s.counts.unquarantined++; break;
-      case "project-default-set": s.counts.defaults++; break;
-      case "instance-created": case "instance-pinned": case "instance-updated": s.counts.instances++; break;
-      case "project-created": s.counts.projects++; break;
-      case "thread-archived": s.counts.archived++; break;
-      case "organize-change": s.counts.organized++; break;
-      case "organize-undone": s.counts.organizeReverted++; break;
-      case "rolled-back": get(e.targetRunId).rolledBackBy = e.runId; break;
-      default: break;
-    }
-  }
-  for (const w of effectiveWrites(entries)) get(w.runId).counts.filesWritten++;
-  return [...byId.values()];
 }
