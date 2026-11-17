@@ -84,29 +84,42 @@ export class Journal {
       }
       throw e;
     }
-    if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
-    const endsWithNewline = text.endsWith("\n");
-    const lines = text.split("\n");
-    if (endsWithNewline) lines.pop();
-    const out: JournalEntry[] = [];
-    let corrupt = 0;
-    for (let i = 0; i < lines.length; i++) {
-      const raw = lines[i]!.replace(/\r$/, "");
-      if (raw.trim() === "") continue;
-      const isTruncatedTail = i === lines.length - 1 && !endsWithNewline;
-      let v: unknown;
-      try {
-        v = JSON.parse(raw);
-      } catch {
-        if (!isTruncatedTail) corrupt++;
-        continue;
-      }
-      if (isEntry(v)) out.push(v);
-      else corrupt++;
-    }
+    const { entries: out, corrupt } = parseJournal(text);
     this.lastReadCorruptLines = corrupt;
     return out;
   }
+}
+
+/**
+ * A journal's text as `Journal.readAll` reads it: a leading BOM ignored, one entry per newline-terminated line (a "\r"
+ * before the newline ignored), blank lines skipped, a truncated last line (no newline) skipped silently, any other line
+ * that is not JSON with string `t` and `runId` counted in `corrupt`. `lines`: the raw lines (BOM and newlines removed,
+ * "\r" kept); `lineOf[k]`: the index in `lines` of `entries[k]`. Pure: journal compaction reads through it too.
+ */
+export function parseJournal(text: string): { entries: JournalEntry[]; corrupt: number; lines: string[]; lineOf: number[]; bom: boolean; endsWithNewline: boolean } {
+  const bom = text.charCodeAt(0) === 0xfeff;
+  if (bom) text = text.slice(1);
+  const endsWithNewline = text.endsWith("\n");
+  const lines = text.split("\n");
+  if (endsWithNewline) lines.pop();
+  const entries: JournalEntry[] = [];
+  const lineOf: number[] = [];
+  let corrupt = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i]!.replace(/\r$/, "");
+    if (raw.trim() === "") continue;
+    const isTruncatedTail = i === lines.length - 1 && !endsWithNewline;
+    let v: unknown;
+    try {
+      v = JSON.parse(raw);
+    } catch {
+      if (!isTruncatedTail) corrupt++;
+      continue;
+    }
+    if (isEntry(v)) { entries.push(v); lineOf.push(i); }
+    else corrupt++;
+  }
+  return { entries, corrupt, lines, lineOf, bom, endsWithNewline };
 }
 
 function isEntry(v: unknown): v is JournalEntry {
@@ -167,36 +180,18 @@ export function near(observed: number, expected: number): boolean {
   return false;
 }
 
+/** One still-pending mtime bump, as recovery reads it. */
+export interface PendingBump { runId: string; original: { atimeMs: number; mtimeMs: number }; target: number | null }
+
 /**
- * Restore every bumped mtime that has no later restore in the same run.
- *
- * MUST be called only while holding the state-dir lock (`acquireLock`): it rewrites
- * file times and appends to the journal, and a concurrent run's bumps would be undone.
- *
- * Matching is per (runId, path) but restoration is per path (identity normalized with
- * `normalizeCwd`, case-insensitive on win32/darwin): one `utimes` per path, using the
- * original of the EARLIEST still-pending bump (a later run may have journaled an
- * already-bumped value as its "original"), except that a later bump whose original differs
- * from the previous bump's `targetMtimeMs` by more than 2 ms (a user edit in between)
- * replaces it. If the file already sits at that original (+-2 ms; crash between utimes and
- * the restore entry) it counts as `restored` without touching it. Afterwards one `mtime-restore` per affected
- * run lists its paths.
- * - ENOENT: reported in `missing`, marked restored (no endless retry).
- * - Current mtime differs from the latest pending bump's `targetMtimeMs` (+-2 ms): the
- *   file was modified by someone else; never moved backwards. Reported in
- *   `skippedModified`, marked restored. Entries without `targetMtimeMs` restore as before.
- * - Other errors: `failed`, left pending.
- * - Structurally invalid bump/restore entries are skipped and counted in `malformed`.
+ * The bumps recovery would restore, per path (identity per `platform`), in journal order: every structurally valid
+ * `mtime-bump` file without a later `mtime-restore` of the same run and path. `path` is the spelling of the first bump
+ * of that path in the whole journal. `malformed`: bump/restore entries recovery skips. Pure; recoverPendingMtimes and
+ * journal compaction (src/core/compact.ts) both read the journal through it.
  */
-export async function recoverPendingMtimes(
-  j: Journal,
-  opts: { stat?: (p: string) => Promise<{ mtimeMs: number }> } = {},
-): Promise<RecoverResult> {
-  const statFn = opts.stat ?? stat;
-  const entries = await j.readAll();
-  type Bump = { runId: string; original: { atimeMs: number; mtimeMs: number }; target: number | null };
-  const byKey = new Map<string, { path: string; bumps: Bump[] }>();
-  const keyOf = (p: string): string => pathKey(p, process.platform);
+export function pendingBumps(entries: JournalEntry[], platform: NodeJS.Platform = process.platform): { slots: { path: string; bumps: PendingBump[] }[]; malformed: number } {
+  const byKey = new Map<string, { path: string; bumps: PendingBump[] }>();
+  const keyOf = (p: string): string => pathKey(p, platform);
   let malformed = 0;
   const num = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
   for (const e of entries) {
@@ -225,10 +220,40 @@ export async function recoverPendingMtimes(
       }
     }
   }
+  return { slots: [...byKey.values()].filter((s) => s.bumps.length > 0), malformed };
+}
+
+/**
+ * Restore every bumped mtime that has no later restore in the same run.
+ *
+ * MUST be called only while holding the state-dir lock (`acquireLock`): it rewrites
+ * file times and appends to the journal, and a concurrent run's bumps would be undone.
+ *
+ * Matching is per (runId, path) but restoration is per path (identity normalized with
+ * `normalizeCwd`, case-insensitive on win32/darwin): one `utimes` per path, using the
+ * original of the EARLIEST still-pending bump (a later run may have journaled an
+ * already-bumped value as its "original"), except that a later bump whose original differs
+ * from the previous bump's `targetMtimeMs` by more than 2 ms (a user edit in between)
+ * replaces it. If the file already sits at that original (+-2 ms; crash between utimes and
+ * the restore entry) it counts as `restored` without touching it. Afterwards one `mtime-restore` per affected
+ * run lists its paths.
+ * - ENOENT: reported in `missing`, marked restored (no endless retry).
+ * - Current mtime differs from the latest pending bump's `targetMtimeMs` (+-2 ms): the
+ *   file was modified by someone else; never moved backwards. Reported in
+ *   `skippedModified`, marked restored. Entries without `targetMtimeMs` restore as before.
+ * - Other errors: `failed`, left pending.
+ * - Structurally invalid bump/restore entries are skipped and counted in `malformed`.
+ */
+export async function recoverPendingMtimes(
+  j: Journal,
+  opts: { stat?: (p: string) => Promise<{ mtimeMs: number }> } = {},
+): Promise<RecoverResult> {
+  const statFn = opts.stat ?? stat;
+  const entries = await j.readAll();
+  const { slots, malformed } = pendingBumps(entries, process.platform);
   const result: RecoverResult = { restored: [], missing: [], failed: [], skippedModified: [], malformed };
   const doneByRun = new Map<string, string[]>();
-  for (const slot of byKey.values()) {
-    if (slot.bumps.length === 0) continue;
+  for (const slot of slots) {
     // Effective original: the earliest pending bump's, unless a later bump started from a
     // value that is not where the previous bump left the file (a real edit happened between).
     let original = slot.bumps[0]!.original;
