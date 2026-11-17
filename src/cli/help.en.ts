@@ -48,6 +48,7 @@ Clean up and undo
   t3sm dedupe            Move the plan's mirror copies to a reversible quarantine
   t3sm runs              List what each run did
   t3sm rollback          Undo a run (--run <id>)
+  t3sm journal compact   Fold old file-time entries out of the journal (keeps a backup)
 
 Help and maintenance
   t3sm help              What a message means and what to do (t3sm help <topic>)
@@ -517,6 +518,25 @@ Options:
              lastOrganize       { runId, at, changes, reverted, rolledBackBy } or null
              plugin             [{ account, state: installed|outdated|missing, version }] (the /t3sm commands)
              t3Code             { running, version }
+`,
+  journal: `Usage: t3sm journal compact [--older-than <days>] [--yes | --dry-run]
+
+journal.jsonl, where t3sm writes down every change before it makes it, only grows. Most of it is the list of transcript
+file times each import moved and put back. Once a run is finished, old and has nothing pending, nothing reads those
+entries any more: compact drops them and keeps every other entry exactly as it is, so \`t3sm runs\`, \`t3sm rollback\`,
+\`t3sm organize --undo\`, \`t3sm status\` and the recovery of an interrupted run see the same history as before. A run with
+a file time not put back yet, an import without an outcome, a run without an end and the newest run are never touched.
+Before it replaces the journal, t3sm saves it as it was in journal.<run>.bak.jsonl next to it (t3sm never deletes it)
+and checks that nothing a reader computes would change. \`t3sm runs\` lists the compaction; it cannot be rolled back.
+
+Options:
+  --older-than <days>   Fold only runs that ended at least this many days ago (1 to 3650; default 90)
+  --yes                 Skip the confirmation (required when not on a terminal)
+  --dry-run             Only show what would be folded and how much smaller the journal gets
+
+Examples:
+  t3sm journal compact --dry-run
+  t3sm journal compact --older-than 180
 `,
   scan: `Usage: t3sm scan [--json]
 

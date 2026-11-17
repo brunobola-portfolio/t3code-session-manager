@@ -63,7 +63,8 @@ and the other agents' folders from the home folder, so `T3SM_HOME` alone still r
   `list` (the interactive review list), `locale` (numbers, dates, relative times), `terminal`, `organizePreview`.
 - `src/core/`: `types.ts` (shared types: `HarnessId`, sessions, plan, journal entries, config), `paths.ts` (all
   path identity: `normalizeCwd`, `sameCwd`, Claude folder encoding), `journal.ts` (append-only, fsync'd;
-  `recoverPendingMtimes`), `lock.ts`, `fsutil.ts` (`atomicWrite`, `publishNoClobber`), `config.ts`, `activity.ts`
+  `recoverPendingMtimes`), `compact.ts` (`t3sm journal compact`: drops old runs' file-time entries; backup, then
+  rename), `lock.ts`, `fsutil.ts` (`atomicWrite`, `publishNoClobber`), `config.ts`, `activity.ts`
   (the 10-minute and 30-day windows), `glob.ts`, `uuid.ts`, `pid.ts`, `version.ts` (install stamp: what build an install root holds),
   `sysroot.ts` (Windows programs by their absolute System32 path, never a bare name).
 - `src/sources/`: one adapter per agent (`claude`, `codex`, `pi` native; `opencode` convert), `types.ts`
@@ -224,8 +225,9 @@ Read [docs/adding-a-harness.md](docs/adding-a-harness.md); `src/sources/opencode
 
 - Anything that writes real session data, t3sm's real state folder or a real T3 Code: `apply`, `dedupe`,
   `quarantine`, `merge --all` / `--session`, `rollback`, `doctor --repair`, `accounts --init [--force]`,
-  `accounts --apply`, `accounts --rename`, `sync` (without `--dry-run`) and `sync --watch`, `schedule install` /
-  `remove` / `restart`, `projects set` / `unset`, every write step of the guided assistant, and the live tests.
+  `accounts --apply`, `accounts --rename`, `journal compact`, `sync` (without `--dry-run`) and `sync --watch`,
+  `schedule install` / `remove` / `restart`, `projects set` / `unset`, every write step of the guided assistant, and
+  the live tests.
 - `t3sm update` without `--check` or `--dry-run`: it reinstalls the user's global t3sm with npm; `update --auto on|off`
   changes config.json.
 - Pushing, tagging, publishing or running `node scripts/release.js <version>`.

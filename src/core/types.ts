@@ -172,7 +172,12 @@ export type JournalEntry =
   | { t: "run-end"; runId: string; at: string; status: "ok" | "partial" | "aborted"; held?: number }
   // One t3sm update (src/ops/updater.ts runUpdate): "pending" before anything is installed, then the outcome in a
   // second entry of the same run. error: one line, why it failed or was rolled back.
-  | { t: "update"; runId: string; from: string; to: string; source: UpdateSource; outcome: "pending" | "installed" | "rolled-back" | "failed"; error?: string };
+  | { t: "update"; runId: string; from: string; to: string; source: UpdateSource; outcome: "pending" | "installed" | "rolled-back" | "failed"; error?: string }
+  // One `t3sm journal compact` (src/core/compact.ts), inside its own run (run-start "journal compact" ... run-end):
+  // `runs` finished runs older than `olderThanDays` lost their `entries` mtime-bump / mtime-restore entries (nothing
+  // else is ever dropped); the journal went from `bytesBefore` to `bytesAfter`; `backup` is the file name, next to
+  // journal.jsonl, of the full journal as it was (never deleted by t3sm). Readers that do not know this kind skip it.
+  | { t: "journal-compacted"; runId: string; at: string; olderThanDays: number; runs: number; entries: number; bytesBefore: number; bytesAfter: number; backup: string };
 /** What `t3sm organize` changes in T3 Code (spec §5); re-exported by src/organize/types.ts. */
 export type OrganizeKind = "archive" | "title" | "unsettle" | "settle" | "pin" | "unpin" | "project-delete" | "project-title" | "auto-settle";
 export interface AccountConfig { id: string; home: string; displayName: string; accentColor: string | null }

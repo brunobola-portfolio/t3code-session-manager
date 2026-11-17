@@ -25,6 +25,7 @@ import { changelogCommand } from "./commands/changelog.ts";
 import { organizeCommand } from "./commands/organize.ts";
 import { statusCommand } from "./commands/status.ts";
 import { helpCommand } from "./commands/help.ts";
+import { journalCommand } from "./commands/journal.ts";
 import { commandHelp, renderHelpText, usageHelp } from "./helpText.ts";
 
 export interface Io {
@@ -70,6 +71,7 @@ export const commands: Record<string, CommandHandler> = {
   changelog: (a, io) => changelogCommand(a, io),
   organize: (a, io) => organizeCommand(a, io),
   status: (a, io) => statusCommand(a, io),
+  journal: (a, io) => journalCommand(a, io),
   help: (a, io) => helpCommand(a, io),
 };
 

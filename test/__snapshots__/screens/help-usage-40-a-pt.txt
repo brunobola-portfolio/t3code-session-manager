@@ -65,6 +65,10 @@ Limpar e desfazer
     Lista o que cada execução fez
   t3sm rollback
     Desfaz uma execução (--run <id>)
+  t3sm journal compact
+    Retira do diário os registos antigos
+    de datas de ficheiros (guarda uma
+    cópia)
 
 Ajuda e manutenção
   t3sm help

@@ -67,7 +67,8 @@ These commands change files or T3 Code: `apply`, `dedupe`, `quarantine`, `merge 
 `merge --session <id>`, `recover <session id>`, `rollback`, `accounts --apply`, `accounts --rename`,
 `accounts --init`, `schedule install`, `schedule remove`, `schedule restart`, `sync` (without `--dry-run`),
 `organize`, `organize --undo`, `projects rename --suggest`, `projects set`, `projects unset`,
-`doctor --repair` and `update` without `--check` or `--dry-run` (it reinstalls t3sm itself with npm;
+`doctor --repair`, `journal compact` (it rewrites t3sm's journal, keeping a backup) and `update` without `--check` or
+`--dry-run` (it reinstalls t3sm itself with npm;
 also `update --from <folder>`, `update --source npm` and `update --source github`), and `update --auto on|off` (a preference switch in config.json, like `projects unset`: it needs no `--yes`,
 but still ask first).
 
@@ -76,7 +77,7 @@ but still ask first).
 - Your shell is not a terminal, so they need `--yes` to proceed. Add `--yes` only after
   that explicit yes. `--allow-untested` only hides the untested-version warning; add it
   only if the user asks.
-- Before `dedupe`, `quarantine`, `recover`, `rollback`, `organize`, `organize --undo` or
+- Before `dedupe`, `quarantine`, `recover`, `rollback`, `organize`, `organize --undo`, `journal compact` or
   `projects rename --suggest`, run the same command with `--dry-run` and show the user
   what would move, change or be undone.
 - `rollback --yes` needs `--run <id>` and `organize --undo --yes` needs the run id
@@ -86,7 +87,7 @@ but still ask first).
 Read-only, safe to run without asking: `doctor`, `scan`, `stats` (or `stats --json`), `plan` (or `plan --html`), `apply --dry-run`,
 `accounts` (no option; emails are masked, do not add `--show-emails` unless asked), `runs`, `status` (or `status --json`), `merge` (no option) or `merge --dry-run`, `recover <session id> --dry-run`, `sync --dry-run`,
 `organize --dry-run`, `organize --undo --dry-run`, `projects` (no option),
-`projects rename --suggest --dry-run`, `schedule status`, `schedule install|remove|restart --dry-run`, `update --check`, `update --dry-run`, `changelog`
+`projects rename --suggest --dry-run`, `journal compact --dry-run`, `schedule status`, `schedule install|remove|restart --dry-run`, `update --check`, `update --dry-run`, `changelog`
 (or `changelog --since <version>`), `help` (or `help <topic>`: what a message means and what to do, in the user's
 language), every `--help`. `update --check` and `update --dry-run` look up
 the newest release online (t3sm's only network call besides installing a release with npm and the optional plugin

@@ -11,7 +11,7 @@ import { Journal, recoverPendingMtimes } from "../../core/journal.ts";
 import { acquireLock } from "../../core/lock.ts";
 import { connectT3, type T3Api } from "../../t3/api.ts";
 import { changesOf, namesOf, undoLines, type Names } from "./organize.ts";
-import { isRollbackRun, latestRunId, listRuns, organizeOnlyRun, rollbackRun, type RollbackReport, type RunSummary } from "../../ops/rollback.ts";
+import { isCompactionRun, isRollbackRun, latestRunId, listRuns, organizeOnlyRun, rollbackRun, type RollbackReport, type RunSummary } from "../../ops/rollback.ts";
 import { accountsOf, parseFlags, type OpsDeps } from "./quarantine.ts";
 import { cliUi, confirm, type CliKey, type CliUi } from "../ui.ts";
 import { reportLockBusy } from "../locked.ts";
@@ -141,6 +141,7 @@ export async function rollbackCommand(args: string[], io: Io, deps: OpsDeps = {}
   if (target === null) { say(noteLines(ui.s, "ok", ui.t("rollback.noRuns"), ui.width)); return 0; }
   if (!entries.some((e) => e.runId === target)) { io.stderr(`${ui.t("rollback.noSuchRun", { runId: shown(target) })}\n`); return 2; }
   if (isRollbackRun(entries, target)) { io.stderr(`${ui.t("rollback.ofRollback")}\n`); return 2; }
+  if (isCompactionRun(entries, target)) { io.stderr(`${ui.t("rollback.ofCompaction")}\n`); return 2; }
   // Without --run the target is the newest run, which may be an unattended `sync`: never chosen silently.
   if (yes && !p.values.has("--run")) {
     io.stderr(`${ui.t("rollback.needsRun", { runId: shown(target) })}\n`);

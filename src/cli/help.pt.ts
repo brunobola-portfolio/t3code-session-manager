@@ -43,6 +43,7 @@ Limpar e desfazer
   t3sm dedupe            Move as cópias-espelho do plano para uma quarentena reversível
   t3sm runs              Lista o que cada execução fez
   t3sm rollback          Desfaz uma execução (--run <id>)
+  t3sm journal compact   Retira do diário os registos antigos de datas de ficheiros (guarda uma cópia)
 
 Ajuda e manutenção
   t3sm help              O que uma mensagem quer dizer e o que fazer (t3sm help <tópico>)
@@ -534,6 +535,26 @@ Opções:
              lastOrganize       { runId, at, changes, reverted, rolledBackBy } ou null
              plugin             [{ account, state: installed|outdated|missing, version }] (os comandos /t3sm)
              t3Code             { running, version }
+`,
+  journal: `Uso: t3sm journal compact [--older-than <dias>] [--yes | --dry-run]
+
+O journal.jsonl, onde o t3sm escreve cada mudança antes de a fazer, só cresce. A maior parte é a lista das datas de
+transcrições que cada importação mexeu e repôs. Quando uma execução terminou, é antiga e não tem nada pendente, já nada
+lê esses registos: o compact retira-os e mantém todos os outros registos tal como estão, por isso o \`t3sm runs\`, o
+\`t3sm rollback\`, o \`t3sm organize --undo\`, o \`t3sm status\` e a recuperação de uma execução interrompida veem a
+mesma história de antes. Uma execução com uma data de ficheiro ainda por repor, uma importação sem resultado, uma
+execução sem fim e a execução mais recente nunca são tocadas. Antes de substituir o diário, o t3sm guarda-o tal como
+estava em journal.<execução>.bak.jsonl ao lado (o t3sm nunca o apaga) e confirma que nada do que um leitor calcula
+mudaria. O \`t3sm runs\` lista a compactação; não pode ser desfeita com rollback.
+
+Opções:
+  --older-than <dias>   Compacta só as execuções que terminaram há pelo menos estes dias (1 a 3650; por omissão 90)
+  --yes                 Não pede confirmação (obrigatório fora de um terminal)
+  --dry-run             Só mostra o que seria compactado e quanto o diário encolhe
+
+Exemplos:
+  t3sm journal compact --dry-run
+  t3sm journal compact --older-than 180
 `,
   scan: `Uso: t3sm scan [--json]
 

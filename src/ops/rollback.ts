@@ -32,6 +32,7 @@ import { effectiveWrites, newRunId, type Journal } from "../core/journal.ts";
 import { sha256File, statSafe } from "../core/fsutil.ts";
 import { pathKey, sameCwd } from "../core/paths.ts";
 import { ConfigError } from "../core/config.ts";
+import { COMPACT_COMMAND } from "../core/compact.ts";
 import { isActive } from "../core/activity.ts";
 import type { T3Api } from "../t3/api.ts";
 import { T3NotRunning } from "../t3/errors.ts";
@@ -146,11 +147,11 @@ function foldersUpTo(path: string, created: string): string[] | null {
   }
 }
 
-/** Newest run with a run-start that is not itself a rollback. */
+/** Newest run with a run-start that is not itself a rollback or a journal compaction (neither is ever rolled back). */
 export function latestRunId(entries: JournalEntry[]): string | null {
   for (let i = entries.length - 1; i >= 0; i--) {
     const e = entries[i]!;
-    if (e.t === "run-start" && typeof e.command === "string" && !e.command.startsWith("rollback")) return e.runId;
+    if (e.t === "run-start" && typeof e.command === "string" && !e.command.startsWith("rollback") && e.command !== COMPACT_COMMAND) return e.runId;
   }
   return null;
 }
@@ -171,6 +172,11 @@ export function organizeOnlyRun(entries: JournalEntry[], runId: string): boolean
 /** The run-start command of `runId` marks it as a rollback run (those are never rolled back). */
 export function isRollbackRun(entries: JournalEntry[], runId: string): boolean {
   return entries.some((e) => e.t === "run-start" && e.runId === runId && typeof e.command === "string" && e.command.startsWith("rollback"));
+}
+
+/** `runId` is a journal compaction (`t3sm journal compact`): it changed only journal.jsonl and is never rolled back. */
+export function isCompactionRun(entries: JournalEntry[], runId: string): boolean {
+  return entries.some((e) => e.t === "run-start" && e.runId === runId && e.command === COMPACT_COMMAND);
 }
 
 function selection(u: unknown): { instanceId: string | null; model: string | undefined } {
@@ -259,6 +265,10 @@ export async function rollbackRun(targetRunId: string, deps: RollbackDeps): Prom
 
   const all = await j.readAll();
   if (isRollbackRun(all, targetRunId)) throw new ConfigError("Cannot roll back a rollback run.");
+  if (isCompactionRun(all, targetRunId)) {
+    // It changed only journal.jsonl; the journal as it was is the backup its journal-compacted entry names.
+    throw new ConfigError("Cannot roll back a journal compaction: it changed only journal.jsonl. The journal as it was is the backup next to it (journal.<run>.bak.jsonl).");
+  }
   const r: RollbackReport = {
     runId: null, targetRunId, command: null,
     filesRemoved: [], filesKeptModified: [], filesKeptActive: [], filesKeptRewritten: [], filesKeptRefreshed: [], foldersRemoved: [], foldersKept: [], unquarantined: [], unquarantineConflicts: [], alreadyRestored: [],

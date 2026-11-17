@@ -63,6 +63,9 @@ Clean up and undo
     List what each run did
   t3sm rollback
     Undo a run (--run <id>)
+  t3sm journal compact
+    Fold old file-time entries out of
+    the journal (keeps a backup)
 
 Help and maintenance
   t3sm help

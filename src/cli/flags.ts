@@ -27,6 +27,7 @@ export const FLAG_SPECS = {
     valued: ["--undo", "--only", "--auto-settle", "--history", "--min", "--no-pin"],
   },
   status: { bool: ["--json"], valued: [] },
+  journal: { bool: ["--yes", "--dry-run"], valued: ["--older-than"] },
   help: { bool: [], valued: [] },
 } as const satisfies Record<string, { bool: readonly string[]; valued: readonly string[] }>;
 
