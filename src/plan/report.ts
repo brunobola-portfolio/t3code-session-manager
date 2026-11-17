@@ -327,6 +327,8 @@ export const SKIP_WORDS: Record<SkipReason, CliKey> = {
 
 export interface TerminalSummaryOptions {
   planPath: string;
+  /** plan.html, when `t3sm plan --html` wrote it: named under the full report. */
+  htmlPath?: string;
   /** Projects held this run because a conversation of theirs is in use (`apply`'s confirmation): a row in the panel. */
   held?: { roots: string[]; sessions: number };
   names?: Record<string, string>;
@@ -400,6 +402,11 @@ export function renderTerminalSummary(plan: Plan, opts: TerminalSummaryOptions):
   const report = t("plan.fullReport", { path: s("path", opts.planPath) });
   const pathLines = displayWidth(opts.planPath) <= width ? [s("path", opts.planPath)] : wrapText(opts.planPath, width);
   out.push("", ...(displayWidth(report) <= width ? [report] : [t("plan.fullReport", { path: "" }).trimEnd(), ...pathLines]));
+  if (opts.htmlPath !== undefined) {
+    const html = t("plan.htmlReport", { path: s("path", opts.htmlPath) });
+    const htmlLines = displayWidth(opts.htmlPath) <= width ? [s("path", opts.htmlPath)] : wrapText(opts.htmlPath, width);
+    out.push(...(displayWidth(html) <= width ? [html] : [t("plan.htmlReport", { path: "" }).trimEnd(), ...htmlLines]));
+  }
   out.push(...fitLine(plan.mirrorCopies.length > 0
     ? t("plan.nextDedupe", { dedupe: s("key", "t3sm dedupe"), apply: s("key", "t3sm apply") })
     : t("plan.next", { command: s("key", "t3sm apply") }), width, 2));

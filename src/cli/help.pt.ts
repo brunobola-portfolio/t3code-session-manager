@@ -21,7 +21,7 @@ Começar aqui
 
 Importar
   t3sm doctor            Verifica esta máquina, o T3 Code e as contas (só leitura)
-  t3sm plan              Prepara o plano de importação em plan.md (não muda nenhuma sessão)
+  t3sm plan              Prepara o plano de importação em plan.md (--html: também plan.html; não muda nenhuma sessão)
   t3sm apply             Importa as sessões do plano (--dry-run, --only "<pasta>")
 
 Contas e projetos
@@ -47,6 +47,7 @@ Limpar e desfazer
 Ajuda e manutenção
   t3sm help              O que uma mensagem quer dizer e o que fazer (t3sm help <tópico>)
   t3sm scan              Conta as sessões por agente e por conta (não precisa do T3 Code)
+  t3sm stats             As tuas sessões por agente, conta e mês, e o que foi importado (local, só leitura)
   t3sm update            Atualiza o t3sm para a versão mais recente (--check só vê)
   t3sm changelog         O que há de novo nesta versão (--since <versão>)
   t3sm --version         Mostra a versão
@@ -542,7 +543,17 @@ descoberta do próprio t3sm (na pasta de estado); nunca um ficheiro de sessão.
 Opções:
   --json    Escreve as sessões encontradas como uma lista JSON
 `,
-  plan: `Uso: t3sm plan [--json] [--allow-untested]
+  stats: `Uso: t3sm stats [--json]
+
+Um resumo do que tens: as sessões desta máquina por agente, por conta do Claude Code e por mês (quando cada uma
+começou), o que o t3sm importou para o T3 Code e converteu (do seu diário; uma execução desfeita não conta) e o que o
+último plano deixaria de fora. Só leitura: não precisa do T3 Code a correr, não escreve nada, nem a cache de descoberta,
+e não envia nada para lado nenhum.
+
+Opções:
+  --json    Escreve o resumo em JSON (chaves em inglês, nomes das contas mascarados, sem caminhos)
+`,
+  plan: `Uso: t3sm plan [--json] [--html] [--allow-untested]
 
 Liga-se ao T3 Code em execução (só leitura), encontra as sessões e escreve o plano de importação em
 <estado>/runs/<runId>/plan.md e plan.json. Também atualiza a cache de descoberta do t3sm e, na primeira vez, guarda as
@@ -550,6 +561,8 @@ contas detetadas em <estado>/config.json. O T3 Code e os ficheiros das sessões 
 
 Opções:
   --json             Escreve o plano em JSON em vez do resumo
+  --html             Escreve também plan.html ao lado de plan.md: um ficheiro para abrir no browser, com filtros
+                     por projeto, conta, ação e motivo de ficar de fora e uma caixa de pesquisa (nada nele vem da rede)
   --allow-untested   Sem aviso numa versão do T3 Code que o t3sm não testou (nunca bloqueia)
 `,
   help: `Uso: t3sm help [<tópico> | <comando>]

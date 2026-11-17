@@ -12,6 +12,7 @@ import { atomicWrite } from "../../core/fsutil.ts";
 import { Journal, newRunId } from "../../core/journal.ts";
 import { buildPlan } from "../../plan/planner.ts";
 import { renderPlanMarkdown, renderTerminalSummary } from "../../plan/report.ts";
+import { renderPlanHtml } from "../../plan/html.ts";
 import { connectT3, instancesFromConfig, type T3Api, type T3Project } from "../../t3/api.ts";
 import { allAdapters } from "../../sources/registry.ts";
 import type { SourceAdapter } from "../../sources/types.ts";
@@ -120,10 +121,10 @@ export async function planCommand(args: string[], io: Io, deps: PlanDeps = {}): 
   const dir = stateDir(io.env, home);
   const connect = deps.connect ?? connectT3;
   if (await runInProgress(dir)) io.stderr(`${RUN_IN_PROGRESS_NOTE}\n`);
-  const { plan, names, planPath } = await writeFreshPlan(io, { ...deps, home, now, connect }, args.includes("--allow-untested"));
+  const { plan, names, planPath, htmlPath } = await writeFreshPlan(io, { ...deps, home, now, connect }, args.includes("--allow-untested"), { html: args.includes("--html") });
   if (json) io.stdout(JSON.stringify(planForJson(plan), null, 2) + "\n");
   else {
-    io.stdout(renderTerminalSummary(plan, { planPath, names, ui: cliUi(io, { now }) }));
+    io.stdout(renderTerminalSummary(plan, { planPath, ...(htmlPath !== null ? { htmlPath } : {}), names, ui: cliUi(io, { now }) }));
   }
   return 0;
 }
@@ -135,9 +136,10 @@ export function planForJson(plan: Plan): Plan {
 
 /**
  * What `t3sm plan` does, without printing the summary: connect (read-only), build a fresh plan, write
- * runs/<runId>/plan.md and plan.json (and config.json on the first run). Shared with the guided assistant.
+ * runs/<runId>/plan.md, plan.html with `o.html` (`--html`), and plan.json (and config.json on the first run). Shared with
+ * the guided assistant.
  */
-export async function writeFreshPlan(io: Io, deps: PlanDeps, allowUntested: boolean): Promise<FreshPlan & { planPath: string }> {
+export async function writeFreshPlan(io: Io, deps: PlanDeps, allowUntested: boolean, o: { html?: boolean } = {}): Promise<FreshPlan & { planPath: string; htmlPath: string | null }> {
   const home = deps.home ?? homedir();
   const now = deps.now ?? Date.now;
   const dir = stateDir(io.env, home);
@@ -153,8 +155,10 @@ export async function writeFreshPlan(io: Io, deps: PlanDeps, allowUntested: bool
     const planPath = join(runDir, "plan.md");
     // plan.md first, plan.json last: apply reads plan.json, so its presence means the run is complete.
     await atomicWrite(planPath, renderPlanMarkdown(fresh.plan, { names: fresh.names }));
+    const htmlPath = o.html ? join(runDir, "plan.html") : null;
+    if (htmlPath !== null) await atomicWrite(htmlPath, renderPlanHtml(fresh.plan, { names: fresh.names, home, platform: process.platform }));
     await atomicWrite(join(runDir, "plan.json"), JSON.stringify(fresh.plan, null, 2) + "\n");
-    return { ...fresh, planPath };
+    return { ...fresh, planPath, htmlPath };
   } finally {
     await api.close();
   }

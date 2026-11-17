@@ -9,7 +9,8 @@ Start here
 Import
   t3sm doctor            Check this machine, T3 Code and the accounts
                          (read-only)
-  t3sm plan              Build the import plan in plan.md (changes no session)
+  t3sm plan              Build the import plan in plan.md (--html: plan.html
+                         too; changes no session)
   t3sm apply             Import the planned sessions (--dry-run, --only
                          "<folder>")
 
@@ -44,6 +45,8 @@ Help and maintenance
   t3sm help              What a message means and what to do (t3sm help <topic>)
   t3sm scan              Count sessions per agent and account (no T3 Code
                          needed)
+  t3sm stats             Your sessions per agent, account and month, and what
+                         was imported (local, read-only)
   t3sm update            Update t3sm to the newest release (--check only looks)
   t3sm changelog         What is new in this version (--since <version>)
   t3sm --version         Show the version

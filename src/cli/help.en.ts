@@ -26,7 +26,7 @@ Start here
 
 Import
   t3sm doctor            Check this machine, T3 Code and the accounts (read-only)
-  t3sm plan              Build the import plan in plan.md (changes no session)
+  t3sm plan              Build the import plan in plan.md (--html: plan.html too; changes no session)
   t3sm apply             Import the planned sessions (--dry-run, --only "<folder>")
 
 Accounts and projects
@@ -52,6 +52,7 @@ Clean up and undo
 Help and maintenance
   t3sm help              What a message means and what to do (t3sm help <topic>)
   t3sm scan              Count sessions per agent and account (no T3 Code needed)
+  t3sm stats             Your sessions per agent, account and month, and what was imported (local, read-only)
   t3sm update            Update t3sm to the newest release (--check only looks)
   t3sm changelog         What is new in this version (--since <version>)
   t3sm --version         Show the version
@@ -525,7 +526,17 @@ cache (in its state folder); never a session file.
 Options:
   --json    Print the discovered sessions as a JSON array
 `,
-  plan: `Usage: t3sm plan [--json] [--allow-untested]
+  stats: `Usage: t3sm stats [--json]
+
+A summary of what you have: the sessions on this machine per agent, per Claude Code account and per month (when each
+started), what t3sm imported into T3 Code and converted (from its journal; a rolled-back run counts for nothing) and
+what the latest plan would skip. Read-only: it needs no running T3 Code, writes nothing, not even the discovery cache,
+and sends nothing anywhere.
+
+Options:
+  --json    Print the summary as JSON (English keys, account names masked, no paths)
+`,
+  plan: `Usage: t3sm plan [--json] [--html] [--allow-untested]
 
 Connect to the running T3 Code (read-only), find the sessions and write the import plan to
 <state>/runs/<runId>/plan.md and plan.json. It also updates t3sm's discovery cache and, on the first run, saves the
@@ -533,6 +544,8 @@ detected accounts to <state>/config.json. T3 Code and session files are not chan
 
 Options:
   --json             Print the plan as JSON instead of the summary
+  --html             Also write plan.html next to plan.md: one file to open in a browser, with filters by
+                     project, account, action and skip reason and a search box (nothing in it loads from the network)
   --allow-untested   No warning on a T3 Code version t3sm was not tested with (it never blocks)
 `,
   help: `Usage: t3sm help [<topic> | <command>]

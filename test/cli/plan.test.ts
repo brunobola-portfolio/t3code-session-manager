@@ -269,3 +269,23 @@ test("plan --json masks an email-shaped display name of an instance to create (p
   assert.doesNotMatch(out, /demouser/);
   assert.equal((plan as { instancesToCreate: { displayName: string }[] }).instancesToCreate[0]!.displayName, "demouser@example.com", "a copy: the plan itself is unchanged");
 });
+
+test("plan --html also writes plan.html next to plan.md and names it; without --html there is none", async () => {
+  const s = setup();
+  const deps: PlanDeps = { home: s.home, adapters: [adapter([sess({ cwd: join(s.home, "work", "demo").replaceAll("\\", "/") })])], connect: async () => fakeApi({ n: 0 }), now: () => Date.now() };
+  assert.equal(await planCommand([], s.io, deps), 0, s.err());
+  const first = readdirSync(join(s.state, "runs"));
+  assert.ok(!existsSync(join(s.state, "runs", first[0]!, "plan.html")), "no plan.html without --html");
+  assert.doesNotMatch(s.out(), /plan\.html/);
+
+  const h = setup();
+  const hdeps: PlanDeps = { ...deps, home: h.home, adapters: [adapter([sess({ cwd: join(h.home, "work", "demo").replaceAll("\\", "/") })])] };
+  assert.equal(await planCommand(["--html"], h.io, hdeps), 0, h.err());
+  const dir = join(h.state, "runs", readdirSync(join(h.state, "runs"))[0]!);
+  const html = readFileSync(join(dir, "plan.html"), "utf8");
+  assert.match(html, /^<!doctype html>/);
+  assert.ok(existsSync(join(dir, "plan.json")) && existsSync(join(dir, "plan.md")));
+  assert.ok(h.out().replace(/\r?\n/g, "").includes(join(dir, "plan.html")), h.out());
+  assert.match(h.out(), /HTML report:/);
+  assert.ok(!html.includes(h.home.replaceAll("\\", "/")), "home shown as ~");
+});

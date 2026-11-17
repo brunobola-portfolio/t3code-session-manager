@@ -16,7 +16,8 @@ Importar
     as contas (só leitura)
   t3sm plan
     Prepara o plano de importação em
-    plan.md (não muda nenhuma sessão)
+    plan.md (--html: também plan.html;
+    não muda nenhuma sessão)
   t3sm apply
     Importa as sessões do plano
     (--dry-run, --only "<pasta>")
@@ -72,6 +73,10 @@ Ajuda e manutenção
   t3sm scan
     Conta as sessões por agente e por
     conta (não precisa do T3 Code)
+  t3sm stats
+    As tuas sessões por agente, conta e
+    mês, e o que foi importado (local,
+    só leitura)
   t3sm update
     Atualiza o t3sm para a versão mais
     recente (--check só vê)

@@ -10,8 +10,8 @@ Começar aqui
 Importar
   t3sm doctor            Verifica esta máquina, o T3 Code e as contas (só
                          leitura)
-  t3sm plan              Prepara o plano de importação em plan.md (não muda
-                         nenhuma sessão)
+  t3sm plan              Prepara o plano de importação em plan.md (--html:
+                         também plan.html; não muda nenhuma sessão)
   t3sm apply             Importa as sessões do plano (--dry-run, --only
                          "<pasta>")
 
@@ -49,6 +49,8 @@ Ajuda e manutenção
                          <tópico>)
   t3sm scan              Conta as sessões por agente e por conta (não precisa do
                          T3 Code)
+  t3sm stats             As tuas sessões por agente, conta e mês, e o que foi
+                         importado (local, só leitura)
   t3sm update            Atualiza o t3sm para a versão mais recente (--check só
                          vê)
   t3sm changelog         O que há de novo nesta versão (--since <versão>)

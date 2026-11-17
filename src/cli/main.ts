@@ -8,6 +8,7 @@ import { detectCaps, type Caps } from "../ui/caps.ts";
 import { cliUi, parseGlobalFlags, unknownOption, usageLine } from "./ui.ts";
 import { scanCommand } from "./commands/scan.ts";
 import { planCommand } from "./commands/plan.ts";
+import { statsCommand } from "./commands/stats.ts";
 import { accountsCommand } from "./commands/accounts.ts";
 import { applyCommand } from "./commands/apply.ts";
 import { dedupeCommand, quarantineCommand } from "./commands/quarantine.ts";
@@ -52,6 +53,7 @@ export const commands: Record<string, CommandHandler> = {
   doctor: (a, io) => doctorCommand(a, io),
   scan: (a, io) => scanCommand(a, io),
   plan: (a, io) => planCommand(a, io),
+  stats: (a, io) => statsCommand(a, io),
   accounts: (a, io) => accountsCommand(a, io),
   apply: (a, io) => applyCommand(a, io),
   quarantine: (a, io) => quarantineCommand(a, io),

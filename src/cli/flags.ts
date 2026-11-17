@@ -6,7 +6,8 @@
 export const FLAG_SPECS = {
   doctor: { bool: ["--json", "--repair"], valued: [] },
   scan: { bool: ["--json"], valued: [] },
-  plan: { bool: ["--json", "--allow-untested"], valued: [] },
+  plan: { bool: ["--json", "--allow-untested", "--html"], valued: [] },
+  stats: { bool: ["--json"], valued: [] },
   accounts: { bool: ["--init", "--force", "--apply", "--yes", "--allow-untested", "--show-emails"], valued: ["--rename", "--color"] },
   apply: { bool: ["--yes", "--allow-untested", "--quiet", "--dry-run", "--verbose"], valued: ["--plan", "--only"] },
   quarantine: { bool: ["--yes", "--dry-run"], valued: [] },

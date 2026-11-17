@@ -83,7 +83,7 @@ but still ask first).
   (`organize --undo <run> --yes`): take it from `t3sm runs` or the dry run, and say which
   run it is.
 
-Read-only, safe to run without asking: `doctor`, `scan`, `plan`, `apply --dry-run`,
+Read-only, safe to run without asking: `doctor`, `scan`, `stats` (or `stats --json`), `plan` (or `plan --html`), `apply --dry-run`,
 `accounts` (no option; emails are masked, do not add `--show-emails` unless asked), `runs`, `status` (or `status --json`), `merge` (no option) or `merge --dry-run`, `recover <session id> --dry-run`, `sync --dry-run`,
 `organize --dry-run`, `organize --undo --dry-run`, `projects` (no option),
 `projects rename --suggest --dry-run`, `schedule status`, `schedule install|remove|restart --dry-run`, `update --check`, `update --dry-run`, `changelog`
