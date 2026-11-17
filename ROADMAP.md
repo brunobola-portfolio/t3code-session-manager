@@ -20,9 +20,10 @@ T3 Code** (blocked on something T3 Code does not offer yet), **help wanted**.
 
 ## Done in 0.5
 
-Moved out of the ideas, not released yet: `t3sm stats`, a local summary of the sessions per agent, account and month
-and of what was imported (nothing is sent anywhere; t3sm has no telemetry), and `t3sm plan --html`, which also writes
-`plan.html` with filters and a search box. See the [CHANGELOG](CHANGELOG.md).
+Built, not released yet: `t3sm stats`, a local summary of the sessions per agent, account and month and of what
+was imported (nothing is sent anywhere; t3sm has no telemetry); `t3sm plan --html`, which also writes `plan.html`
+with filters and a search box; and `t3sm journal compact`, which drops the file-time entries of old, finished runs
+and keeps a backup (rollback, undo and recovery see the same history). See the [CHANGELOG](CHANGELOG.md).
 
 ## Done in 0.4
 
@@ -41,7 +42,6 @@ notifications, the `/t3sm` commands inside T3 Code, and no longer refusing an un
 | Item | Problem | Approach | Status |
 | :-- | :-- | :-- | :-- |
 | Merging compacted sessions | A session compacted (`/compact`) after its import is never merged, so its terminal work stays out of T3 Code | Find a revision format that keeps every turn the compaction summarised, then merge like any other session | needs design |
-| Journal compaction | `journal.jsonl` only grows | A command that folds finished runs into a snapshot, keeping everything `rollback` and recovery need | planned |
 | Smaller modules | The largest modules (`apply`, `importer`, `merge`, `rollback`, `doctor`) are about 700 lines each, which makes review slow | Split them by step without changing behaviour; the existing tests must pass unchanged | planned |
 | Export and backup | Imported threads live only in T3 Code; there is no copy you can keep | `t3sm export` reads threads through T3 Code's API and writes a portable copy in a folder you choose | needs design |
 | Review page | Deciding many changes at once is easier on a page than in a terminal list | `t3sm review`: a local page for bulk decisions, built on the organize plan | needs design |

@@ -451,6 +451,7 @@ Every change is journaled and undoable.
 | `t3sm rollback --run <id>` | Undoes a run; `--dry-run` lists what it would undo. `--yes` requires `--run` |
 | `t3sm recover <session id>` | Brings back a conversation started in T3 Code whose thread you deleted, when t3sm cannot tell by itself (`t3sm status` lists them): a faithful copy with a new id, imported into its project. If the thread still exists in T3 Code, this makes a duplicate. Asks first; `--dry-run`; undone by `rollback` |
 | `t3sm doctor --repair` | Puts back file times an interrupted run left moved; the only write `doctor` makes |
+| `t3sm journal compact` | Makes `journal.jsonl` smaller: drops the file-time entries of runs that ended more than 90 days ago (`--older-than <days>`) and had nothing pending, keeps the old journal as a backup next to it. `runs`, `rollback`, `organize --undo` and recovery see the same history. Asks first; `--dry-run` |
 | `t3sm accounts` | Accounts found and their T3 Code instances |
 | `t3sm projects` | Every project folder with its account and why; `projects set "<folder>" <account>` changes it (a route, and the T3 Code project's default, reversible); `projects unset` removes the route; `projects rename --suggest` proposes clean names for the projects t3sm created (before -> after, asks first, undone by `organize --undo`) |
 | `t3sm organize` | Tidies imported history in T3 Code ([above](#organize-your-history)); `--dry-run`, `--undo`, `--only`, `--plain` |
@@ -476,7 +477,7 @@ can undo a run. Each guarantee is pinned by tests you can read and run (`npm tes
 
 - **Review before write.** `plan` writes only its report (plus, on first run,
   `config.json` and a discovery cache) in t3sm's folder. `apply`, `dedupe`, `quarantine`,
-  `merge`, `organize` and `rollback` ask first, and refuse with exit code 2 on a non-terminal without
+  `merge`, `organize`, `rollback` and `journal compact` ask first, and refuse with exit code 2 on a non-terminal without
   `--yes`. `apply --dry-run` runs every check and lists what it would do, writing nothing.
   [test/apply/apply.test.ts](test/apply/apply.test.ts),
   [test/apply/dry-run.test.ts](test/apply/dry-run.test.ts),

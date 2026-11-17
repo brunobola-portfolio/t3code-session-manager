@@ -97,6 +97,15 @@ a crash or a power cut), and only then contacts T3 Code. This runs even while T3
 A run interrupted with Ctrl+C restores the current wave and stops (a second Ctrl+C says so, a third restores at once
 and exits 130). Run `t3sm apply` again to continue: what is already in T3 Code is skipped.
 
+The journal only grows. `t3sm journal compact` (`src/core/compact.ts`) drops the `mtime-bump` / `mtime-restore`
+entries of runs that ended long ago with nothing pending (no bump left unrestored in any run touching their paths, no
+import attempt without an outcome, a run-end, not the newest run): recovery and `pendingMtimePaths` read only pending
+bumps, and `listRuns` ignores both kinds, so every reader computes the same. Every other line is kept byte for byte.
+It appends its run-start, writes the whole journal to `journal.<run>.bak.jsonl` (exclusive create, fsync), writes the
+result to a temp file (fsync), checks it against the original (same non-file-time entries in order, same pending
+bumps, same corrupt-line count) and that no append slipped in, then renames it over `journal.jsonl`. A crash at any
+point leaves the old journal (plus, at worst, an unfinished compaction run and a backup) or the new one.
+
 ### The lock
 
 `<state>/lock` holds one run at a time on a machine. A second run exits 0 without touching anything, so a scheduled
@@ -375,7 +384,8 @@ offers nor makes a change to that setting).
 ```
 ~/.t3code-session-manager/          (T3SM_HOME)
   config.json                       optional settings (configuration.md)
-  journal.jsonl                     every change, append-only
+  journal.jsonl                     every change, append-only (`t3sm journal compact` folds old runs)
+  journal.<run>.bak.jsonl           the journal before a compaction (never deleted by t3sm)
   lock                              one run at a time
   runs/<runId>/plan.json, plan.md   each plan
   cache/                            discovery caches, merge verdicts, stripped OpenCode copies

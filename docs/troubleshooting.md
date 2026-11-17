@@ -200,6 +200,29 @@ Skipped sessions (`plan.md`, "Skipped by reason") are not failures: each reason 
 (archive that thread in T3 Code and plan again if its account is wrong), and sessions **whose file name differs from
 the session id inside** are imported under the id inside, as T3 Code does.
 
+## A large journal.jsonl
+
+t3sm writes every change into `journal.jsonl` in its state folder before it makes it, and never removes a line by
+itself, so the file grows with each import. Most of it is the list of transcript file times each run moved and put
+back. `t3sm journal compact --dry-run` shows how much would go; `t3sm journal compact` drops those entries for runs
+that ended more than 90 days ago (`--older-than <days>` to choose) and keeps everything else as it was:
+`t3sm runs`, `t3sm rollback`, `t3sm organize --undo`, `t3sm status` and the recovery of an interrupted run see the
+same history afterwards. A run with a file time not put back yet, an import without an outcome, a run without an end
+and the newest run are left alone. It takes the lock and asks first.
+
+The journal as it was is saved next to it as `journal.<run>.bak.jsonl`; t3sm never deletes that file, so delete it
+yourself once you no longer need it. To go back, put it in place of `journal.jsonl` while no t3sm runs (stop the
+watcher with `t3sm schedule remove` first if it runs). A compaction cannot be rolled back with `t3sm rollback`.
+
+| Message | What to do |
+| :-- | :-- |
+| `journal.jsonl changed while it was being compacted; nothing was replaced` | Something wrote to the journal without the lock (an old t3sm, a manual edit). Nothing was lost; run it again |
+| `Cannot roll back a journal compaction` (exit 2) | It changed only `journal.jsonl`; use the backup as above if you really need the old file |
+
+An older t3sm reads a compacted journal like any other: it holds only entries every version knows, plus one
+`journal-compacted` entry that it ignores. It would list the compaction in `t3sm runs` and, asked to roll it back,
+find nothing to undo.
+
 ## Exit codes
 
 `0` done, nothing to do, declined, or another run holds the lock; `1` unexpected error, a failed doctor check, an update

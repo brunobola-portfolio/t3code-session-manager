@@ -418,6 +418,7 @@ desfeita.
 | `t3sm rollback --run <id>` | Desfaz uma execução; `--dry-run` lista o que desfaria. O `--yes` exige `--run` |
 | `t3sm recover <id da sessão>` | Traz de volta uma conversa começada no T3 Code cuja thread apagaste, quando o t3sm não o consegue saber sozinho (o `t3sm status` lista-as): uma cópia fiel com um id novo, importada para o seu projeto. Se a thread ainda existir no T3 Code, isto cria um duplicado. Pergunta primeiro; `--dry-run`; desfaz-se com `rollback` |
 | `t3sm doctor --repair` | Repõe as datas dos ficheiros que uma execução interrompida deixou mudadas; é a única escrita do `doctor` |
+| `t3sm journal compact` | Torna o `journal.jsonl` mais pequeno: retira os registos de datas de ficheiros das execuções que terminaram há mais de 90 dias (`--older-than <dias>`) sem nada pendente, e guarda o journal antigo numa cópia de segurança ao lado. O `runs`, o `rollback`, o `organize --undo` e a recuperação veem a mesma história. Pergunta primeiro; `--dry-run` |
 | `t3sm accounts` | Contas encontradas e as respetivas instâncias no T3 Code |
 | `t3sm projects` | Cada pasta de projeto com a sua conta e porquê; `projects set "<pasta>" <conta>` muda-a (uma rota, e a conta por omissão do projeto no T3 Code, reversível); `projects unset` remove a rota; `projects rename --suggest` propõe nomes limpos para os projetos que o t3sm criou (antes -> depois, pergunta primeiro, desfeito pelo `organize --undo`) |
 | `t3sm organize` | Arruma o histórico importado no T3 Code ([acima](#organizar-o-histórico)); `--dry-run`, `--undo`, `--only`, `--plain` |
@@ -441,7 +442,7 @@ das tuas transcrições, regista cada mudança antes de a fazer e consegue desfa
 fixada por testes que podes ler e correr (`npm test`):
 
 - **Rever antes de escrever.** O `plan` só escreve o seu relatório (e, na primeira vez, o `config.json` e uma cache de
-  descoberta) na pasta do t3sm. O `apply`, o `dedupe`, o `quarantine`, o `merge`, o `organize` e o `rollback` perguntam primeiro, e
+  descoberta) na pasta do t3sm. O `apply`, o `dedupe`, o `quarantine`, o `merge`, o `organize`, o `rollback` e o `journal compact` perguntam primeiro, e
   recusam com o código 2 fora de um terminal sem `--yes`. O `apply --dry-run` faz todas as verificações e lista o que
   faria, sem escrever nada.
   [test/apply/apply.test.ts](test/apply/apply.test.ts),
