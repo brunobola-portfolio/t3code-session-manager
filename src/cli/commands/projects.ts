@@ -408,7 +408,7 @@ async function renameProjects(c: Ctx, flags: Set<string>): Promise<number> {
         if (!(await confirm(io, ui.t("projects.confirmRename")))) { io.stdout(`${ui.t("common.nothingChanged")}\n`); return 0; }
       }
       const runId = newRunId(new Date(c.now()));
-      const counts: Record<OrganizeKind, number> = { archive: 0, title: 0, unsettle: 0, settle: 0, pin: 0, unpin: 0, "project-delete": 0, "project-title": actions.length, "auto-settle": 0 };
+      const counts: Record<OrganizeKind, number> = { archive: 0, title: 0, "ai-title": 0, unsettle: 0, settle: 0, pin: 0, unpin: 0, "project-delete": 0, "project-title": actions.length, "auto-settle": 0 };
       const r = await applyOrganize({ runId, actions, counts, byProject: [] }, {
         api, journal: j, runId, now: c.now, command: "projects rename", allowUntested: true, onNotice, // organizeGate already spoke
       });

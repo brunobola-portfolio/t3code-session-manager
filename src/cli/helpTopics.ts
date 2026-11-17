@@ -6,7 +6,7 @@
 /** Every topic a screen may name. */
 export const HELP_TOPICS = [
   "not-imported", "t3-native", "orphaned", "held", "decisions", "history", "updates", "watcher", "cwd-unreadable",
-  "instance-unavailable", "project-mismatch", "convert", "errors",
+  "instance-unavailable", "project-mismatch", "convert", "ai-titles", "errors",
 ] as const;
 
 export type HelpTopic = (typeof HELP_TOPICS)[number];

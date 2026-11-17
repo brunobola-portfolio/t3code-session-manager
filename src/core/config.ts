@@ -225,6 +225,11 @@ function validateOrganize(o: unknown, errors: string[], platform: NodeJS.Platfor
   for (const k of ["titles", "archiveAutomated"]) {
     if (has(o, k) && typeof o[k] !== "boolean") errors.push(`organize.${k}: must be a boolean`);
   }
+  const ai = sub("aiTitles");
+  if (ai) {
+    if (has(ai, "enabled") && typeof ai["enabled"] !== "boolean") errors.push("organize.aiTitles.enabled: must be a boolean");
+    if (has(ai, "maxPerRun") && !intIn(ai["maxPerRun"], 1, AI_TITLES_MAX)) errors.push(`organize.aiTitles.maxPerRun: must be an integer 1..${AI_TITLES_MAX}`);
+  }
   const pin = sub("pinRecent");
   if (pin) {
     if (has(pin, "enabled") && typeof pin["enabled"] !== "boolean") errors.push("organize.pinRecent.enabled: must be a boolean");
@@ -239,6 +244,10 @@ function validateOrganize(o: unknown, errors: string[], platform: NodeJS.Platfor
 
 export { DEFAULT_HISTORY, HISTORY_V2, historyRule, legacyHistory, normalizeHistory } from "./history.ts";
 
+/** Titles T3 Code writes in one organize run at most: the default, and the highest `--ai-titles-max` / `maxPerRun`. */
+export const DEFAULT_AI_TITLES_PER_RUN = 50;
+export const AI_TITLES_MAX = 500;
+
 /** `organize` with every omitted field filled from the spec defaults (nested objects per field). `lang` only picks the default `generalFolder`. */
 export function organizeSettings(c: Config, lang: "en" | "pt"): OrganizeConfig {
   const o = c.organize ?? {};
@@ -250,6 +259,7 @@ export function organizeSettings(c: Config, lang: "en" | "pt"): OrganizeConfig {
     names: { maxLength: 40, ...o.names },
     history: o.history ?? { ...DEFAULT_HISTORY },
     titles: o.titles ?? true,
+    aiTitles: { enabled: false, maxPerRun: DEFAULT_AI_TITLES_PER_RUN, ...o.aiTitles },
     archiveAutomated: o.archiveAutomated ?? true,
     pinRecent: { enabled: true, count: 5, ...o.pinRecent },
     decided: o.decided ?? [],

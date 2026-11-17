@@ -366,7 +366,7 @@ Examples:
 `,
   organize: `Usage: t3sm organize [--dry-run | --yes] [--only <folder>] [--history <days|all|off>] [--min <n>]
                       [--auto-settle <days|off>] [--no-delete] [--no-pin <ids>] [--no-archive-folders]
-                      [--allow-untested] [--plain]
+                      [--ai-titles [--ai-titles-max <n>] | --no-ai-titles] [--allow-untested] [--plain]
        t3sm organize --undo [<run>] [--dry-run | --yes] [--allow-untested]
 
 Tidy the history t3sm imported into T3 Code. It first shows one line per kind of change, with how many, why and how
@@ -375,6 +375,9 @@ to undo it, then the projects with the most conversations shown (now -> after), 
     system folder;
   - new titles for conversations whose title is a technical first message (<command-name>, <ide_...>, [external
     ...]): the transcript's own title, summary or first real message, at most 80 characters;
+  - only with --ai-titles: ask T3 Code to write the titles that stay technical (no usable first message) with its own
+    text model, which spends your provider's tokens; the summary says how many, the model and the cap first
+    (\`t3sm help ai-titles\`);
   - keep each project's history tidy (organize.history, default the last 90 days and at least 10 per project):
     conversations active in those days are shown inside their project, older ones are settled (they stay in their
     project, on its Settled shelf), and a project with fewer recent ones still shows its most recent; T3 Code's own
@@ -412,6 +415,12 @@ Options:
   --no-pin <ids>     Never pin these projects (T3 Code project ids, comma separated)
   --no-archive-folders  Leave the conversations of projects t3sm created in
                      temporary or system folders unarchived
+  --ai-titles        Ask T3 Code to write the titles that stay technical, with
+                     its own text model (it spends your provider's tokens);
+                     the most recent conversations first. Never in t3sm sync
+  --ai-titles-max <n>  At most n (1-500) such titles in this run (default
+                     organize.aiTitles.maxPerRun, 50)
+  --no-ai-titles     Not this run, even with organize.aiTitles.enabled on
   --allow-untested   No warning on a T3 Code version t3sm was not tested with (it never blocks)
   --plain            Print plain text only, never an interactive screen. On a
                      terminal, the question offers d = details: the changes as a
@@ -423,6 +432,7 @@ Examples:
   t3sm organize
   t3sm organize --only "~/code/app" --yes
   t3sm organize --history 90 --min 10 --auto-settle 90 --dry-run
+  t3sm organize --ai-titles --ai-titles-max 20 --dry-run
   t3sm organize --undo
   t3sm organize --undo 20261114-120000-abcd --dry-run
   t3sm organize --undo 20261114-120000-abcd --yes

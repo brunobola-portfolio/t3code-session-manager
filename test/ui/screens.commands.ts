@@ -174,7 +174,7 @@ export function organizePlan(): OrganizePlan {
     ...Array.from({ length: 2 }, (_, i) => a("archive", "p-app", i, "automated session (Agent SDK)")),
     ...Array.from({ length: 5 }, (_, i) => a("unsettle", "p-app", 10 + i, "history: last 90 days", "active")),
   ];
-  const counts = { archive: 2, title: 4, unsettle: 5, settle: 30, pin: 0, unpin: 0, "project-delete": 0, "project-title": 0, "auto-settle": 0 };
+  const counts = { archive: 2, title: 4, "ai-title": 0, unsettle: 5, settle: 30, pin: 0, unpin: 0, "project-delete": 0, "project-title": 0, "auto-settle": 0 };
   return {
     runId: "20261115-120500-a7b8", actions, counts,
     byProject: [

@@ -247,6 +247,100 @@ test("user-renamed title is never touched again", () => {
   assert.deepEqual(p.actions, []);
 });
 
+// ---- titles written by T3 Code (--ai-titles) ----
+
+test("ai-title: never planned unless asked (aiTitles), whatever the titles setting", () => {
+  const threads = [thread("import:t", { title: "<command-name>/clear</command-name>" })];
+  const p = buildOrganizePlan(input({ config: quiet, threads, sessions: { "import:t": { title: null } } }));
+  assert.deepEqual(of(p.actions, "ai-title"), []);
+  assert.equal(p.aiTitles, undefined);
+});
+
+test("ai-title: a technical title with no transcript proposal is handed to T3 Code; previous is the title, next null until requested", () => {
+  const i = input({
+    config: quiet,
+    threads: [
+      thread("import:none", { title: "<command-name>/clear</command-name>" }),
+      thread("import:clean", { title: "<command-message>init</command-message>" }),
+      thread("import:plain", { title: "Typed by the user" }),
+    ],
+    sessions: { "import:none": { title: null }, "import:clean": { title: "Set up the repo" }, "import:plain": { title: null } },
+  });
+  i.aiTitles = { max: 50 };
+  const p = buildOrganizePlan(i);
+  // The transcript gave a clean title for import:clean: t3sm sets that one itself, no tokens spent.
+  assert.deepEqual(targets(p.actions, "title"), ["import:clean"]);
+  assert.deepEqual(of(p.actions, "ai-title"), [
+    { kind: "ai-title", target: "import:none", projectId: "p1", previous: "<command-name>/clear</command-name>", next: null, reason: "technical title" },
+  ]);
+  assert.deepEqual(p.aiTitles, { eligible: 1, max: 50 });
+  assert.equal(p.counts["ai-title"], 1);
+});
+
+test("ai-title: with titles off every technical title is a candidate", () => {
+  const i = input({ config: { ...quiet, titles: false }, threads: [thread("import:t", { title: "<x>" })], sessions: { "import:t": { title: "Clean" } } });
+  i.aiTitles = { max: 5 };
+  assert.deepEqual(targets(buildOrganizePlan(i).actions, "ai-title"), ["import:t"]);
+});
+
+test("ai-title: the cap keeps the most recent conversations; eligible counts them all", () => {
+  const threads = [1, 2, 3, 4].map((n) => thread(`import:t${n}`, { title: "<x>", latestUserMessageAt: iso(NOW - n * DAY) }));
+  threads.push(thread("import:t0", { title: "<x>", latestUserMessageAt: null }));
+  const i = input({ config: { ...quiet, titles: false }, threads });
+  i.aiTitles = { max: 2 };
+  const p = buildOrganizePlan(i);
+  assert.deepEqual(targets(p.actions, "ai-title"), ["import:t1", "import:t2"]);
+  assert.deepEqual(p.aiTitles, { eligible: 5, max: 2 });
+});
+
+test("ai-title: never for a native, archived, to-be-archived, automated, or unknown-settle thread, nor one T3 Code is already retitling", () => {
+  const i = input({
+    config: { ...quiet, titles: false },
+    threads: [
+      thread("native-1", { title: "<x>" }),
+      thread("import:arch", { title: "<x>", archived: true }),
+      thread("import:auto", { title: "<x>" }),
+      thread("import:unknown", { title: "<x>", settledOverride: "unknown" }),
+      thread("import:busy", { title: "<x>", titleRegeneration: { requestId: "r0", startedAt: iso(NOW) } }),
+      thread("import:ok", { title: "<x>" }),
+    ],
+    sessions: { "import:auto": { origin: "automated" } },
+  });
+  i.aiTitles = { max: 50 };
+  assert.deepEqual(targets(buildOrganizePlan(i).actions, "ai-title"), ["import:ok"]);
+});
+
+test("ai-title: never for a title the user changed by hand, nor one T3 Code was asked for before (no title action either)", () => {
+  const i = input({
+    config: quiet,
+    threads: [
+      thread("import:user", { title: "<my own label>" }),
+      thread("import:asked", { title: "<x>" }),
+      thread("import:asked-done", { title: "Release notes draft" }),
+    ],
+    sessions: { "import:user": { title: null }, "import:asked": { title: "Clean" }, "import:asked-done": { title: "Clean" } },
+    journal: [
+      change("title", "import:user", "<x>", "Clean title"),
+      change("ai-title", "import:asked", "<x>", { requestId: "r1" }),
+      change("ai-title", "import:asked-done", "<y>", { requestId: "r2" }),
+      change("title", "import:asked-done", "<y>", "Release notes draft"),
+    ],
+  });
+  i.aiTitles = { max: 50 };
+  const p = buildOrganizePlan(i);
+  assert.deepEqual(of(p.actions, "ai-title"), []);
+  assert.deepEqual(of(p.actions, "title"), [], "a title T3 Code wrote is never replaced by the transcript's");
+});
+
+test("ai-title: never in a sync-scoped plan built without aiTitles, even with organize.aiTitles enabled in config", () => {
+  const p = buildOrganizePlan(input({
+    config: { ...quiet, titles: false, aiTitles: { enabled: true, maxPerRun: 50 } },
+    threads: [thread("import:t", { title: "<x>" })],
+    scope: { onlyThreads: new Set(["import:t"]), allowPins: false, allowDeletes: false },
+  }));
+  assert.deepEqual(of(p.actions, "ai-title"), []);
+});
+
 // ---- 5.3 unsettle ----
 
 test("unsettles human settled import threads never unsettled (history all)", () => {
@@ -696,7 +790,7 @@ test("runId, counts for every kind, project-title never planned", () => {
     sessions: { "import:a": { origin: "automated" }, "import:b": { title: "Nice" } },
   }));
   assert.equal(p.runId, "run-org-1");
-  assert.deepEqual(p.counts, { archive: 1, title: 1, unsettle: 1, settle: 0, pin: 0, unpin: 0, "project-delete": 0, "project-title": 0, "auto-settle": 0 });
+  assert.deepEqual(p.counts, { archive: 1, title: 1, "ai-title": 0, unsettle: 1, settle: 0, pin: 0, unpin: 0, "project-delete": 0, "project-title": 0, "auto-settle": 0 });
 });
 
 test("byProject visibleAfter counts unsettled threads per project", () => {

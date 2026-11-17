@@ -23,8 +23,8 @@ export const FLAG_SPECS = {
   update: { bool: ["--yes", "--dry-run", "--check", "--auto-run"], valued: ["--from", "--source", "--auto"] },
   changelog: { bool: [], valued: ["--since"] },
   organize: {
-    bool: ["--dry-run", "--yes", "--allow-untested", "--plain", "--no-delete", "--no-archive-folders"],
-    valued: ["--undo", "--only", "--auto-settle", "--history", "--min", "--no-pin"],
+    bool: ["--dry-run", "--yes", "--allow-untested", "--plain", "--no-delete", "--no-archive-folders", "--ai-titles", "--no-ai-titles"],
+    valued: ["--undo", "--only", "--auto-settle", "--history", "--min", "--no-pin", "--ai-titles-max"],
   },
   status: { bool: ["--json"], valued: [] },
   journal: { bool: ["--yes", "--dry-run"], valued: ["--older-than"] },

@@ -8,6 +8,10 @@ export type { OrganizeKind } from "../core/types.ts";
  * One change to make in T3 Code. `previous` / `next` are what the journal's `organize-change` records, per kind:
  * - archive: thread `archived` flag, false -> true (target: thread id)
  * - title: thread title, current -> proposal (target: thread id)
+ * - ai-title: a request that T3 Code write the title with its own text model (`--ai-titles`): thread title, current ->
+ *   null in the plan; journaled with `next: { requestId }` once T3 accepted the request. T3 writes the title later: when
+ *   the run sees it done, it journals a `title` change (current -> T3's title) of the same run, which is what undo puts
+ *   back. A target with any ai-title change is never retitled by organize again (neither kind).
  * - unsettle: thread `settledOverride`, "settled" (or null: no override) -> "active" (target: thread id)
  * - settle: thread `settledOverride`, "active" (or null) -> "settled", or `{ settledAt }` (ISO, the activity date) when
  *   the settle is backdated (target: thread id). `settleShown` (src/organize/history.ts) is how both kinds compare with
@@ -37,6 +41,8 @@ export interface OrganizePlan {
    * the plan's archive / unsettle / settle actions. Sorted by visibleAfter (most first), then title.
    */
   byProject: { projectId: string; title: string; visibleBefore: number; visibleAfter: number }[];
+  /** Only when the input asked for titles written by T3 Code: how many threads qualified, and the cap of this run. */
+  aiTitles?: { eligible: number; max: number };
 }
 
 export interface OrganizeInput {
@@ -70,4 +76,10 @@ export interface OrganizeInput {
   archiveFolders?: boolean;
   /** Settle with the conversation's activity date (`next: { settledAt }`). Default SETTLE_BACKDATE (src/t3/compat.ts). */
   backdate?: boolean;
+  /**
+   * Ask T3 Code to write the titles that stay technical (no clean title from the transcript), at most `max`, the most
+   * recent conversations first. Only `t3sm organize --ai-titles` (or organize.aiTitles.enabled) passes it: never sync,
+   * never the guided assistant (safety invariant 13). config.aiTitles alone plans nothing.
+   */
+  aiTitles?: { max: number };
 }

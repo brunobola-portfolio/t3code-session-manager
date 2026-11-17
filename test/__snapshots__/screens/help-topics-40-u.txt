@@ -37,6 +37,9 @@ what to do
   convert
     Conversion: sessions t3sm converts
     before importing
+  ai-titles
+    Titles written by T3 Code: the ones
+    that stay technical
   errors
     Errors: when a t3sm command stops
 

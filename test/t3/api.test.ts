@@ -583,6 +583,18 @@ test("settleThread / unsettleThread / setThreadTitle: exact dispatchCommand payl
   await assert.rejects(bad.setThreadTitle(UID, "  "), /title/);
 });
 
+test("requestThreadTitle: thread.metadata.update with regenerateTitle only; the request id is the command id", async () => {
+  const { api, rpc } = await makeApi({ replies: { "orchestration.dispatchCommand": { sequence: 4 } }, newId: ids("unused") });
+  await api.requestThreadTitle(UID, "00000000-0000-4000-8000-00000000aa01");
+  assert.deepEqual(dispatchPayloads(rpc), [
+    ["orchestration.dispatchCommand", JSON.stringify({ type: "thread.metadata.update", commandId: "00000000-0000-4000-8000-00000000aa01", threadId: UID, regenerateTitle: true })],
+  ]);
+  await assert.rejects(api.requestThreadTitle("", "r1"), /threadId/);
+  await assert.rejects(api.requestThreadTitle(UID, ""), /requestId/);
+  const { api: bad } = await makeApi({ replies: { "orchestration.dispatchCommand": { nope: 1 } }, newId: ids("c") });
+  await assert.rejects(bad.requestThreadTitle(UID, "r2"), ShapeError);
+});
+
 test("setProjectPinned: POST /api/projects/mutate project.update with only pinned; response decoded", async () => {
   const body = await fx("http-projects-pinned.json");
   const resp = body.projects[0];

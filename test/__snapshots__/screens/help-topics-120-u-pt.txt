@@ -12,6 +12,7 @@ Tópicos de ajuda: o que uma mensagem quer dizer e o que fazer
   instance-unavailable  Conta desligada: a conta da conversa não está utilizável no T3 Code
   project-mismatch      Projeto diferente: o T3 Code pôs uma conversa noutro sítio
   convert               Conversão: sessões que o t3sm converte antes de importar
+  ai-titles             Títulos escritos pelo T3 Code: os que continuam técnicos
   errors                Erros: quando um comando do t3sm para
 
 Abre um com t3sm help <tópico>. Cada comando explica-se com t3sm <comando> --help.

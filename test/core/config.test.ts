@@ -78,6 +78,7 @@ test("organizeSettings fills spec defaults", () => {
     names: { maxLength: 40 },
     history: { days: 90, minPerProject: 10 },
     titles: true,
+    aiTitles: { enabled: false, maxPerRun: 50 },
     archiveAutomated: true,
     pinRecent: { enabled: true, count: 5 },
     decided: [],
@@ -97,6 +98,7 @@ test("organizeSettings: partial values override per field; lang only picks the d
   assert.equal(s.names.maxLength, 60);
   assert.deepEqual(s.pinRecent, { enabled: true, count: 3 });
   assert.equal(s.generalFolder, "~/Mine");
+  assert.deepEqual(organizeSettings(cfg({ organize: { aiTitles: { enabled: true } } }), "en").aiTitles, { enabled: true, maxPerRun: 50 });
 });
 
 test("validateConfig: organize and notify are optional and accept valid values", () => {
@@ -108,6 +110,7 @@ test("validateConfig: organize and notify are optional and accept valid values",
     names: { maxLength: 16 },
     history: "days:90",
     titles: false, archiveAutomated: false,
+    aiTitles: { enabled: true, maxPerRun: 500 },
     pinRecent: { enabled: false, count: 20 },
     decided: ["home", "notify"],
   };
@@ -138,6 +141,10 @@ test("validateConfig rejects bad organize values", () => {
     [{ pinRecent: { count: 0 } }, "organize.pinRecent.count"],
     [{ pinRecent: { count: 21 } }, "organize.pinRecent.count"],
     [{ pinRecent: { enabled: "yes" } }, "organize.pinRecent.enabled"],
+    [{ aiTitles: true }, "organize.aiTitles"],
+    [{ aiTitles: { enabled: "yes" } }, "organize.aiTitles.enabled"],
+    [{ aiTitles: { maxPerRun: 0 } }, "organize.aiTitles.maxPerRun"],
+    [{ aiTitles: { maxPerRun: 501 } }, "organize.aiTitles.maxPerRun"],
     [{ folders: { temp: "delete" } }, "organize.folders.temp"],
     [{ folders: { project: "skip" } }, "organize.folders.project"],
     [{ sessions: { automated: "maybe" } }, "organize.sessions.automated"],

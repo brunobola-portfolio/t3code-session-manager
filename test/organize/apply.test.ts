@@ -73,7 +73,7 @@ function allActions(): OrganizeAction[] {
 }
 
 function plan(actions: OrganizeAction[], runId = "org-run-1"): OrganizePlan {
-  const counts = { archive: 0, title: 0, unsettle: 0, settle: 0, pin: 0, unpin: 0, "project-delete": 0, "project-title": 0, "auto-settle": 0 } as Record<OrganizeKind, number>;
+  const counts = { archive: 0, title: 0, "ai-title": 0, unsettle: 0, settle: 0, pin: 0, unpin: 0, "project-delete": 0, "project-title": 0, "auto-settle": 0 } as Record<OrganizeKind, number>;
   for (const a of actions) counts[a.kind]++;
   return { runId, actions, counts, byProject: [] };
 }
@@ -706,4 +706,121 @@ test("a mark is skipped as changed when the thread is no longer shown with no ov
   assert.deepEqual([r.done, r.skippedChanged, r.failed.length], [0, 3, 0]);
   assert.ok(!f.calls.some((c) => c.startsWith("unsettle:")), "nothing written");
   assert.equal(f.threads.get(A)!.settledAt, "2026-11-14T11:00:00.000Z", "left on the shelf");
+});
+
+// ---- titles written by T3 Code (ai-title) ----
+
+const TECH = "<command-name>/clear</command-name>";
+const ids = (...xs: string[]) => () => xs.shift() ?? "id-extra";
+
+/** A clock that only moves when the apply waits: `sleep` advances it and lets T3 Code finish what `onSleep` says. */
+function waiting(onSleep: (slept: number) => void = () => {}) {
+  let clock = NOW;
+  let slept = 0;
+  return {
+    now: () => clock,
+    sleep: async (ms: number) => { clock += ms; slept++; onSleep(slept); },
+    slept: () => slept,
+  };
+}
+
+test("ai-title: refused (nothing written) unless the caller allows titles written by T3 Code", async () => {
+  const f = world();
+  const j = journal();
+  await assert.rejects(applyOrganize(plan([act("ai-title", B, TECH, null)]), { api: f.api, journal: j, runId: "org-run-1", now: () => NOW }), /ai-title/);
+  assert.deepEqual(writes(f), []);
+  assert.deepEqual(await j.readAll(), []);
+});
+
+test("ai-title: the request is journaled with its id once T3 accepted it; the title T3 writes is journaled as a title change; undo puts the old one back", async () => {
+  const f = world();
+  const j = journal();
+  const w = waiting((n) => { if (n === 2) f.finishTitle(B, "Clear the build cache"); });
+  const notices: number[] = [];
+  const r = await applyOrganize(plan([act("ai-title", B, TECH, null)]), {
+    api: f.api, journal: j, runId: "org-run-1", now: w.now, sleep: w.sleep, allowAiTitles: true, newId: ids("req-1"), onWaiting: (n) => notices.push(n),
+  });
+  assert.deepEqual(r, { done: 1, skippedChanged: 0, failed: [], status: "ok", aiTitles: { requested: 1, renamed: 1, unchanged: 0, failed: 0, waiting: 0 } });
+  assert.deepEqual(writes(f), [`ai-title:${B}`]);
+  assert.deepEqual(notices, [1]);
+  assert.deepEqual(changes(await j.readAll()).map(({ kind, target, previous, next }) => ({ kind, target, previous, next })), [
+    { kind: "ai-title", target: B, previous: TECH, next: { requestId: "req-1" } },
+    { kind: "title", target: B, previous: TECH, next: "Clear the build cache" },
+  ]);
+  assert.equal((await j.readAll()).at(-1)!.t, "run-end", "the run ends after the wait");
+
+  const u = await undoOrganize("org-run-1", { api: f.api, journal: j, now: () => NOW });
+  assert.equal(f.threads.get(B)!.title, TECH);
+  // One item per thread: the request itself is covered by the title change that follows it.
+  assert.deepEqual(u.items.map((x) => [x.kind, x.target, x.status]), [["title", B, "reverted"]]);
+});
+
+test("ai-title: T3 Code wrote nothing new (unchanged) or failed: no title change journaled, counted", async () => {
+  const f = world();
+  f.threads.set(C, thread(C, { title: "[external unsupported block: image]" }));
+  const j = journal();
+  const w = waiting(() => { f.finishTitle(B, null, "unchanged"); f.finishTitle(C, null, "failed"); });
+  const r = await applyOrganize(plan([act("ai-title", B, TECH, null), act("ai-title", C, "[external unsupported block: image]", null)]), {
+    api: f.api, journal: j, runId: "org-run-1", now: w.now, sleep: w.sleep, allowAiTitles: true, newId: ids("req-1", "req-2"),
+  });
+  assert.deepEqual(r.aiTitles, { requested: 2, renamed: 0, unchanged: 1, failed: 1, waiting: 0 });
+  assert.deepEqual(changes(await j.readAll()).map((e) => e.kind), ["ai-title", "ai-title"]);
+  const u = await undoOrganize("org-run-1", { api: f.api, journal: j, now: () => NOW });
+  assert.deepEqual(u.items.map((x) => x.status), ["already", "already"]);
+  assert.equal(u.runId, null, "nothing to put back");
+});
+
+test("ai-title: the wait is bounded; a title T3 Code writes after the run is left alone by undo (t3sm cannot tell it from one set by hand)", async () => {
+  const f = world();
+  const j = journal();
+  const w = waiting();
+  const r = await applyOrganize(plan([act("ai-title", B, TECH, null)]), {
+    api: f.api, journal: j, runId: "org-run-1", now: w.now, sleep: w.sleep, allowAiTitles: true, newId: ids("req-1"), aiTitleWaitMs: 30_000,
+  });
+  assert.deepEqual(r.aiTitles, { requested: 1, renamed: 0, unchanged: 0, failed: 0, waiting: 1 });
+  assert.ok(w.slept() > 0 && w.now() - NOW <= 30_000, "waited, and no longer than the bound");
+  // Still being written: undo has nothing to put back.
+  let u = await undoOrganize("org-run-1", { api: f.api, journal: j, now: () => NOW, dryRun: true });
+  assert.deepEqual(u.items.map((x) => x.status), ["already"]);
+  f.finishTitle(B, "Clear the build cache");
+  u = await undoOrganize("org-run-1", { api: f.api, journal: j, now: () => NOW });
+  assert.deepEqual(u.items.map((x) => [x.kind, x.status]), [["ai-title", "user-changed"]]);
+  assert.match(u.items[0]!.note ?? "", /after the run/);
+  assert.equal(f.threads.get(B)!.title, "Clear the build cache", "left as it is");
+});
+
+test("ai-title: a title changed since the plan is skipped; a stop signal during the wait ends it at once", async () => {
+  const f = world();
+  f.threads.set(B, thread(B, { title: "Renamed by hand" }));
+  const j = journal();
+  const r = await applyOrganize(plan([act("ai-title", B, TECH, null)]), { api: f.api, journal: j, runId: "org-run-1", now: () => NOW, allowAiTitles: true });
+  assert.deepEqual([r.done, r.skippedChanged, r.aiTitles], [0, 1, undefined]);
+  assert.deepEqual(writes(f), []);
+
+  const g = world();
+  let stop = false;
+  const w = waiting(() => { stop = true; });
+  const r2 = await applyOrganize(plan([act("ai-title", B, TECH, null)]), {
+    api: g.api, journal: journal(), runId: "org-run-2", now: w.now, sleep: w.sleep, allowAiTitles: true, aborted: () => stop,
+  });
+  assert.equal(w.slept(), 1);
+  assert.equal(r2.status, "aborted");
+  assert.deepEqual(r2.aiTitles, { requested: 1, renamed: 0, unchanged: 0, failed: 0, waiting: 1 });
+});
+
+test("ai-title: a lost reply is confirmed when T3 Code shows the request in progress, and journaled", async () => {
+  const f = world({ writeError: (call) => (call.startsWith("ai-title:") ? { error: new RpcTimeout("orchestration.dispatchCommand", 1000), applied: true } : undefined) });
+  const j = journal();
+  const w = waiting(() => f.finishTitle(B, "Clear the build cache"));
+  const r = await applyOrganize(plan([act("ai-title", B, TECH, null)]), {
+    api: f.api, journal: j, runId: "org-run-1", now: w.now, sleep: w.sleep, allowAiTitles: true, newId: ids("req-1"),
+  });
+  assert.deepEqual([r.done, r.failed.length], [1, 0]);
+  assert.deepEqual(changes(await j.readAll()).map((e) => e.kind), ["ai-title", "title"]);
+
+  const g = world({ writeError: (call) => (call.startsWith("ai-title:") ? { error: new RpcTimeout("orchestration.dispatchCommand", 1000) } : undefined) });
+  const j2 = journal();
+  const r2 = await applyOrganize(plan([act("ai-title", B, TECH, null)]), { api: g.api, journal: j2, runId: "org-run-2", now: () => NOW, allowAiTitles: true });
+  assert.deepEqual([r2.done, r2.failed.length, r2.aiTitles], [0, 1, undefined]);
+  assert.deepEqual(changes(await j2.readAll()), []);
 });

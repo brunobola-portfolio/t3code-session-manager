@@ -37,6 +37,9 @@ quer dizer e o que fazer
   convert
     Conversão: sessões que o t3sm
     converte antes de importar
+  ai-titles
+    Títulos escritos pelo T3 Code: os
+    que continuam técnicos
   errors
     Erros: quando um comando do t3sm
     para

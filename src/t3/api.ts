@@ -61,6 +61,12 @@ export interface T3Api {
   unsettleThread(threadId: string): Promise<void>;
   /** thread.metadata.update { title }. */
   setThreadTitle(threadId: string, title: string): Promise<void>;
+  /**
+   * thread.metadata.update { regenerateTitle: true }: T3 Code writes a new title with its own text model (its setting
+   * textGenerationModelSelection, the user's provider tokens), later. `requestId` is sent as the command id; T3 records
+   * it in the thread's `titleRegeneration` while working and in `lastTitleRegeneration` once done.
+   */
+  requestThreadTitle(threadId: string, requestId: string): Promise<void>;
   /** POST /api/projects/mutate project.update { pinned } (nothing else is sent). */
   setProjectPinned(projectId: string, pinned: boolean): Promise<void>;
   /** POST /api/projects/mutate project.update { title } (nothing else is sent; T3 marks the title custom). */
@@ -374,6 +380,11 @@ export function createT3Api(deps: T3ApiDeps): T3Api {
       checkThreadId(threadId);
       if (typeof title !== "string" || title.trim() === "") throw new Error("title must be a non-empty string");
       await rpc.call("orchestration.dispatchCommand", { type: "thread.metadata.update", commandId: newId(), threadId, title }, decodeDispatch);
+    },
+    async requestThreadTitle(threadId, requestId) {
+      checkThreadId(threadId);
+      if (typeof requestId !== "string" || requestId.trim() === "") throw new Error("requestId must be a non-empty string");
+      await rpc.call("orchestration.dispatchCommand", { type: "thread.metadata.update", commandId: requestId, threadId, regenerateTitle: true }, decodeDispatch);
     },
 
     setProjectPinned(projectId, pinned) {

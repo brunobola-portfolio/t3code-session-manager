@@ -97,7 +97,7 @@ export function previewFixture(o: { autoSettleDays?: number | null } = {}): Orga
     action("pin", "alpha", "alpha", true, "top 2 recent"), action("pin", "beta", "beta", true, "top 2 recent"),
     action("project-delete", "empty", "empty", null, "created by t3sm, no threads"),
   ];
-  const counts = { archive: 3, title: 2, unsettle: 4, settle: 0, pin: 2, unpin: 0, "project-delete": 1, "project-title": 0, "auto-settle": 0 };
+  const counts = { archive: 3, title: 2, "ai-title": 0, unsettle: 4, settle: 0, pin: 2, unpin: 0, "project-delete": 1, "project-title": 0, "auto-settle": 0 };
   const plan: OrganizePlan = {
     runId: "O1", actions, counts,
     byProject: [{ projectId: "alpha", title: "alpha-app", visibleBefore: 0, visibleAfter: 2 }, { projectId: "beta", title: "beta-api", visibleBefore: 0, visibleAfter: 2 }],

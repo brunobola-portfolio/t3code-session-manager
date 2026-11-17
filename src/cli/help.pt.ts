@@ -375,7 +375,7 @@ Exemplos:
 `,
   organize: `Uso: t3sm organize [--dry-run | --yes] [--only <pasta>] [--history <dias|all|off>] [--min <n>]
                     [--auto-settle <dias|off>] [--no-delete] [--no-pin <ids>] [--no-archive-folders]
-                    [--allow-untested] [--plain]
+                    [--ai-titles [--ai-titles-max <n>] | --no-ai-titles] [--allow-untested] [--plain]
      t3sm organize --undo [<run>] [--dry-run | --yes] [--allow-untested]
 
 Arruma o histórico que o t3sm importou para o T3 Code. Primeiro mostra uma linha por tipo de alteração, com quantas,
@@ -385,6 +385,9 @@ alguma coisa:
     temporária ou do sistema;
   - títulos novos para as conversas cujo título é uma primeira mensagem técnica (<command-name>, <ide_...>, [external
     ...]): o título da própria conversa, o resumo ou a primeira mensagem a sério, no máximo 80 caracteres;
+  - só com --ai-titles: pede ao T3 Code que escreva, com o seu próprio modelo de texto, os títulos que continuam
+    técnicos (sem primeira mensagem utilizável), o que gasta tokens do teu fornecedor; o resumo diz primeiro quantos,
+    o modelo e o limite (\`t3sm help ai-titles\`);
   - mantém arrumado o histórico de cada projeto (organize.history, por omissão os últimos 90 dias e pelo menos 10 por
     projeto): as conversas com atividade nesses dias ficam à vista dentro do projeto, as mais antigas passam para
     Settled (ficam no projeto, na prateleira Settled), e um projeto com menos conversas recentes continua a mostrar as
@@ -425,6 +428,13 @@ Opções:
   --no-pin <ids>     Nunca fixa estes projetos (ids de projeto do T3 Code, separados por vírgulas)
   --no-archive-folders  Não arquiva as conversas dos projetos que o t3sm criou
                      em pastas temporárias ou do sistema
+  --ai-titles        Pede ao T3 Code que escreva os títulos que continuam
+                     técnicos, com o seu próprio modelo de texto (gasta tokens
+                     do teu fornecedor); primeiro as conversas mais recentes.
+                     Nunca no t3sm sync
+  --ai-titles-max <n>  No máximo n (1-500) destes títulos nesta execução (por
+                     omissão organize.aiTitles.maxPerRun, 50)
+  --no-ai-titles     Não nesta execução, mesmo com organize.aiTitles.enabled
   --allow-untested   Sem aviso numa versão do T3 Code que o t3sm não testou (nunca bloqueia)
   --plain            Só texto simples, nunca um ecrã interativo. Num terminal,
                      a pergunta oferece d = detalhes: as alterações numa lista
@@ -436,6 +446,7 @@ Exemplos:
   t3sm organize
   t3sm organize --only "~/code/app" --yes
   t3sm organize --history 90 --min 10 --auto-settle 90 --dry-run
+  t3sm organize --ai-titles --ai-titles-max 20 --dry-run
   t3sm organize --undo
   t3sm organize --undo 20261114-120000-abcd --dry-run
   t3sm organize --undo 20261114-120000-abcd --yes

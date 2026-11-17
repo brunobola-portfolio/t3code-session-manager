@@ -23,7 +23,15 @@
 //   `project-created` for a project it re-creates), never deletes or rewrites a journal line, so an undone target
 //   differs from t3sm's last `next` and the planner leaves it alone from then on.
 // - Any T3 Code version (owner's decision): organizeGate warns on an unverified one; strict decoding is the guard.
+// - Titles written by T3 Code (ai-title, `t3sm organize --ai-titles` only: `allowAiTitles`, else the run is refused
+//   before any write): the request (thread.metadata.update { regenerateTitle }) is journaled `next: { requestId }` once
+//   T3 accepted it (a lost reply is confirmed when T3 shows that request id). T3 writes the title later, with its own
+//   text model: after the last action the run reads the threads every AI_TITLE_POLL_MS, at most `aiTitleWaitMs`, and
+//   journals each title T3 wrote as a `title` change (old -> T3's title), which undo puts back like any title. A request
+//   still unanswered when the wait ends stays as it is: undo restores nothing for it once T3 writes (it cannot tell T3's
+//   title from one set by hand), and organize never retitles that thread again.
 
+import { randomUUID } from "node:crypto";
 import type { JournalEntry, OrganizeKind } from "../core/types.ts";
 import { newRunId, type Journal } from "../core/journal.ts";
 import { ConfigError } from "../core/config.ts";
@@ -50,6 +58,16 @@ export interface ApplyOrganizeDeps {
   onNotice?: (line: string) => void;
   /** true once a stop signal arrived (Ctrl+C, a kill, the terminal closing): the run stops after the current action. */
   aborted?: () => boolean;
+  /** The plan may hold ai-title actions (only `t3sm organize --ai-titles`); without it such a plan is refused, nothing written. */
+  allowAiTitles?: boolean;
+  /** Request ids of ai-title (default randomUUID). */
+  newId?: () => string;
+  /** How the run waits between two reads while T3 Code writes titles (default a timer). */
+  sleep?: (ms: number) => Promise<void>;
+  /** How long the run waits for T3 Code's titles at most (default AI_TITLE_WAIT_MS). */
+  aiTitleWaitMs?: number;
+  /** Called once before the wait, with the number of titles T3 Code is writing. */
+  onWaiting?: (n: number) => void;
 }
 
 export interface ApplyOrganizeResult {
@@ -59,7 +77,16 @@ export interface ApplyOrganizeResult {
   failed: { action: OrganizeAction; error: string }[];
   /** aborted: stopped by `aborted()` before the end (journaled as run-end "aborted"). */
   status: "ok" | "partial" | "aborted";
+  /**
+   * Only when T3 Code was asked for titles: requests accepted; of those, titles T3 wrote (renamed), kept (unchanged, or
+   * a status this t3sm does not know), could not write (failed), and still being written when the wait ended (waiting).
+   */
+  aiTitles?: { requested: number; renamed: number; unchanged: number; failed: number; waiting: number };
 }
+
+/** How long organize waits for the titles T3 Code writes, at most, and how often it looks. */
+export const AI_TITLE_WAIT_MS = 120_000;
+export const AI_TITLE_POLL_MS = 3_000;
 
 export interface OrganizeUndoItem {
   kind: OrganizeKind;
@@ -98,8 +125,8 @@ export interface UndoOrganizeResult {
   items: OrganizeUndoItem[];
 }
 
-const KINDS: ReadonlySet<string> = new Set<OrganizeKind>(["archive", "title", "unsettle", "settle", "pin", "unpin", "project-delete", "project-title", "auto-settle"]);
-const THREAD_KINDS: ReadonlySet<OrganizeKind> = new Set<OrganizeKind>(["archive", "title", "unsettle", "settle"]);
+const KINDS: ReadonlySet<string> = new Set<OrganizeKind>(["archive", "title", "ai-title", "unsettle", "settle", "pin", "unpin", "project-delete", "project-title", "auto-settle"]);
+const THREAD_KINDS: ReadonlySet<OrganizeKind> = new Set<OrganizeKind>(["archive", "title", "ai-title", "unsettle", "settle"]);
 const PROJECT_KINDS: ReadonlySet<OrganizeKind> = new Set<OrganizeKind>(["pin", "unpin", "project-delete", "project-title"]);
 /** The journal entries of a run that only organized (what `organize --undo` reverts whole). */
 const ORGANIZE_RUN_KINDS: ReadonlySet<string> = new Set(["run-start", "run-end", "organize-change", "organize-failed"]);
@@ -182,7 +209,7 @@ async function current(api: T3Api, w: World, kind: OrganizeKind, target: string)
   if (THREAD_KINDS.has(kind)) {
     const t = w.threads.get(target);
     if (!t) return { exists: false };
-    return { exists: true, value: kind === "archive" ? t.archived : kind === "title" ? t.title : (t.settledOverride ?? null) };
+    return { exists: true, value: kind === "archive" ? t.archived : kind === "title" || kind === "ai-title" ? t.title : (t.settledOverride ?? null) };
   }
   const p = w.projects.find((x) => x.id === target);
   // A deleted project is the state `null` (listProjects drops deleted ones).
@@ -227,6 +254,9 @@ async function write(api: T3Api, kind: OrganizeKind, target: string, value: unkn
     case "project-title":
       if (typeof value !== "string" || value.trim() === "") bad();
       return api.setProjectTitle(target, value as string);
+    case "ai-title":
+      // Requested by applyOrganize itself (requestAiTitle), never written as a value; undo writes a `title`.
+      return bad();
   }
 }
 
@@ -262,9 +292,16 @@ async function writeConfirmed(api: T3Api, kind: OrganizeKind, target: string, wa
 }
 
 export async function applyOrganize(plan: OrganizePlan, d: ApplyOrganizeDeps): Promise<ApplyOrganizeResult> {
+  // Titles written by T3 Code spend the user's provider tokens: only a run that asked for them (never sync, invariant 13).
+  if (d.allowAiTitles !== true && plan.actions.some((a) => a.kind === "ai-title")) {
+    throw new Error("This plan asks T3 Code to write titles (ai-title), which only `t3sm organize --ai-titles` may do; nothing was changed.");
+  }
   organizeGate(d.api.version, { allowUntested: d.allowUntested ?? false, onNotice: d.onNotice });
   const r: ApplyOrganizeResult = { done: 0, skippedChanged: 0, failed: [], status: "ok" };
   if (plan.actions.length === 0) return r;
+  const ai = { requested: 0, renamed: 0, unchanged: 0, failed: 0, waiting: 0 };
+  /** target -> the request T3 Code accepted and the title it replaces. */
+  const pending = new Map<string, { requestId: string; previous: string }>();
   const now = d.now ?? Date.now;
   const command = d.command === undefined ? "organize" : d.command;
   const j = d.journal;
@@ -287,12 +324,70 @@ export async function applyOrganize(plan: OrganizePlan, d: ApplyOrganizeDeps): P
     return `failed (${shown})`;
   };
 
+  /** T3 shows the request `requestId` on `target`: in progress or finished. */
+  const shows = (t: T3Thread | undefined, requestId: string): boolean =>
+    t !== undefined && (t.titleRegeneration?.requestId === requestId || t.lastTitleRegeneration?.requestId === requestId);
+
+  /** Asks T3 Code to write the title of `a.target` (the title still the plan's, the thread not archived nor being retitled). */
+  const requestAiTitle = async (a: OrganizeAction, cur: Current): Promise<string> => {
+    const t = w.threads.get(a.target);
+    if (!cur.exists || !same(cur.value, a.previous) || typeof a.previous !== "string" || !t || t.archived || t.titleRegeneration != null) {
+      r.skippedChanged++;
+      return "skipped (changed in T3 Code since the plan)";
+    }
+    await begin();
+    const requestId = (d.newId ?? randomUUID)();
+    let ok: true | string = true;
+    try {
+      await d.api.requestThreadTitle(a.target, requestId);
+    } catch (e) {
+      ok = msg(e);
+      if (mayHaveApplied(e)) {
+        try { if (shows((await threadMap(d.api)).get(a.target), requestId)) ok = true; } catch { /* report the request's own error */ }
+      }
+    }
+    if (ok !== true) return await fail(a, ok);
+    await appendOrStop(j, { t: "organize-change", runId: d.runId, kind: "ai-title", target: a.target, previous: a.previous, next: { requestId } },
+      `after T3 Code accepted ai-title ${a.target}: T3 Code is writing that title but the request is not journaled (the ${r.done} changes before it are)`);
+    pending.set(a.target, { requestId, previous: a.previous });
+    ai.requested++;
+    r.done++;
+    return "done";
+  };
+
+  /** Reads the threads until T3 Code answered every request, the wait's bound, or a stop signal; journals each new title. */
+  const waitForTitles = async (): Promise<void> => {
+    d.onWaiting?.(pending.size);
+    const sleep = d.sleep ?? ((ms: number) => new Promise<void>((res) => setTimeout(res, ms)));
+    const until = now() + (d.aiTitleWaitMs ?? AI_TITLE_WAIT_MS);
+    while (pending.size > 0 && now() < until) {
+      await sleep(Math.min(AI_TITLE_POLL_MS, until - now()));
+      if (d.aborted?.()) { r.status = "aborted"; break; }
+      let threads: Map<string, T3Thread>;
+      try { threads = await threadMap(d.api); } catch { continue; } // a failed read: look again until the bound
+      for (const [target, p] of [...pending]) {
+        const t = threads.get(target);
+        if (t === undefined) { pending.delete(target); ai.failed++; continue; } // deleted meanwhile
+        const last = t.lastTitleRegeneration;
+        if (last?.requestId !== p.requestId) continue;
+        pending.delete(target);
+        if (last.status === "failed") { ai.failed++; continue; }
+        if (last.status !== "renamed" || t.title === p.previous || t.title.trim() === "") { ai.unchanged++; continue; }
+        await appendOrStop(j, { t: "organize-change", runId: d.runId, kind: "title", target, previous: p.previous, next: t.title },
+          `after T3 Code wrote the title of ${target}: undo cannot put that title back`);
+        ai.renamed++;
+      }
+    }
+    ai.waiting = pending.size;
+  };
+
   const one = async (a: OrganizeAction): Promise<string> => {
     let cur: Current;
     try {
       await refresh(a.kind);
       cur = await current(d.api, w, a.kind, a.target);
     } catch (e) { return await fail(a, `could not read T3 Code: ${msg(e)}`); }
+    if (a.kind === "ai-title") return await requestAiTitle(a, cur);
     // A mark of a thread already shown (isShownMark) expects it still shown (not archived, settledAt null) and with no
     // override at all, right before the write: a thread put on the shelf since (by hand, or by T3 Code's own option,
     // which leaves no override) or archived is left as it is.
@@ -320,6 +415,10 @@ export async function applyOrganize(plan: OrganizePlan, d: ApplyOrganizeDeps): P
       const outcome = await one(a);
       d.onProgress?.(`[${i + 1}/${n}] ${a.kind} ${a.target}: ${outcome}`);
     }
+    if (pending.size > 0) {
+      if (r.status !== "aborted") await waitForTitles();
+      else ai.waiting = pending.size;
+    }
   } catch (e) {
     // The journal could not be written (JournalWriteError): stop; T3 may hold one change more than the journal.
     if (started && command !== null) await j.append({ t: "run-end", runId: d.runId, at: new Date(now()).toISOString(), status: "aborted" }).catch(() => {});
@@ -327,6 +426,7 @@ export async function applyOrganize(plan: OrganizePlan, d: ApplyOrganizeDeps): P
   }
   if (r.status !== "aborted") r.status = r.failed.length > 0 ? "partial" : "ok";
   if (started && command !== null) await j.append({ t: "run-end", runId: d.runId, at: new Date(now()).toISOString(), status: r.status });
+  if (ai.requested > 0) r.aiTitles = ai;
   return r;
 }
 
@@ -353,7 +453,10 @@ function recreatedBy(history: JournalEntry[], targetRunId: string): Set<string> 
  * undoOrganize and rollbackRun, which own the run (run-start through `begin`, rolled-back, run-end).
  */
 export async function undoOrganizeEntries(entries: JournalEntry[], targetRunId: string, c: UndoContext, items: OrganizeUndoItem[] = []): Promise<OrganizeUndoItem[]> {
-  const mine = entries.filter((e): e is Extract<JournalEntry, { t: "organize-change" }> => e.t === "organize-change" && e.runId === targetRunId);
+  const all = entries.filter((e): e is Extract<JournalEntry, { t: "organize-change" }> => e.t === "organize-change" && e.runId === targetRunId);
+  // A request to T3 Code (ai-title) followed by the title T3 wrote (a `title` change of the same run and thread): the
+  // title change is what undo puts back; the request adds nothing.
+  const mine = all.filter((e, i) => !(e.kind === "ai-title" && all.slice(i + 1).some((x) => x.kind === "title" && x.target === e.target)));
   if (mine.length === 0) return items;
   const valid = mine.filter((e) => typeof e.kind === "string" && KINDS.has(e.kind) && typeof e.target === "string" && e.target !== "");
   let w: World;
@@ -385,6 +488,10 @@ export async function undoOrganizeEntries(entries: JournalEntry[], targetRunId: 
     // A mark of a thread already shown cannot be undone: it was shown and stays shown, and T3 Code cannot remove the
     // override ("kept"); unless the user settled it since.
     if (isShownMark(e)) return cur.value === "active" || cur.value === null ? it("kept") : it("user-changed", `changed since: now ${JSON.stringify(cur.value)}`);
+    // A request T3 Code answered after the run (no title change journaled): its title cannot be told from one set by hand.
+    if (e.kind === "ai-title") {
+      return same(cur.value, e.previous) ? it("already") : it("user-changed", "title written by T3 Code after the run, or changed by hand since: t3sm cannot tell which");
+    }
     // A legacy follow carry (kind unsettle, next "settled") is a settle: its null previous means "shown".
     const kind = changeKind(e.kind, e.next);
     if (same(cur.value, settleShown(kind, e.previous))) return it("already");

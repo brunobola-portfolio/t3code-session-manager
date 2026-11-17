@@ -12,6 +12,11 @@
 // allowUntested and organizeGate gives the warning.
 // --history / --min override config.json's organize.history for this run only (same ranges: days 1..3650, all or off;
 // minimum 0..1000). --auto-settle <1..90|off> sets T3 Code's own sidebarAutoSettleAfterDays (journaled, undone by --undo).
+// --ai-titles (or organize.aiTitles.enabled; --no-ai-titles turns it off for one run) asks T3 Code to write, with its own
+// text model and the user's provider tokens, the titles that stay technical: at most --ai-titles-max (default
+// organize.aiTitles.maxPerRun, 50) per run, most recent first; the summary says how many, the model and the cap. Only
+// this command plans them: sync and the guided assistant never do (src/organize/apply.ts refuses them without
+// allowAiTitles).
 
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
@@ -20,12 +25,12 @@ import { expandHome, normalizeCwd, pathKey, sameCwd, stateDir, tildePath } from 
 import { readSyncStatus } from "../../ops/syncStatus.ts";
 import { latestPlan, readPlan } from "./apply.ts";
 import type { Lang } from "../../assistant/i18n.ts";
-import { ConfigError, DEFAULT_HISTORY, defaultConfig, loadConfig, normalizeHistory, organizeSettings } from "../../core/config.ts";
+import { AI_TITLES_MAX, ConfigError, DEFAULT_HISTORY, defaultConfig, loadConfig, normalizeHistory, organizeSettings } from "../../core/config.ts";
 import { Journal, newRunId, recoverPendingMtimes } from "../../core/journal.ts";
 import { acquireLock } from "../../core/lock.ts";
 import { resolveAccounts } from "../../ops/discoverAccounts.ts";
 import { normalizeFolder } from "../../ops/projects.ts";
-import { applyOrganize, assertOrganizeOnly, undoOrganize, type UndoOrganizeResult } from "../../organize/apply.ts";
+import { AI_TITLE_WAIT_MS, applyOrganize, assertOrganizeOnly, undoOrganize, type UndoOrganizeResult } from "../../organize/apply.ts";
 import { STOP_SIGNALS, type SignalSource } from "../../apply/apply.ts";
 import { AUTO_SETTLE_TARGET, buildOrganizePlan } from "../../organize/plan.ts";
 import { SHOWN_NO_OVERRIDE, isShownMark } from "../../organize/history.ts";
@@ -67,6 +72,8 @@ export interface OrganizeDeps {
   platform?: NodeJS.Platform;
   /** Ctrl+C, a kill and the terminal closing (default: this process's): the run stops after the current change. */
   signals?: SignalSource;
+  /** How the run waits between two reads while T3 Code writes titles (`--ai-titles`; default a timer). */
+  sleep?: (ms: number) => Promise<void>;
 }
 
 const processSignals: SignalSource = {
@@ -134,9 +141,20 @@ export interface BuildOptions {
   noArchiveFolders?: boolean;
   /** Plan every part as if on (history, titles, archive automated, pins), whatever config.json says: the assistant offers them. */
   offerAll?: boolean;
+  /**
+   * Ask T3 Code to write the titles that stay technical, at most `max` (`t3sm organize --ai-titles`). Never set from
+   * config.json here: only the organize command resolves organize.aiTitles; sync and the assistant leave it out.
+   */
+  aiTitles?: { max: number };
 }
 
-interface Parsed extends BuildOptions { yes: boolean; allowUntested: boolean; plain: boolean; undo: string | null | undefined }
+interface Parsed extends BuildOptions {
+  yes: boolean; allowUntested: boolean; plain: boolean; undo: string | null | undefined;
+  /** --ai-titles (true) or --no-ai-titles (false); undefined: organize.aiTitles.enabled decides. */
+  aiFlag?: boolean;
+  /** --ai-titles-max. */
+  aiMax?: number;
+}
 
 const ORGANIZE_FLAGS = new Set<string>([...FLAG_SPECS.organize.bool, ...FLAG_SPECS.organize.valued]);
 const HISTORY_BAD = "--history takes a number of days from 1 to 3650, all or off. Run `t3sm organize --help`.\n";
@@ -188,6 +206,15 @@ export function parseOrganizeArgs(args: string[], io: Io): Parsed | null {
       if (n === null) { io.stderr(MIN_BAD); return null; }
       min = n;
       i++;
+    } else if (a === "--ai-titles" || a === "--no-ai-titles") {
+      const on = a === "--ai-titles";
+      if (p.aiFlag !== undefined && p.aiFlag !== on) { usageLine(io, "usage.aiTitlesBoth"); return null; }
+      p.aiFlag = on;
+    } else if (a === "--ai-titles-max") {
+      const n = intArg(args[i + 1], 1, AI_TITLES_MAX);
+      if (n === null) { usageLine(io, "usage.aiTitlesMaxBad", { max: AI_TITLES_MAX }); return null; }
+      p.aiMax = n;
+      i++;
     } else if (a === "--no-delete") p.noDelete = true;
     else if (a === "--no-archive-folders") p.noArchiveFolders = true;
     else if (a === "--no-pin") {
@@ -199,7 +226,9 @@ export function parseOrganizeArgs(args: string[], io: Io): Parsed | null {
   }
   if (p.dryRun && p.yes) { usageLine(io, "common.eitherDryRunOrYes"); return null; }
   if (p.undo !== undefined && p.only !== null) { usageLine(io, "usage.onlyNotUndo"); return null; }
-  if (p.undo !== undefined && (p.autoSettle !== undefined || days !== undefined || min !== undefined || p.noDelete === true || p.noPin!.size > 0 || p.noArchiveFolders === true)) {
+  if (p.aiFlag === false && p.aiMax !== undefined) { usageLine(io, "usage.aiTitlesMaxOff"); return null; }
+  if (p.undo !== undefined && (p.autoSettle !== undefined || days !== undefined || min !== undefined || p.noDelete === true || p.noPin!.size > 0 || p.noArchiveFolders === true
+    || p.aiFlag !== undefined || p.aiMax !== undefined)) {
     usageLine(io, "usage.notWithUndo");
     return null;
   }
@@ -233,6 +262,11 @@ export interface Built {
   history: HistoryRule | null;
   /** Parts config.json has turned off (only with `offerAll`, which planned them anyway). */
   off: { history: boolean; titles: boolean; archiveAutomated: boolean; pinRecent: boolean };
+  /**
+   * The model T3 Code writes titles with (settings.textGenerationModelSelection), read only when titles written by T3
+   * Code are asked for; null: not set or not reported (the summary says "T3 Code's text model").
+   */
+  textModel: string | null;
 }
 
 /** Reads T3 Code and the transcripts (writes nothing with `dryRun`) and plans the changes of `config.organize`. */
@@ -297,10 +331,14 @@ export async function buildOrganize(api: T3Api, j: Journal, config: Config, p: B
       : { allowPins: true, allowDeletes: p.noDelete !== true },
     ...(p.autoSettle !== undefined && autoSettleDays !== undefined ? { autoSettle: { want: p.autoSettle, current: autoSettleDays } } : {}),
     ...(autoSettleDays !== undefined ? { t3AutoSettleDays: autoSettleDays } : {}),
+    ...(p.aiTitles !== undefined ? { aiTitles: p.aiTitles } : {}),
   });
   const skipPin = p.noPin ?? new Set<string>();
   const plan = skipPin.size === 0 ? built : keepChecked(built, built.actions.map((a, i): ListItem => ({ id: String(i), label: "", detail: "", checked: !(a.kind === "pin" && skipPin.has(a.target)) })));
-  return { plan, missing, names: namesOf(threads, projects, home), threads, projects, autoSettleDays, history: normalizeHistory(settings.history), off };
+  // The model is named when T3 Code reports it (server.getConfig, read only for this); otherwise "T3 Code's text model".
+  let textModel: string | null = null;
+  if (plan.counts["ai-title"] > 0) textModel = (await api.getConfig()).settings.textGenerationModelSelection?.model ?? null;
+  return { plan, missing, names: namesOf(threads, projects, home), threads, projects, autoSettleDays, history: normalizeHistory(settings.history), off, textModel };
 }
 
 /** organize.history with a run's override (`--history`, `--min`) applied; `--min` alone keeps the configured days (90 when off). */
@@ -382,6 +420,7 @@ export function actionLine(a: { kind: OrganizeKind; target: string; next: unknow
   switch (a.kind) {
     case "archive": return t("organize.act.archive", { thread: n.thread(a.target) });
     case "title": return t("organize.act.title", { thread: n.thread(a.target), title: quoted(str(a.next)) });
+    case "ai-title": return t("organize.act.aiTitle", { thread: n.thread(a.target) });
     case "unsettle": return t(a.previous === SHOWN_NO_OVERRIDE ? "organize.act.keep" : "organize.act.show", { thread: n.thread(a.target) });
     case "settle": return t("organize.act.settle", { thread: n.thread(a.target) });
     case "pin": return t("organize.act.pin", { project: n.project(a.target) });
@@ -397,7 +436,7 @@ export function revertLine(e: { kind: OrganizeKind; target: string; previous: un
   const t = (k: CliKey, v: Record<string, string | number> = {}): string => cliT(n.lang, k, v);
   switch (e.kind) {
     case "archive": return t(e.next === true ? "organize.rev.unarchive" : "organize.rev.archive", { thread: n.thread(e.target) });
-    case "title": return t("organize.rev.title", { thread: n.thread(e.target), title: quoted(str(e.previous)) });
+    case "title": case "ai-title": return t("organize.rev.title", { thread: n.thread(e.target), title: quoted(str(e.previous)) });
     case "unsettle": return t(e.next === "active" ? "organize.rev.putAway" : "organize.rev.show", { thread: n.thread(e.target) });
     case "settle": return t("organize.rev.showInside", { thread: n.thread(e.target) });
     case "pin": case "unpin": return t(e.next === true ? "organize.rev.unpin" : "organize.rev.pin", { project: n.project(e.target) });
@@ -413,7 +452,7 @@ export function revertLine(e: { kind: OrganizeKind; target: string; previous: un
 
 /** What an undo item is about, without the change ("'Fix the login form' (demo)", "project 'demo'"). */
 function subjectOf(e: { kind: OrganizeKind; target: string; previous: unknown }, n: Names): string {
-  if (e.kind === "archive" || e.kind === "title" || e.kind === "unsettle" || e.kind === "settle") return n.thread(e.target);
+  if (e.kind === "archive" || e.kind === "title" || e.kind === "ai-title" || e.kind === "unsettle" || e.kind === "settle") return n.thread(e.target);
   if (e.kind === "auto-settle") return cliT(n.lang, "organize.name.autoSettle");
   if (e.kind === "project-delete") {
     const prev = e.previous as { title?: unknown } | null;
@@ -438,7 +477,11 @@ const ARCHIVE_NOUN: Record<string, CliKey> = {
  * How the summary is told: its language (English by default), the dash before the undo hint ("-" without Unicode), and
  * whether each line ends with the undo hint (default true; the screen says it once, under the lines).
  */
-export interface OrganizeSummaryOptions { lang?: Lang; dash?: string; undo?: boolean }
+export interface OrganizeSummaryOptions {
+  lang?: Lang; dash?: string; undo?: boolean;
+  /** The model T3 Code writes titles with, named on the ai-title line when known (Built.textModel). */
+  textModel?: string | null;
+}
 
 const ARCHIVE_WORDS: Record<string, CliKey> = {
   "automated session (Agent SDK)": "organize.why.automated", "temp folder": "organize.why.temp", "system folder": "organize.why.system",
@@ -481,6 +524,16 @@ export function summaryLines(plan: OrganizePlan, o: OrganizeSummaryOptions = {})
     const word = (r: string): string => (TITLE_WORDS[r] ? cliT(lang, TITLE_WORDS[r]!) : r);
     const why = reasons.length === 1 ? word(reasons[0]![0]) : reasons.map(([r, n]) => `${num(n)} ${word(r)}`).join(", ");
     L.push(t("organize.sum.title", { n: num(title.length), why }) + undo);
+  }
+  // Titles T3 Code writes: how many, with which model, that it spends the user's tokens, and the cap of this run.
+  const aiTitle = of("ai-title");
+  if (aiTitle.length > 0) {
+    const model = o.textModel ? t("organize.textModelNamed", { model: shownText(o.textModel, 60) }) : t("organize.textModel");
+    const max = plan.aiTitles?.max ?? aiTitle.length;
+    const eligible = plan.aiTitles?.eligible ?? aiTitle.length;
+    L.push((eligible > aiTitle.length
+      ? t("organize.sum.aiTitlesCapped", { n: num(aiTitle.length), eligible: num(eligible), model, max: num(max) })
+      : t("organize.sum.aiTitles", { n: num(aiTitle.length), model, max: num(max) })) + undo);
   }
   const show = of("unsettle").filter((a) => !isShownMark(a));
   if (show.length > 0) {
@@ -542,10 +595,10 @@ export function previewWords(ui: CliUi): OrganizePreviewWords {
  * The organize screen: one line per kind of change (what, why, how to undo), the history rule in words, and the
  * per-project before/after table.
  */
-export function renderOrganize(ui: CliUi, plan: OrganizePlan, history: HistoryRule | null, width: number = ui.width): string[] {
+export function renderOrganize(ui: CliUi, plan: OrganizePlan, history: HistoryRule | null, width: number = ui.width, textModel: string | null = null): string[] {
   const { s } = ui;
   const w = Math.max(1, width);
-  const L = summaryLines(plan, { lang: ui.lang, undo: false });
+  const L = summaryLines(plan, { lang: ui.lang, undo: false, textModel });
   if (L.length === 0) return fitLine(`${s("ok", s.sym.ok)} ${ui.t("organize.nothing")}`, w, 2);
   const out = L.flatMap((l) => fitLine(`${s("accent", s.sym.sep)} ${l}`, w, 2));
   // How to undo, once for every line above; the command is never split.
@@ -557,7 +610,7 @@ export function renderOrganize(ui: CliUi, plan: OrganizePlan, history: HistoryRu
 }
 
 function render(b: Built, ui: CliUi): string {
-  return renderOrganize(ui, b.plan, b.history).join("\n") + "\n";
+  return renderOrganize(ui, b.plan, b.history, ui.width, b.textModel).join("\n") + "\n";
 }
 
 function missingNotice(n: number, lang: Lang): string {
@@ -566,16 +619,16 @@ function missingNotice(n: number, lang: Lang): string {
 
 // ---------------- review list ("d = details") ----------------
 
-const KIND_ORDER: readonly OrganizeKind[] = ["archive", "title", "unsettle", "settle", "pin", "unpin", "project-delete", "project-title", "auto-settle"];
+const KIND_ORDER: readonly OrganizeKind[] = ["archive", "title", "ai-title", "unsettle", "settle", "pin", "unpin", "project-delete", "project-title", "auto-settle"];
 const KIND_LABEL: Record<OrganizeKind, CliKey> = {
-  archive: "organize.kind.archive", title: "organize.kind.title", unsettle: "organize.kind.show", settle: "organize.kind.settle", pin: "organize.kind.pin",
+  archive: "organize.kind.archive", title: "organize.kind.title", "ai-title": "organize.kind.aiTitle", unsettle: "organize.kind.show", settle: "organize.kind.settle", pin: "organize.kind.pin",
   unpin: "organize.kind.unpin", "project-delete": "organize.kind.delete", "project-title": "organize.kind.rename", "auto-settle": "organize.kind.setting",
 };
 
 /** The planner's reason in words, for the line's detail. */
 function reasonText(a: OrganizeAction, lang: Lang): string {
   if (a.kind === "archive") return ARCHIVE_NOUN[a.reason] ? cliT(lang, ARCHIVE_NOUN[a.reason]!) : a.reason;
-  if (a.kind === "title") return TITLE_WORDS[a.reason] ? cliT(lang, TITLE_WORDS[a.reason]!) : a.reason;
+  if (a.kind === "title" || a.kind === "ai-title") return TITLE_WORDS[a.reason] ? cliT(lang, TITLE_WORDS[a.reason]!) : a.reason;
   if (a.kind === "unsettle" || a.kind === "settle") return historyWhy(lang, a.reason);
   return a.reason;
 }
@@ -622,7 +675,7 @@ async function decide(b: Built, io: Io, term: Term | null, lang: Lang): Promise<
     plan = keepChecked(plan, r.items);
     io.stdout(`${cliT(lang, "organize.keeping", { n: plan.actions.length, total: before })}\n`);
     if (plan.actions.length === 0) { io.stdout(`${cliT(lang, "organize.nothingLeft")}\n`); return null; }
-    for (const l of summaryLines(plan, { lang })) io.stdout(`${l}\n`);
+    for (const l of summaryLines(plan, { lang, textModel: b.textModel })) io.stdout(`${l}\n`);
   }
 }
 
@@ -632,6 +685,10 @@ async function organize(p: Parsed, io: Io, deps: OrganizeDeps): Promise<number> 
   const dir = stateDir(io.env, home);
   const j = new Journal(join(dir, "journal.jsonl"));
   const config = (await loadConfig(dir, home)) ?? defaultConfig(await resolveAccounts(home, [], io.env));
+  // Titles written by T3 Code: --ai-titles / --no-ai-titles for this run, else organize.aiTitles.enabled.
+  const ai = organizeSettings(config, langOf(io, config.language)).aiTitles;
+  if (p.aiFlag ?? ai.enabled) p.aiTitles = { max: p.aiMax ?? ai.maxPerRun };
+  else if (p.aiMax !== undefined) { usageLine(io, "usage.aiTitlesMaxOff"); return 2; }
   const onNotice = noticeOnce(io);
   // settings:write only for a run that may change T3 Code's own auto-settle option (--auto-settle); a dry run never writes.
   const connect = (): Promise<T3Api> => connectForOrganize(deps.connect ?? connectT3, home, p.allowUntested, onNotice, !p.dryRun && p.autoSettle !== undefined);
@@ -681,6 +738,12 @@ async function organize(p: Parsed, io: Io, deps: OrganizeDeps): Promise<number> 
       const onSignal = (): void => { stop = true; };
       for (const sig of STOP_SIGNALS) signals.on(sig, onSignal);
       let r: Awaited<ReturnType<typeof applyOrganize>>;
+      let ended = false;
+      const end = (): void => {
+        if (ended) return;
+        ended = true;
+        bar.end(ui.t("organize.progressDone", { n: i, total: n, dur: ui.f.dur(now() - started) }));
+      };
       try {
         io.stdout("\n");
         bar.start(n, ui.t("organize.progress", { n }));
@@ -688,8 +751,12 @@ async function organize(p: Parsed, io: Io, deps: OrganizeDeps): Promise<number> 
           api, journal: j, runId: chosen.runId, now, allowUntested: true, onNotice, // organizeGate already spoke
           aborted: () => stop,
           onProgress: () => { i++; bar.tick(i); },
+          // Only this command may ask T3 Code for titles (never sync, never the assistant).
+          allowAiTitles: p.aiTitles !== undefined,
+          ...(deps.sleep ? { sleep: deps.sleep } : {}),
+          onWaiting: (k) => { end(); io.stdout(`${ui.t("organize.aiWaiting", { n: k, dur: ui.f.dur(AI_TITLE_WAIT_MS) })}\n`); },
         });
-        bar.end(ui.t("organize.progressDone", { n: i, total: n, dur: ui.f.dur(now() - started) }));
+        end();
       } finally {
         bar.dispose();
         for (const sig of STOP_SIGNALS) signals.off(sig, onSignal);
@@ -700,6 +767,10 @@ async function organize(p: Parsed, io: Io, deps: OrganizeDeps): Promise<number> 
       if (r.failed.length > 0) parts.push(ui.t("organize.failedCount", { n: r.failed.length }));
       if (r.done > 0) parts.push(ui.t("organize.runUndo", { runId: shownText(chosen.runId) }));
       io.stdout(parts.join(" ") + "\n");
+      if (r.aiTitles) {
+        const a = r.aiTitles;
+        io.stdout(ui.t("organize.aiDone", { renamed: a.renamed, requested: a.requested }) + (a.waiting > 0 ? ` ${ui.t("organize.aiLate", { n: a.waiting })}` : "") + "\n");
+      }
       if (r.status === "aborted") {
         io.stderr(`${ui.t("organize.interrupted")}\n`);
         return 130;
@@ -767,7 +838,8 @@ export function undoLines(items: UndoItem[], changes: Map<string, Change>, names
   const entry = (x: UndoItem) => changes.get(`${x.kind}\u0000${x.target}`) ?? { kind: x.kind, target: x.target, previous: null, next: null };
   const of = (status: UndoItem["status"], line: (x: UndoItem) => string): string[] => items.filter((x) => x.status === status).map(line);
   const why = (x: UndoItem): string => cliT(names.lang,
-    /no longer exists/.test(x.note ?? "") ? "organize.undo.gone" : x.kind === "project-delete" ? "organize.undo.folderTaken" : "organize.undo.changed");
+    /no longer exists/.test(x.note ?? "") ? "organize.undo.gone" : x.kind === "project-delete" ? "organize.undo.folderTaken"
+      : x.kind === "ai-title" ? "organize.undo.aiLate" : "organize.undo.changed");
   return {
     reverted: of("reverted", (x) => revertLine(entry(x), names)),
     userChanged: of("user-changed", (x) => `${subjectOf(entry(x), names)}: ${why(x)}`),

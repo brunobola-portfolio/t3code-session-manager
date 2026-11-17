@@ -825,3 +825,101 @@ test("an undo names the marks under their own heading: kept shown, a mark cannot
     assert.match(out, lang === "en" ? /Kept shown \(cannot be undone\)/ : /Mantidas à vista \(não se desfaz\)/);
   }
 });
+
+// ---- titles written by T3 Code (--ai-titles) ----
+
+const IMG = "[external unsupported block: image]";
+const X1 = uuid(6);
+
+/** The world plus two threads whose title stays technical: x1 (its transcript holds only an image) and the one with no transcript. */
+function aiWorld(o: Parameters<typeof world>[0] = {}): World {
+  const w = world(o);
+  transcript(join(w.home, ".claude", "projects", "work-demo"), X1, w.demo, "cli", [IMG]);
+  const base = w.f.threads.get(tid(H2))!;
+  w.f.threads.set(tid(X1), { ...base, id: tid(X1), title: IMG, latestUserMessageAt: "2026-11-12T10:00:00.000Z" });
+  w.f.threads.set(tid(GONE), { ...w.f.threads.get(tid(GONE))!, title: IMG });
+  return w;
+}
+
+test("organize --ai-titles --dry-run: how many titles T3 Code would write, with which model, that it spends tokens, and the cap; nothing written", async () => {
+  const w = aiWorld();
+  w.f.textModel = "claude-haiku-4-5";
+  const c = io(w.state);
+  assert.equal(await organizeCommand(["--ai-titles", "--dry-run"], c.io, w.deps()), 0, c.err());
+  const out = flat(c.out());
+  assert.match(out, /Ask T3 Code to write 2 titles that stay technical, with T3 Code's text model \(claude-haiku-4-5\): it spends your provider's tokens \(at most 50 per run\)/);
+  // H1's transcript gives a clean title: t3sm sets that one itself.
+  assert.match(out, /New titles for 1 conversation/);
+  assert.deepEqual(writes(w.f), []);
+
+  // Capped, and the model not reported: "T3 Code's text model".
+  w.f.textModel = undefined;
+  const capped = io(w.state);
+  assert.equal(await organizeCommand(["--ai-titles", "--ai-titles-max", "1", "--dry-run"], capped.io, w.deps()), 0, capped.err());
+  assert.match(flat(capped.out()), /Ask T3 Code to write 1 of 2 titles that stay technical \(the most recent\), with T3 Code's text model: it spends your provider's tokens \(at most 1 per run; the rest wait for the next run\)/);
+
+  // Off by default.
+  const plain = io(w.state);
+  assert.equal(await organizeCommand(["--dry-run"], plain.io, w.deps()), 0);
+  assert.doesNotMatch(plain.out(), /Ask T3 Code/);
+});
+
+test("organize --ai-titles --yes: requests journaled, the titles T3 Code wrote journaled and reported; --undo puts the old titles back", async () => {
+  const w = aiWorld();
+  const c = io(w.state);
+  const sleep = async () => { w.f.finishTitle(tid(X1), "Review the screenshot"); w.f.finishTitle(tid(GONE), null, "failed"); };
+  assert.equal(await organizeCommand(["--ai-titles", "--yes"], c.io, w.deps({ sleep })), 0, c.err());
+  assert.deepEqual(writes(w.f).filter((x) => x.startsWith("ai-title:")).sort(), [`ai-title:${tid(GONE)}`, `ai-title:${tid(X1)}`].sort());
+  assert.equal(w.f.threads.get(tid(X1))!.title, "Review the screenshot");
+  const es = changes(await w.journal.readAll());
+  assert.equal(es.filter((e) => e.kind === "ai-title").length, 2);
+  assert.deepEqual(es.filter((e) => e.kind === "title" && e.target === tid(X1)).map((e) => [e.previous, e.next]), [[IMG, "Review the screenshot"]]);
+  assert.match(flat(c.out()), /Waiting for T3 Code to write 2 titles \(at most 2m?\b.*\)\.\.\./);
+  assert.match(flat(c.out()), /T3 Code wrote 1 of 2 titles\./);
+
+  const runId = es[0]!.runId;
+  const u = io(w.state);
+  assert.equal(await organizeCommand(["--undo", runId, "--yes"], u.io, w.deps()), 0, u.err());
+  assert.equal(w.f.threads.get(tid(X1))!.title, IMG);
+  assert.ok(flat(u.out()).includes(`Retitle 'Review the screenshot' (demo) back to '${IMG}'`), u.out());
+});
+
+test("organize.aiTitles.enabled turns it on for organize runs; --no-ai-titles turns it off for one run", async () => {
+  const w = aiWorld({ organize: { aiTitles: { enabled: true, maxPerRun: 7 } } });
+  const c = io(w.state);
+  assert.equal(await organizeCommand(["--dry-run"], c.io, w.deps()), 0, c.err());
+  assert.match(flat(c.out()), /Ask T3 Code to write 2 titles .* \(at most 7 per run\)/);
+  const off = io(w.state);
+  assert.equal(await organizeCommand(["--no-ai-titles", "--dry-run"], off.io, w.deps()), 0, off.err());
+  assert.doesNotMatch(off.out(), /Ask T3 Code/);
+});
+
+test("--ai-titles options: bad combinations and values exit 2 before contacting T3 Code", async () => {
+  const w = aiWorld();
+  for (const args of [
+    ["--ai-titles", "--no-ai-titles", "--dry-run"],
+    ["--ai-titles-max", "0", "--dry-run"],
+    ["--ai-titles-max", "501", "--dry-run"],
+    ["--ai-titles-max", "x", "--dry-run"],
+    ["--no-ai-titles", "--ai-titles-max", "5", "--dry-run"],
+    ["--ai-titles-max", "5", "--dry-run"], // AI titles not on (flag or config)
+    ["--undo", "--ai-titles", "--dry-run"],
+  ]) {
+    const c = io(w.state);
+    assert.equal(await organizeCommand(args, c.io, w.deps()), 2, args.join(" "));
+    assert.notEqual(c.err(), "", args.join(" "));
+  }
+  assert.equal(w.connects(), 0);
+  // Non-terminal without --yes: refused like any write (invariant 12).
+  const c = io(w.state);
+  assert.equal(await organizeCommand(["--ai-titles"], c.io, w.deps()), 2);
+  assert.equal(w.connects(), 0);
+});
+
+test("organize --help documents --ai-titles, --ai-titles-max and --no-ai-titles (EN and PT)", async () => {
+  for (const lang of ["en", "pt"]) {
+    const c = io("unused");
+    assert.equal(await main(["organize", "--help", "--lang", lang], c.io), 0);
+    for (const s of ["--ai-titles", "--ai-titles-max <n>", "--no-ai-titles"]) assert.ok(c.out().includes(s), `${lang}: ${s}`);
+  }
+});

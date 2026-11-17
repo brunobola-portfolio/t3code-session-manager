@@ -671,6 +671,28 @@ test("runSyncCycle: sync never pins, deletes projects or changes settings", asyn
   assert.ok(f.projects.every((p) => !p.pinned));
 });
 
+test("runSyncCycle: sync never asks T3 Code to write titles (spends tokens), even with organize.aiTitles.enabled (invariant 13)", async () => {
+  const f = fakeT3();
+  const e = cycleEnv(f);
+  // Titles off: a technical title is exactly what `organize --ai-titles` would hand to T3 Code.
+  await writeConfig(e.home, e.state, { organize: { ...AUTOMATED_IMPORT, titles: false, aiTitles: { enabled: true, maxPerRun: 50 } } });
+  f.opts.instances = [inst("claudeAgent", join(e.home, ".claude"))];
+  const importSessions = f.api.importSessions;
+  f.api.importSessions = async (projectId, root) => {
+    const r = await importSessions(projectId, root);
+    for (const t of f.threads.values()) t.title = "<command-name>/clear</command-name>"; // T3 titled them from a command
+    return r;
+  };
+  const now = Date.now();
+  const o = await runSyncCycle(e.deps([transcript(f, e.dir, ROOT, now - 3 * DAY), transcript(f, e.dir, ROOT, now - 4 * DAY)]));
+  assert.equal(o.kind, "ok", JSON.stringify(o));
+  if (o.kind !== "ok") return;
+  assert.equal(o.counts.imported, 2);
+  assert.ok(!f.calls.some((c) => c.startsWith("ai-title:")), f.calls.join("\n"));
+  const journal = readFileSync(join(e.state, "journal.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l));
+  assert.ok(!journal.some((x) => x.t === "organize-change" && x.kind === "ai-title"));
+});
+
 test("runSyncCycle: a rehome copy to a missing target is held, not created", async () => {
   const f = fakeT3();
   const e = cycleEnv(f);

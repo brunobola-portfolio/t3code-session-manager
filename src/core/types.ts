@@ -179,7 +179,7 @@ export type JournalEntry =
   // journal.jsonl, of the full journal as it was (never deleted by t3sm). Readers that do not know this kind skip it.
   | { t: "journal-compacted"; runId: string; at: string; olderThanDays: number; runs: number; entries: number; bytesBefore: number; bytesAfter: number; backup: string };
 /** What `t3sm organize` changes in T3 Code (spec §5); re-exported by src/organize/types.ts. */
-export type OrganizeKind = "archive" | "title" | "unsettle" | "settle" | "pin" | "unpin" | "project-delete" | "project-title" | "auto-settle";
+export type OrganizeKind = "archive" | "title" | "ai-title" | "unsettle" | "settle" | "pin" | "unpin" | "project-delete" | "project-title" | "auto-settle";
 export interface AccountConfig { id: string; home: string; displayName: string; accentColor: string | null }
 /** Where a session's folder came from (spec §4): `project` is always imported as is. */
 export type FolderCategory = "project" | "home" | "t3-refused" | "temp" | "system";
@@ -201,6 +201,11 @@ export interface OrganizeConfig {
   /** Which history organize shows: a rule (days 1..3650 or "all", minimum per project 0..1000), or a legacy 0.2 string ("all", "off", "days:N"; read through `historyRule`). */
   history: HistoryConfig;
   titles: boolean;
+  /**
+   * Titles written by T3 Code's own text model (`t3sm organize --ai-titles`): enabled turns it on for `organize` runs
+   * (never for `sync`, never for the guided assistant); maxPerRun (1..500) caps the requests of one run. Default off, 50.
+   */
+  aiTitles: { enabled: boolean; maxPerRun: number };
   archiveAutomated: boolean;
   /** count: 1..20. */
   pinRecent: { enabled: boolean; count: number };
@@ -221,7 +226,7 @@ export interface Config {
   /** Optional in config.json. Language of the guided assistant (`t3sm start`) only; default "en". */
   language?: "en" | "pt";
   /** Optional in config.json; each field defaults on its own (`organizeSettings`), each `sessions` field too. */
-  organize?: Partial<Omit<OrganizeConfig, "sessions">> & { sessions?: Partial<OrganizeConfig["sessions"]> };
+  organize?: Partial<Omit<OrganizeConfig, "sessions" | "aiTitles">> & { sessions?: Partial<OrganizeConfig["sessions"]>; aiTitles?: Partial<OrganizeConfig["aiTitles"]> };
   /** Optional in config.json. Which sync results raise a notification; default "attention". */
   notify?: "attention" | "all" | "off";
   /** Optional in config.json. auto (default true): the watcher installs newer patch and minor releases by itself. */

@@ -50,6 +50,13 @@ export interface FakeT3 {
   opts: FakeOpts;
   /** The fake T3's sidebarAutoSettleAfterDays (T3's default is 7). */
   autoSettleDays: number | null;
+  /**
+   * T3 Code finishes the title request it is working on for `id` (requestThreadTitle): records lastTitleRegeneration
+   * with that request id and `status`, and sets `title` when renamed. No request in progress: nothing happens.
+   */
+  finishTitle(id: string, title: string | null, status?: "renamed" | "unchanged" | "failed"): void;
+  /** The model T3 Code writes titles with (settings.textGenerationModelSelection.model); undefined: not reported. */
+  textModel?: string | null;
 }
 
 export function inst(id: string, home: string | null, extra: Partial<ProviderInstanceInfo> = {}): ProviderInstanceInfo {
@@ -57,7 +64,17 @@ export function inst(id: string, home: string | null, extra: Partial<ProviderIns
 }
 
 export function fakeT3(opts: FakeOpts = {}): FakeT3 {
-  const f: FakeT3 = { files: [], projects: [], threads: new Map(), calls: [], scanned: new Map(), opts, autoSettleDays: 7, api: null as never };
+  const f: FakeT3 = {
+    files: [], projects: [], threads: new Map(), calls: [], scanned: new Map(), opts, autoSettleDays: 7, api: null as never,
+    finishTitle(id, title, status = title === null ? "unchanged" : "renamed") {
+      const t = f.threads.get(id);
+      const req = t?.titleRegeneration;
+      if (!t || !req) return;
+      t.titleRegeneration = null;
+      t.lastTitleRegeneration = { requestId: req.requestId, status, completedAt: new Date().toISOString() };
+      if (status === "renamed" && title !== null) t.title = title;
+    },
+  };
   let seq = 0;
   const threadOf = (id: string): T3Thread & { updatedAt: number } => {
     const t = f.threads.get(id);
@@ -90,7 +107,10 @@ export function fakeT3(opts: FakeOpts = {}): FakeT3 {
       p.defaultModelSelection = instanceId === null ? null : { instanceId, model: "m" } as never;
       return { previous };
     },
-    getConfig: async () => ({ settings: { providerInstances: {} }, providers: [] }),
+    getConfig: async () => ({
+      settings: { providerInstances: {}, ...(f.textModel === undefined ? {} : { textGenerationModelSelection: f.textModel === null ? null : { instanceId: "claudeAgent", model: f.textModel } }) },
+      providers: [],
+    }),
     addInstance: async (s: { id: string; homePath: string; displayName?: string }) => {
       f.calls.push(`add:${s.id}`);
       opts.instances = [...(opts.instances ?? [inst("claudeAgent", null)]), inst(s.id, s.homePath)];
@@ -145,6 +165,9 @@ export function fakeT3(opts: FakeOpts = {}): FakeT3 {
       t.unsettledAt = new Date().toISOString();
     }),
     setThreadTitle: (id: string, title: string) => write(`title:${id}:${title}`, () => { threadOf(id).title = title; }),
+    requestThreadTitle: (id: string, requestId: string) => write(`ai-title:${id}`, () => {
+      threadOf(id).titleRegeneration = { requestId, startedAt: new Date().toISOString() };
+    }),
     setProjectPinned: (id: string, pinned: boolean) => write(`pin:${id}:${pinned}`, () => {
       const p = f.projects.find((x) => x.id === id);
       if (p) p.pinned = pinned;

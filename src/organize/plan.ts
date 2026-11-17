@@ -61,7 +61,7 @@ function lastChanges(journal: JournalEntry[]): { next: Map<string, unknown>; run
 
 export { isOnSettledShelf, isVisibleInProject };
 
-const KINDS: OrganizeKind[] = ["archive", "title", "unsettle", "settle", "pin", "unpin", "project-delete", "project-title", "auto-settle"];
+const KINDS: OrganizeKind[] = ["archive", "title", "ai-title", "unsettle", "settle", "pin", "unpin", "project-delete", "project-title", "auto-settle"];
 
 export function buildOrganizePlan(i: OrganizeInput): OrganizePlan {
   const cfg = i.config;
@@ -107,6 +107,8 @@ export function buildOrganizePlan(i: OrganizeInput): OrganizePlan {
   const archive: OrganizeAction[] = [];
   const title: OrganizeAction[] = [];
   const archived = new Set<string>();
+  const aiCandidates: T3Thread[] = [];
+  const aiTitled = new Set(i.journal.flatMap((e) => (e.t === "organize-change" && e.kind === "ai-title" ? [e.target] : [])));
 
   for (const t of i.threads) {
     if (!inScope(t)) continue;
@@ -132,8 +134,11 @@ export function buildOrganizePlan(i: OrganizeInput): OrganizePlan {
 
     // 5.2: a new title when T3's title is technical, or still the one t3sm set. Not for archived or to-be-archived
     // threads (R16).
+    // A thread T3 Code was asked to title (ai-title, any run) is never retitled again: its title is T3's, or the user's.
     const proposal = s?.title ?? null;
-    if (cfg.titles && !t.archived && !archived.has(t.id) && proposal !== null && proposal !== t.title && !touched("title", t.id, t.title)) {
+    let retitled = false;
+    const titleFree = !t.archived && !archived.has(t.id) && !aiTitled.has(t.id) && !touched("title", t.id, t.title);
+    if (cfg.titles && titleFree && proposal !== null && proposal !== t.title) {
       const k = `title\u0000${t.id}`;
       const ours = last.has(k) && last.get(k) === t.title;
       if (ours || isTechnical(t.title)) {
@@ -141,9 +146,21 @@ export function buildOrganizePlan(i: OrganizeInput): OrganizePlan {
           kind: "title", target: t.id, projectId: t.projectId, previous: t.title, next: proposal,
           reason: ours ? "title set by t3sm earlier" : "technical title",
         });
+        retitled = true;
       }
     }
+    // A title that stays technical (no clean one from the transcript): T3 Code may write it (`--ai-titles`), unless an
+    // automated conversation (archived, or noise) or one T3 Code is retitling right now.
+    if (i.aiTitles && titleFree && !retitled && !automated && t.titleRegeneration == null && isTechnical(t.title)) {
+      aiCandidates.push(t);
+    }
   }
+
+  // The cap spends the tokens on the most recent conversations (no activity date last, then by id).
+  aiCandidates.sort((a, b) => (ms(b.latestUserMessageAt) ?? -Infinity) - (ms(a.latestUserMessageAt) ?? -Infinity) || cmp(a.id, b.id));
+  const aiTitle: OrganizeAction[] = i.aiTitles === undefined ? [] : aiCandidates.slice(0, Math.max(0, i.aiTitles.max)).map((t) => ({
+    kind: "ai-title", target: t.id, projectId: t.projectId, previous: t.title, next: null, reason: "technical title",
+  }));
 
   // History (spec §5.2, §5.3): the rule, per project, over every thread (native and pinned ones count toward the minimum).
   /** A settle state only a person makes, or one changed since t3sm's last change of the settle family. */
@@ -246,11 +263,14 @@ export function buildOrganizePlan(i: OrganizeInput): OrganizePlan {
     });
   }
 
-  const actions = [...archive, ...title, ...unsettle, ...settle, ...pin, ...unpin, ...del, ...auto];
+  const actions = [...archive, ...title, ...aiTitle, ...unsettle, ...settle, ...pin, ...unpin, ...del, ...auto];
   const counts = Object.fromEntries(KINDS.map((k) => [k, 0])) as Record<OrganizeKind, number>;
   for (const a of actions) counts[a.kind]++;
 
-  return { runId: i.runId, actions, counts, byProject: byProject(i.projects, i.threads, archived, unsettled, settled) };
+  return {
+    runId: i.runId, actions, counts, byProject: byProject(i.projects, i.threads, archived, unsettled, settled),
+    ...(i.aiTitles !== undefined ? { aiTitles: { eligible: aiCandidates.length, max: i.aiTitles.max } } : {}),
+  };
 }
 
 /** A run's start time from its id (`YYYYMMDD-HHMMSS-…`, UTC), or null. */

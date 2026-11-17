@@ -174,6 +174,32 @@ export interface T3Thread {
   latestRunStartedAt?: string | null;
   latestRunCompletedAt?: string | null;
   createdAt?: string | null;
+  /**
+   * T3 Code's own title writer (`thread.metadata.update { regenerateTitle: true }`): the request it is working on
+   * (`titleRegeneration`, null when none) and the last one it finished (`lastTitleRegeneration`: renamed, unchanged,
+   * failed, or "unknown" for a status a newer T3 Code added). Absent when T3 does not send the field.
+   */
+  titleRegeneration?: { requestId: string; startedAt: string } | null;
+  lastTitleRegeneration?: { requestId: string; status: "renamed" | "unchanged" | "failed" | "unknown"; completedAt: string } | null;
+}
+
+function titleRegeneration(d: D, o: Obj, path: string): T3Thread["titleRegeneration"] | undefined {
+  if (!("titleRegeneration" in o) || o.titleRegeneration === undefined) return undefined;
+  if (o.titleRegeneration === null) return null;
+  const p = key(path, "titleRegeneration");
+  const r = d.obj(o.titleRegeneration, p);
+  return { requestId: d.str(r, "requestId", p), startedAt: d.str(r, "startedAt", p) };
+}
+
+function lastTitleRegeneration(d: D, o: Obj, path: string): T3Thread["lastTitleRegeneration"] | undefined {
+  if (!("lastTitleRegeneration" in o) || o.lastTitleRegeneration === undefined) return undefined;
+  if (o.lastTitleRegeneration === null) return null;
+  const p = key(path, "lastTitleRegeneration");
+  const r = d.obj(o.lastTitleRegeneration, p);
+  const requestId = d.str(r, "requestId", p);
+  if (typeof r.status !== "string") d.fail(key(p, "status"), "renamed, unchanged, failed or another string");
+  const status = d.optEnumOrUnknown(r, "status", p, ["renamed", "unchanged", "failed"] as const)!;
+  return { requestId, status, completedAt: d.str(r, "completedAt", p) };
 }
 
 const NATIVE_THREAD_RE = /:native-thread:(.+)$/s;
@@ -196,9 +222,13 @@ function shellThread(d: D, u: unknown, path: string, inArchived: boolean): T3Thr
   const latestRunStartedAt = d.optStr(o, "latestRunStartedAt", path, true);
   const latestRunCompletedAt = d.optStr(o, "latestRunCompletedAt", path, true);
   const createdAt = d.optStr(o, "createdAt", path, true);
+  const regenerating = titleRegeneration(d, o, path);
+  const lastRegeneration = lastTitleRegeneration(d, o, path);
   return {
     id, projectId, instanceId, archived: inArchived || archivedAt !== null, title, nativeSessionId, latestUserMessageAt, settledOverride, settledAt, unsettledAt, pinnedAt,
     latestRunRequestedAt, latestRunStartedAt, latestRunCompletedAt, createdAt,
+    ...(regenerating !== undefined ? { titleRegeneration: regenerating } : {}),
+    ...(lastRegeneration !== undefined ? { lastTitleRegeneration: lastRegeneration } : {}),
   };
 }
 
@@ -263,6 +293,8 @@ export interface T3Provider {
 
 export interface T3Config {
   settings: { providerInstances: Record<string, ProviderInstanceEntry>; defaultModelSelection?: ModelSelection | null;
+    /** The model T3 Code writes titles (and other short texts) with; null or undefined when not set or not reported. */
+    textGenerationModelSelection?: ModelSelection | null;
     /** Integer 1..90 days, null = auto-settle off; undefined when T3 does not report it, or reports a value outside 1..90. */
     sidebarAutoSettleAfterDays?: number | null;
     /** true: T3 reported an auto-settle value outside 1..90 (a newer T3 Code); t3sm never changes that setting then. */
@@ -341,6 +373,10 @@ export function decodeConfig(u: unknown): T3Config {
   else if (days !== undefined) settings.sidebarAutoSettleAfterDays = days;
   if ("defaultModelSelection" in s && s.defaultModelSelection !== undefined) {
     settings.defaultModelSelection = s.defaultModelSelection === null ? null : modelSelection(d, s.defaultModelSelection, "$.settings.defaultModelSelection");
+  }
+  if ("textGenerationModelSelection" in s && s.textGenerationModelSelection !== undefined) {
+    settings.textGenerationModelSelection = s.textGenerationModelSelection === null ? null
+      : modelSelection(d, s.textGenerationModelSelection, "$.settings.textGenerationModelSelection");
   }
   const providers = d.arr(o, "providers", "$", (x, p) => provider(d, x, p));
   return { settings, providers };

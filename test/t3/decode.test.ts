@@ -79,6 +79,7 @@ test("shell: accepts both fixtures; archived threads come from archivedThreads o
     instanceId: "claudeAgent", archived: false, title: "Demo thread title", nativeSessionId: null, latestUserMessageAt: "2026-04-21T09:06:52.292Z",
     settledOverride: "settled", settledAt: "2026-04-21T09:06:52.292Z", unsettledAt: null, pinnedAt: null,
     latestRunRequestedAt: null, latestRunStartedAt: null, latestRunCompletedAt: null, createdAt: "2026-04-21T09:00:38.042Z",
+    titleRegeneration: null,
   }]);
   const imported = decodeShell(await fx("http-orchestration-shell-imported.json"));
   assert.equal(imported.length, 3);
@@ -104,6 +105,40 @@ test("shell: accepts both fixtures; archived threads come from archivedThreads o
   expectShape(() => decodeShell(mutate(body, ["archivedThreads"], { set: null })), ep, "$.archivedThreads");
   expectShape(() => decodeShell(mutate(body, ["schemaVersion"], { set: 3 })), ep, "$.schemaVersion");
   expectShape(() => decodeShell(mutate(body, ["threads"], { remove: true })), ep, "$.threads");
+});
+
+test("shell: titleRegeneration and lastTitleRegeneration (T3 Code's own title writer) are decoded when present, strictly", async () => {
+  const body = await fx("http-orchestration-shell.json");
+  const ep = "GET /api/orchestration/shell";
+  assert.equal(decodeShell(body)[0]!.titleRegeneration, null, "the fixture: none in progress");
+  const plain = decodeShell(mutate(body, ["threads", 0, "titleRegeneration"], { remove: true }))[0]!;
+  assert.equal("titleRegeneration" in plain, false, "absent: no key");
+  assert.equal("lastTitleRegeneration" in plain, false);
+  const pending = { requestId: "00000000-0000-4000-8000-00000000aa01", startedAt: "2026-11-14T12:00:00.000Z" };
+  assert.deepEqual(decodeShell(mutate(body, ["threads", 0, "titleRegeneration"], { set: pending }))[0]!.titleRegeneration, pending);
+  assert.equal(decodeShell(mutate(body, ["threads", 0, "titleRegeneration"], { set: null }))[0]!.titleRegeneration, null);
+  const last = { requestId: "00000000-0000-4000-8000-00000000aa01", status: "renamed", completedAt: "2026-11-14T12:00:05.000Z" };
+  assert.deepEqual(decodeShell(mutate(body, ["threads", 0, "lastTitleRegeneration"], { set: { ...last, message: "x" } }))[0]!.lastTitleRegeneration, last);
+  for (const status of ["unchanged", "failed"]) {
+    assert.equal(decodeShell(mutate(body, ["threads", 0, "lastTitleRegeneration"], { set: { ...last, status } }))[0]!.lastTitleRegeneration?.status, status);
+  }
+  // A status a newer T3 Code added: "unknown", never a renamed title t3sm would record.
+  assert.equal(decodeShell(mutate(body, ["threads", 0, "lastTitleRegeneration"], { set: { ...last, status: "queued" } }))[0]!.lastTitleRegeneration?.status, "unknown");
+  expectShape(() => decodeShell(mutate(body, ["threads", 0, "titleRegeneration"], { set: "yes" })), ep, "$.threads[0].titleRegeneration");
+  expectShape(() => decodeShell(mutate(body, ["threads", 0, "titleRegeneration"], { set: { startedAt: pending.startedAt } })), ep, "$.threads[0].titleRegeneration.requestId");
+  expectShape(() => decodeShell(mutate(body, ["threads", 0, "lastTitleRegeneration"], { set: { ...last, requestId: 5 } })), ep, "$.threads[0].lastTitleRegeneration.requestId");
+  expectShape(() => decodeShell(mutate(body, ["threads", 0, "lastTitleRegeneration"], { set: { requestId: last.requestId, completedAt: last.completedAt } })), ep, "$.threads[0].lastTitleRegeneration.status");
+});
+
+test("getConfig: textGenerationModelSelection (the model T3 Code writes titles with) is decoded when present", async () => {
+  const v = await exitValue("ws-getconfig-unavailable.synthetic.json");
+  const ep = "server.getConfig";
+  assert.equal("textGenerationModelSelection" in decodeConfig(v).settings, false);
+  const sel = { instanceId: "claudeAgent", model: "claude-haiku-4-5" };
+  assert.deepEqual(decodeConfig(mutate(v, ["settings", "textGenerationModelSelection"], { set: sel })).settings.textGenerationModelSelection, sel);
+  assert.equal(decodeConfig(mutate(v, ["settings", "textGenerationModelSelection"], { set: null })).settings.textGenerationModelSelection, null);
+  expectShape(() => decodeConfig(mutate(v, ["settings", "textGenerationModelSelection"], { set: "haiku" })), ep, "$.settings.textGenerationModelSelection");
+  expectShape(() => decodeConfig(mutate(v, ["settings", "textGenerationModelSelection"], { set: { instanceId: "x" } })), ep, "$.settings.textGenerationModelSelection.model");
 });
 
 test("archived shell snapshot: every thread archived; strict on shape", async () => {
