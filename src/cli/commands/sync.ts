@@ -21,7 +21,7 @@ import { resolveLang, type Lang } from "../../assistant/i18n.ts";
 import { defaultRunner } from "../../t3/auth.ts";
 import { writeHeartbeatMerged } from "../../ops/syncStatus.ts";
 import { UnsafeSocketDirError, acquireWatcherSingleton, createDirWatch, readHeartbeat, realClock, startWatch, withStopRequest, type Clock, type WatchFactory } from "../../ops/watch.ts";
-import { LAUNCHD_LABEL, defaultBinPath, detectConhost } from "../../ops/schedule.ts";
+import { LAUNCHD_LABEL, defaultBinPath } from "../../ops/schedule.ts";
 import { spawnSuccessor, type SpawnLike } from "../../ops/successor.ts";
 import { installReady, installRoot, installStamp, packageVersion, type InstallStamp } from "../../core/version.ts";
 import { Journal } from "../../core/journal.ts";
@@ -54,8 +54,6 @@ export interface SyncCommandDeps {
   singleton?: typeof acquireWatcherSingleton;
   /** --watch: starts the successor after a restart (default child_process.spawn). */
   spawn?: SpawnLike;
-  /** --watch on win32: conhost.exe with --headless, or null (default detected). */
-  conhost?: string | null;
   /** --watch: whether the new install is complete and settled (default installReady(installRoot(), now())). */
   installReady?: () => boolean;
   /** --watch: the platform deciding how to restart (default process.platform; the singleton always uses the real one). */
@@ -207,8 +205,7 @@ export async function syncCommand(args: string[], io: Io, deps: SyncCommandDeps 
         // Only under launchd: a watcher started by hand on macOS has no KeepAlive behind it, so it spawns its successor.
         if (platform === "darwin" && io.env["XPC_SERVICE_NAME"] === LAUNCHD_LABEL) { exitCode = RESTART_EXIT_LAUNCHD; return; }
         spawnSuccessor({
-          platform, nodePath: process.execPath, binPath: defaultBinPath(), spawn: deps.spawn ?? (nodeSpawn as unknown as SpawnLike),
-          conhost: deps.conhost !== undefined ? deps.conhost : platform === "win32" ? detectConhost() : null,
+          nodePath: process.execPath, binPath: defaultBinPath(), spawn: deps.spawn ?? (nodeSpawn as unknown as SpawnLike),
         });
       },
       onCycle: async (o, at) => {

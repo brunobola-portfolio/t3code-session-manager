@@ -754,7 +754,7 @@ test("watcherOps win32: update reinstalls the task (keep-alive trigger) then run
   const s2 = spawnRec();
   const ops2 = watcherOps({ platform: "win32", run: failing, stateDir: "C:\\s", nodePath: "C:\\nodejs\\node.exe", binPath: "C:\\npm\\t3sm.mjs", everyMinutes: 15, conhost: "C:\\Windows\\System32\\conhost.exe", systemRoot: "C:\\Windows", userId: "DEMO\\demo", spawn: s2.spawn, fs, stop: STOPPED });
   assert.equal(await ops2.restart({ wasRunning: true, reinstallSchedule: false }), true);
-  assert.deepEqual(s2.spawned, [{ cmd: "C:\\Windows\\System32\\conhost.exe", args: ["--headless", "C:\\nodejs\\node.exe", "C:\\npm\\t3sm.mjs", "sync", "--watch", "--quiet"] }]);
+  assert.deepEqual(s2.spawned, [{ cmd: "C:\\nodejs\\node.exe", args: ["C:\\npm\\t3sm.mjs", "sync", "--watch", "--quiet"] }]);
 });
 
 test("watcherOps without a scheduled watcher: spawn one only when one was running", async () => {

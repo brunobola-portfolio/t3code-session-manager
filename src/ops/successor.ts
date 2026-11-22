@@ -3,24 +3,17 @@
 // by the update engine (src/ops/updater.ts). The watcher's daily update check starts `update --auto-run --yes` the same
 // way (src/ops/autoUpdate.ts): the update stops the watcher, so it never runs inside the watcher's own process.
 
-import { system32 } from "../core/sysroot.ts";
-
 /** The slice of child_process.spawn spawnSuccessor uses. */
 export type SpawnLike = (cmd: string, args: string[], opts: {
-  detached: boolean; stdio: "ignore"; windowsHide: boolean; env: NodeJS.ProcessEnv; windowsVerbatimArguments?: boolean;
+  detached: boolean; stdio: "ignore"; windowsHide: boolean; env: NodeJS.ProcessEnv;
 }) => { unref(): void; on?(ev: "error", fn: (e: Error) => void): unknown };
 
 export interface SuccessorOptions {
-  platform: NodeJS.Platform;
   nodePath: string;
   binPath: string;
-  /** win32: conhost.exe supporting --headless, or null for the `cmd.exe /c start "" /min` fallback (as the scheduled task). */
-  conhost: string | null;
   spawn: SpawnLike;
   /** The environment the successor starts from (default process.env); CLAUDE_CONFIG_DIR (any case) is dropped. */
   env?: NodeJS.ProcessEnv;
-  /** win32: %SystemRoot% for cmd.exe (default from the environment, else C:\Windows; not a drive path: C:\Windows). */
-  systemRoot?: string;
   /** What the child runs (default the watcher: `sync --watch --quiet`; the daily update check: `update --auto-run --yes`). */
   argv?: string[];
 }
@@ -30,22 +23,16 @@ export interface SuccessorOptions {
  * without CLAUDE_CONFIG_DIR, and lets it go (unref). Called after the singleton is released, so the successor finds the
  * pipe free; if it still loses a race, or fails to start, the keep-alive trigger (every 15 min) or the next logon
  * starts one.
+ *
+ * Always node itself. On Windows a detached child has no console at all, so no window shows. Never through conhost.exe
+ * --headless, as the scheduled task does: with stdio ignored it exits 0 at once and runs nothing (0.3.0 to 0.4.1 did
+ * that, so their automatic update never ran).
  */
 export function spawnSuccessor(o: SuccessorOptions): void {
   const env: NodeJS.ProcessEnv = {};
   for (const [k, v] of Object.entries(o.env ?? process.env)) if (v !== undefined && k.toUpperCase() !== "CLAUDE_CONFIG_DIR") env[k] = v;
-  const opts = { detached: true, stdio: "ignore" as const, windowsHide: true, env };
   const argv = o.argv ?? ["sync", "--watch", "--quiet"];
-  let child: ReturnType<SpawnLike>;
-  if (o.platform === "win32" && o.conhost) {
-    child = o.spawn(o.conhost, ["--headless", o.nodePath, o.binPath, ...argv], opts);
-  } else if (o.platform === "win32" && !/[%"\r\n]/.test(o.nodePath + o.binPath)) {
-    // cmd.exe parses its own command line: built verbatim, quoted as the scheduled task's (src/ops/schedule.ts).
-    const cmd = system32(o.systemRoot !== undefined ? { SystemRoot: o.systemRoot } : env, "cmd.exe");
-    child = o.spawn(cmd, ["/c", "start", '""', "/min", `"${o.nodePath}"`, `"${o.binPath}"`, ...argv], { ...opts, windowsVerbatimArguments: true });
-  } else {
-    child = o.spawn(o.nodePath, [o.binPath, ...argv], opts);
-  }
+  const child = o.spawn(o.nodePath, [o.binPath, ...argv], { detached: true, stdio: "ignore", windowsHide: true, env });
   child.on?.("error", () => { /* the keep-alive trigger starts one */ });
   child.unref();
 }

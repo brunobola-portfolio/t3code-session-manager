@@ -20,7 +20,7 @@ import { acquireLock, type Lock } from "../core/lock.ts";
 import type { CommandRunner, RunResult } from "../core/run.ts";
 import { compareSemver, parseSemver } from "../core/semver.ts";
 import type { UpdateSource } from "../core/types.ts";
-import { detectConhost, installSchedule, scheduleSpec, scheduleStatus, type ScheduleFs } from "./schedule.ts";
+import { installSchedule, scheduleSpec, scheduleStatus, type ScheduleFs } from "./schedule.ts";
 import { spawnSuccessor, type SpawnLike } from "./successor.ts";
 import { readHeartbeat as realReadHeartbeat, type Clock, type Heartbeat } from "./watch.ts";
 import type { StopResult } from "./watcherControl.ts";
@@ -304,7 +304,7 @@ export interface RestartOptions {
   everyMinutes: number;
   home?: string;
   uid?: number;
-  /** win32: conhost.exe for a hidden window, null for the `start /min` fallback (undefined: detected). */
+  /** win32: conhost.exe for the scheduled task's hidden window, null for its `start /min` fallback (undefined: detected). */
   conhost?: string | null;
   systemRoot?: string;
   userId?: string;
@@ -333,9 +333,7 @@ export function watcherOps(o: RestartOptions): WatcherOps {
     watch: true, home: o.home, uid: o.uid, conhost: o.conhost, stateDir: o.stateDir, systemRoot: o.systemRoot, userId: o.userId,
   });
   const successor = (): void => spawnSuccessor({
-    platform: o.platform, nodePath: o.nodePath, binPath: o.binPath, systemRoot: o.systemRoot,
-    conhost: o.conhost !== undefined ? o.conhost : o.platform === "win32" ? detectConhost() : null,
-    spawn: o.spawn ?? (nodeSpawn as unknown as SpawnLike),
+    nodePath: o.nodePath, binPath: o.binPath, spawn: o.spawn ?? (nodeSpawn as unknown as SpawnLike),
   });
   return {
     stop: o.stop,

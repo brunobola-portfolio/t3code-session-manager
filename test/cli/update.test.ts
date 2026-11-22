@@ -400,7 +400,7 @@ test("watcherUpdateCheck starts `update --auto-run --yes` from the installed bin
   const spawn: SpawnLike = (cmd, args, opts) => { spawned.push({ cmd, args, env: opts.env }); return { unref() {} }; };
   const check = watcherUpdateCheck({
     stateDir: h.state, home: h.deps.home!, env: { PATH: "C:/bin", CLAUDE_CONFIG_DIR: "C:/work/.claude-other", claude_config_dir: "x" }, platform: "win32", now: () => T0,
-    run: h.deps.run!, kind: "global", installed: () => "0.3.0", defaultSource: GH, spawn, conhost: null,
+    run: h.deps.run!, kind: "global", installed: () => "0.3.0", defaultSource: GH, spawn,
   });
   assert.equal((await check()).kind, "checked");
   assert.equal(spawned.length, 1);

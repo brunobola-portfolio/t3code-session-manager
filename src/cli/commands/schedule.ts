@@ -11,7 +11,6 @@ import { markGoneWatcher, stopWatcher as realStopWatcher, type StopResult } from
 import { acquireLock, type Lock } from "../../core/lock.ts";
 import { reportLockBusy } from "../locked.ts";
 import { spawn as nodeSpawn } from "node:child_process";
-import { detectConhost } from "../../ops/schedule.ts";
 import { cliUi, confirm, isCliKey, type CliKey, type CliUi } from "../ui.ts";
 import { FLAG_SPECS } from "../flags.ts";
 import { callout, kv } from "../../ui/components.ts";
@@ -176,8 +175,7 @@ export async function scheduleCommand(args: string[], io: Io, deps: ScheduleComm
   const started = (r: StopResult): string => (r.how === "none" ? ui.t("schedule.startedNew") : ui.t(r.pid !== null ? "schedule.restartedPid" : "schedule.restarted", { pid: r.pid ?? 0 }));
   /** The detached watcher (`sync --watch --quiet`), started outside the scheduler. */
   const successor = (): void => spawnSuccessor({
-    platform, nodePath, binPath, spawn: deps.spawn ?? (nodeSpawn as unknown as SpawnLike),
-    conhost: deps.conhost !== undefined ? deps.conhost : platform === "win32" ? detectConhost() : null,
+    nodePath, binPath, spawn: deps.spawn ?? (nodeSpawn as unknown as SpawnLike),
   });
   /**
    * Starts the scheduled watcher now: schtasks /Run, launchd bootstrap (after a bootout) or, for cron, the detached spawn.

@@ -84,7 +84,7 @@ test("restart = stop + run the task, no reinstall; win32 also spawns the watcher
   const s = setup({ how: "request", pid: 4242, running: false }, { installed: true });
   assert.equal(await scheduleCommand(["restart", "--yes"], s.io, s.deps), 0);
   assert.ok(idx(s.events, /^stop$/) < idx(s.events, /\/Run/), s.events.join(" | "));
-  assert.ok(idx(s.events, /\/Run/) < idx(s.events, /^spawn:.*conhost\.exe$/), s.events.join(" | "));
+  assert.ok(idx(s.events, /\/Run/) < idx(s.events, /^spawn:.*node\.exe$/), s.events.join(" | "));
   assert.equal(idx(s.events, /\/Create/), -1);
   assert.match(s.out(), /Stopped the running watcher \(pid 4242\) and started the new one\./);
 });

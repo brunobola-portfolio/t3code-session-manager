@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { spawn as nodeSpawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, win32 } from "node:path";
 import { main, type Io } from "../../src/cli/main.ts";
@@ -227,37 +228,41 @@ function fakeSpawn() {
   return { spawn, calls };
 }
 
-test("spawnSuccessor: win32 through conhost --headless, detached, hidden, stdio ignored, no CLAUDE_CONFIG_DIR, unref'd", () => {
-  const f = fakeSpawn();
-  spawnSuccessor({ platform: "win32", nodePath: "C:\\Program Files\\nodejs\\node.exe", binPath: "C:\\t3sm\\bin\\t3sm.mjs", conhost: "C:\\Windows\\System32\\conhost.exe", spawn: f.spawn,
-    env: { PATH: "C:\\bin", claude_config_dir: "C:\\x", CLAUDE_CONFIG_DIR: "C:\\y", T3SM_HOME: "C:\\work\\state" } });
-  assert.equal(f.calls.length, 1);
-  const c = f.calls[0]!;
-  assert.equal(c.cmd, "C:\\Windows\\System32\\conhost.exe");
-  assert.deepEqual(c.args, ["--headless", "C:\\Program Files\\nodejs\\node.exe", "C:\\t3sm\\bin\\t3sm.mjs", "sync", "--watch", "--quiet"]);
-  assert.equal(c.opts["detached"], true);
-  assert.equal(c.opts["stdio"], "ignore");
-  assert.equal(c.opts["windowsHide"], true);
-  assert.deepEqual(c.opts["env"], { PATH: "C:\\bin", T3SM_HOME: "C:\\work\\state" });
-  assert.equal(c.unref, 1);
+test("spawnSuccessor: node directly on every platform (paths with spaces or cmd.exe metacharacters too), detached, hidden, stdio ignored, no CLAUDE_CONFIG_DIR, unref'd", () => {
+  for (const [platform, nodePath, binPath] of [
+    ["win32", "C:\Program Files\nodejs\node.exe", "C:\a%PATH%\t3sm.mjs"],
+    ["linux", "/usr/bin/node", "/opt/my tools/t3sm/bin/t3sm.mjs"],
+  ] as const) {
+    const f = fakeSpawn();
+    spawnSuccessor({ nodePath, binPath, spawn: f.spawn, env: { PATH: "/bin", claude_config_dir: "/x", CLAUDE_CONFIG_DIR: "/y", T3SM_HOME: "/work/state" } });
+    assert.equal(f.calls.length, 1, platform);
+    const c = f.calls[0]!;
+    assert.equal(c.cmd, nodePath);
+    assert.deepEqual(c.args, [binPath, "sync", "--watch", "--quiet"]);
+    assert.equal(c.opts["detached"], true);
+    assert.equal(c.opts["stdio"], "ignore");
+    assert.equal(c.opts["windowsHide"], true);
+    assert.deepEqual(c.opts["env"], { PATH: "/bin", T3SM_HOME: "/work/state" });
+    assert.equal(c.unref, 1);
+  }
 });
 
-test("spawnSuccessor: win32 without conhost is the task's minimized start; POSIX runs node detached", () => {
-  const w = fakeSpawn();
-  spawnSuccessor({ platform: "win32", nodePath: "C:\\Program Files\\nodejs\\node.exe", binPath: "C:\\t3sm\\bin\\t3sm.mjs", conhost: null, spawn: w.spawn, env: {}, systemRoot: "C:\\Windows" });
-  const c = w.calls[0]!;
-  assert.equal(c.cmd, "C:\\Windows\\System32\\cmd.exe");
-  assert.deepEqual(c.args, ["/c", "start", '""', "/min", '"C:\\Program Files\\nodejs\\node.exe"', '"C:\\t3sm\\bin\\t3sm.mjs"', "sync", "--watch", "--quiet"]);
-  assert.equal(c.opts["windowsVerbatimArguments"], true);
-  assert.equal(c.opts["detached"], true);
-  assert.equal(c.opts["windowsHide"], true);
-  const p = fakeSpawn();
-  spawnSuccessor({ platform: "linux", nodePath: "/usr/bin/node", binPath: "/opt/my tools/t3sm/bin/t3sm.mjs", conhost: null, spawn: p.spawn, env: { HOME: "/home/demo", CLAUDE_CONFIG_DIR: "/x" } });
-  assert.equal(p.calls[0]!.cmd, "/usr/bin/node");
-  assert.deepEqual(p.calls[0]!.args, ["/opt/my tools/t3sm/bin/t3sm.mjs", "sync", "--watch", "--quiet"]);
-  assert.deepEqual(p.calls[0]!.opts["env"], { HOME: "/home/demo" });
-  assert.equal(p.calls[0]!.opts["stdio"], "ignore");
-  assert.equal(p.calls[0]!.unref, 1);
+test("spawnSuccessor: the child really runs (Windows: conhost.exe --headless with ignored stdio exits 0 and runs nothing)", async () => {
+  const t = tempHome();
+  const bin = join(t.home, "child one.mjs");
+  const out = join(t.home, "ran.txt");
+  writeFileSync(bin, `import { renameSync, writeFileSync } from "node:fs";
+writeFileSync(process.argv[3] + ".tmp", process.argv.slice(2, 3).join(" "));
+renameSync(process.argv[3] + ".tmp", process.argv[3]);
+`);
+  const exited = new Promise<void>((resolve) => {
+    spawnSuccessor({
+      nodePath: process.execPath, binPath: bin, argv: ["update", out],
+      spawn: (cmd, args, opts) => { const c = nodeSpawn(cmd, args, opts); c.on("exit", () => resolve()); return c; },
+    });
+  });
+  await exited;
+  assert.equal(readFileSync(out, "utf8"), "update");
 });
 
 test("sync --watch: a new install stamp after a cycle releases the pipe, then spawns exactly one successor, and exits 0", async () => {
@@ -278,7 +283,6 @@ test("sync --watch: a new install stamp after a cycle releases the pipe, then sp
       order.push("spawn");
       return f.spawn(cmd, args, opts);
     },
-    conhost: null,
   }));
   assert.equal(code, 0);
   assert.deepEqual(order, ["release", "spawn"], "the successor finds the pipe free");
@@ -323,8 +327,7 @@ for (const platform of ["darwin", "linux", "win32"] as const) {
         return h && { release: async () => { order.push("release"); await h.release(); } };
       },
       spawn: (cmd, args, opts) => { order.push("spawn"); return f.spawn(cmd, args, opts); },
-      conhost: null,
-    }));
+      }));
     const hb = JSON.parse(readFileSync(join(s.state, "sync-status.json"), "utf8")) as Record<string, unknown>;
     assert.equal(hb["reason"], "restart");
     if (platform === "darwin") {
@@ -347,7 +350,7 @@ test("sync --watch restart on macOS started by hand (no launchd job): spawns a s
     const stamps = [{ version: "0.3.0", stamp: "2026-11-15T10:00:00.000Z" }, { version: "0.3.1", stamp: "2026-11-16T10:00:00.000Z" }];
     let reads = 0;
     const code = await syncCommand(["--watch", "--quiet"], s.io, s.deps([], {
-      platform: "darwin", installStamp: () => stamps[Math.min(reads++, 1)]!, installReady: () => true, spawn: f.spawn, conhost: null,
+      platform: "darwin", installStamp: () => stamps[Math.min(reads++, 1)]!, installReady: () => true, spawn: f.spawn,
     }));
     assert.equal(code, 0, String(xpc));
     assert.equal(f.calls.length, 1, String(xpc));
@@ -383,21 +386,6 @@ test("sync --watch: an unknown install stamp still puts this t3sm's version in t
   assert.match(log(s.state).join("\n"), / version-unknown Error/);
 });
 
-test("spawnSuccessor: win32 without conhost and a path cmd.exe would mangle (%, \", CR, LF) runs node directly", () => {
-  for (const bad of ["C:\\a%PATH%\\t3sm.mjs", "C:\\a\"b\\t3sm.mjs", "C:\\a\rb\\t3sm.mjs", "C:\\a\nb\\t3sm.mjs"]) {
-    for (const [nodePath, binPath] of [["C:\\node\\node.exe", bad], [bad, "C:\\t3sm\\bin\\t3sm.mjs"]] as const) {
-      const f = fakeSpawn();
-      spawnSuccessor({ platform: "win32", nodePath, binPath, conhost: null, spawn: f.spawn, env: {}, systemRoot: "C:\\Windows" });
-      assert.equal(f.calls.length, 1);
-      assert.equal(f.calls[0]!.cmd, nodePath, JSON.stringify(bad));
-      assert.deepEqual(f.calls[0]!.args, [binPath, "sync", "--watch", "--quiet"]);
-      assert.equal(f.calls[0]!.opts["windowsVerbatimArguments"], undefined);
-      assert.equal(f.calls[0]!.opts["windowsHide"], true);
-      assert.equal(f.calls[0]!.unref, 1);
-    }
-  }
-});
-
 test("sync --watch: an update interrupted before the watcher started is journaled at start; the update check runs after a cycle", async () => {
   const s = setup(fakeT3());
   mkdirSync(s.state, { recursive: true });
@@ -422,7 +410,7 @@ test("sync --watch: an update interrupted before the watcher started is journale
   const sent: string[] = [];
   const notifier = { notify: async (title: string, body: string) => { sent.push(`${title}: ${body}`); return true; } };
   const code = await syncCommand(["--watch", "--quiet"], s.io, s.deps([], {
-    platform: "win32", clock, installReady: () => true, installStamp: () => stamps[Math.min(reads++, 2)]!, spawn: f.spawn, conhost: null,
+    platform: "win32", clock, installReady: () => true, installStamp: () => stamps[Math.min(reads++, 2)]!, spawn: f.spawn,
     updateCheck: async () => { checks++; }, notifier,
   }));
   assert.equal(code, 0);
@@ -440,7 +428,7 @@ test("sync --watch: an update interrupted before the watcher started is journale
   // The next start finds the same record: journaled and notified already.
   reads = 0;
   assert.equal(await syncCommand(["--watch", "--quiet"], s.io, s.deps([], {
-    platform: "win32", clock, installReady: () => true, installStamp: () => stamps[Math.min(reads++, 2)]!, spawn: f.spawn, conhost: null,
+    platform: "win32", clock, installReady: () => true, installStamp: () => stamps[Math.min(reads++, 2)]!, spawn: f.spawn,
     updateCheck: async () => {}, notifier,
   })), 0);
   assert.equal(sent.length, 1);
@@ -463,7 +451,7 @@ test("sync --watch: with the lock taken at start (an update is running), the upd
     let reads = 0;
     const f = fakeSpawn();
     assert.equal(await syncCommand(["--watch", "--quiet"], s.io, s.deps([], {
-      platform: "win32", installReady: () => true, installStamp: () => stamps[Math.min(reads++, 1)]!, spawn: f.spawn, conhost: null, updateCheck: async () => {},
+      platform: "win32", installReady: () => true, installStamp: () => stamps[Math.min(reads++, 1)]!, spawn: f.spawn, updateCheck: async () => {},
     })), 0);
   } finally { await lock.release(); }
   assert.equal(existsSync(join(s.state, "journal.jsonl")) ? readFileSync(join(s.state, "journal.jsonl"), "utf8").includes(attempt.runId) : false, false, "nothing journaled");
@@ -479,7 +467,7 @@ async function oneWatchCycle(args: string[], items: (s: ReturnType<typeof setup>
   const stamps = [{ version: "0.3.0", stamp: "2026-11-15T10:00:00.000Z" }, { version: "0.3.1", stamp: "2026-11-16T10:00:00.000Z" }];
   let reads = 0;
   const code = await syncCommand(args, s.io, s.deps(items(s, f), {
-    platform: "win32", installReady: () => true, installStamp: () => stamps[Math.min(reads++, 1)]!, spawn: fakeSpawn().spawn, conhost: null,
+    platform: "win32", installReady: () => true, installStamp: () => stamps[Math.min(reads++, 1)]!, spawn: fakeSpawn().spawn,
   }));
   return { s, code };
 }

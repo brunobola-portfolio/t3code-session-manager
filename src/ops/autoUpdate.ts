@@ -24,7 +24,7 @@ import type { Config, UpdateSource } from "../core/types.ts";
 import { installRoot, packageVersion } from "../core/version.ts";
 import { notifyOnce, updateNotice, UPDATE_AVAILABLE_REASON, type Notifier } from "./notify.ts";
 import { resolveLang } from "../assistant/i18n.ts";
-import { defaultBinPath, detectConhost } from "./schedule.ts";
+import { defaultBinPath } from "./schedule.ts";
 import { spawnSuccessor, type SpawnLike } from "./successor.ts";
 import { appendSyncLog } from "./sync.ts";
 import { defaultUpdateSource, installKind, isRegistryInstall, ownPackageName, ownRepositoryUrl, updateRunner, type InstallKind } from "./update.ts";
@@ -177,8 +177,6 @@ export interface WatcherCheckOptions {
   installed?: () => string;
   defaultSource?: UpdateSource | null;
   spawn?: SpawnLike;
-  /** win32: conhost.exe for a hidden window, or null for the `start /min` fallback (default: detected). */
-  conhost?: string | null;
 }
 
 /**
@@ -205,8 +203,7 @@ export function watcherUpdateCheck(o: WatcherCheckOptions): (stopped?: () => boo
     platform: o.platform,
     now: o.now,
     spawnUpdate: () => spawnSuccessor({
-      platform: o.platform, nodePath: process.execPath, binPath: defaultBinPath(), env: o.env,
-      conhost: o.conhost !== undefined ? o.conhost : o.platform === "win32" ? detectConhost() : null,
+      nodePath: process.execPath, binPath: defaultBinPath(), env: o.env,
       spawn: o.spawn ?? (nodeSpawn as unknown as SpawnLike),
       argv: ["update", "--auto-run", "--yes"],
     }),
