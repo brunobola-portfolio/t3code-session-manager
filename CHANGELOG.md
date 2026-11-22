@@ -6,8 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
-See what you have with `t3sm stats`, filter the plan in a browser with `t3sm plan --html`, and let T3 Code
-rewrite technical titles when you ask (`t3sm organize --ai-titles`). `t3sm journal compact` keeps the journal small.
+`t3sm stats`, a plan you filter in the browser, titles written by T3 Code when you ask, and a smaller journal. On
+Windows run `t3sm update` once by hand: the automatic update of 0.3.0 to 0.4.1 never ran there.
 
 ### Added
 
@@ -21,6 +21,22 @@ rewrite technical titles when you ask (`t3sm organize --ai-titles`). `t3sm journ
 - **`t3sm journal compact` makes journal.jsonl smaller.** It folds runs that ended more than 90 days ago
   (`--older-than <days>`), never one with anything pending, keeps the old journal as a backup next to it, and asks
   first; `--dry-run` shows how much it saves.
+
+### Changed
+
+- **More technical titles are cleaned.** Task notifications, shell runs and agent wake-ups no longer become a title, and
+  "Imported thread" or a bare command such as `/clear` is replaced by the first real message when there is one.
+- **Old conversations keep their own date.** When the history rule settles one, T3 Code records its last activity
+  instead of the moment t3sm settled it.
+
+### Fixed
+
+- **The automatic update runs on Windows.** The background process was started in a way that ran nothing, so updates
+  and the restart after one waited for you or for the scheduled task.
+- **Sessions of git worktrees stay where they were planned.** T3 Code now imports them with the main folder; t3sm
+  sets them aside while that folder imports, and waits if one is in use.
+- **Empty sessions no longer fail in every run.** One with only commands such as `/clear` and no reply, or only Claude
+  Code errors, is skipped as "nothing to show", because T3 Code imports nothing of it.
 
 ## [0.4.1] - 2026-11-16
 

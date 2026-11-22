@@ -9,6 +9,7 @@ o ficheiro da sessão está onde estava e o t3sm repôs todas as datas dos fiche
 
 - A pasta registada na conversa não é a do projeto que o T3 Code abriu (uma pasta que mudou de nome ou de sítio).
 - A conversa não tem nenhuma mensagem tua que o T3 Code consiga ler (só resultados de ferramentas ou um resumo).
+  Uma sessão só com comandos e sem resposta fica de fora ("nada para mostrar").
 - O T3 Code registou um erro para ela (vê os registos em `~/.t3/userdata/logs/`).
 
 ## O que fazer

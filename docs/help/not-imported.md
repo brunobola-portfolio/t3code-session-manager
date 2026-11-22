@@ -8,7 +8,8 @@ session file is where it was, and t3sm put every file time back.
 ## Why it happens
 
 - The folder recorded in the conversation does not match the project T3 Code opened (a renamed or moved folder).
-- The conversation has no message from you that T3 Code can read (only tool output or a summary).
+- The conversation has no message from you that T3 Code can read (only tool output or a summary). A session of bare
+  commands with no reply is skipped instead ("nothing to show").
 - T3 Code logged an error for it (see its logs in `~/.t3/userdata/logs/`).
 
 ## What to do

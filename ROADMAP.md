@@ -16,6 +16,7 @@ T3 Code** (blocked on something T3 Code does not offer yet), **help wanted**.
 | More agents | Gemini CLI, Cursor, Copilot CLI, Cline, Crush, goose, Amp, Grok Build, Qwen Code, Kilo and Antigravity sessions cannot be brought into T3 Code | One convert adapter per agent, following [docs/adding-a-harness.md](docs/adding-a-harness.md), with synthetic fixtures and honest status | planned, help wanted |
 | Stable T3 Code releases | Only T3 Code nightlies were tested live; stable releases are not tested yet | Run the live checks against each stable release and add the ones that pass to the tested list | planned |
 | macOS and Linux live runs | On macOS and Linux only unit tests have run (in CI), not a real import | Run the gated live tests and one real pilot import on each, and record the results in the docs | planned, help wanted |
+| Worktree sessions in their main project | A session from a linked git worktree gets a project of its own, while T3 Code shows it in the main folder's project with its branch | Plan it into the main folder's project when T3 Code supports it (0.1.11 and later), with a live check first | planned |
 | Timings of a full import | No full-size `apply` has been timed, so the README cannot say how long one takes | Publish measured figures from real imports in the CHANGELOG and the FAQ | planned |
 
 ## Done in 0.5
@@ -25,7 +26,8 @@ was imported (nothing is sent anywhere; t3sm has no telemetry); `t3sm plan --htm
 with filters and a search box; `t3sm journal compact`, which drops the file-time entries of old, finished runs and
 keeps a backup (rollback, undo and recovery see the same history); and titles written by T3 Code in
 `t3sm organize --ai-titles` (opt-in, a cap per run, the count and the model shown first, undone like any organize
-title, never in unattended sync; a live check against T3 Code is still due before the release). The largest
+title, never in unattended sync; a live check against T3 Code is still due before the release). Fixed: the automatic
+update on Windows, sessions of git worktrees, and empty sessions that failed in every run. The largest
 modules (`apply`, `importer`, `merge`, `rollback`, `doctor`) are split by step, with no change in behaviour. See the
 [CHANGELOG](CHANGELOG.md).
 

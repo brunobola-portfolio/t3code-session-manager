@@ -62,7 +62,8 @@ and the other agents' folders from the home folder, so `T3SM_HOME` alone still r
   panel, kv, table, callout), `layout` (wrapping and list helpers the screens share), `progress` (bar and spinner),
   `list` (the interactive review list), `locale` (numbers, dates, relative times), `terminal`, `organizePreview`.
 - `src/core/`: `types.ts` (shared types: `HarnessId`, sessions, plan, journal entries, config), `paths.ts` (all
-  path identity: `normalizeCwd`, `sameCwd`, Claude folder encoding), `journal.ts` (append-only, fsync'd;
+  path identity: `normalizeCwd`, `sameCwd`, Claude folder encoding), `worktree.ts` (linked git worktrees and their main
+  checkout), `journal.ts` (append-only, fsync'd;
   `recoverPendingMtimes`), `compact.ts` (`t3sm journal compact`: drops old runs' file-time entries; backup, then
   rename), `lock.ts`, `fsutil.ts` (`atomicWrite`, `publishNoClobber`), `config.ts`, `activity.ts`
   (the 10-minute and 30-day windows), `glob.ts`, `uuid.ts`, `pid.ts`, `version.ts` (install stamp: what build an install root holds),

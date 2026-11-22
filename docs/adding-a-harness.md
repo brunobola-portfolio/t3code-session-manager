@@ -43,7 +43,7 @@ Yield one `DiscoveredSession` per conversation that has something to convert:
   (ISO-8601; `updatedAt` is the session's last activity), `messageCount` (the same measure `read()` reports);
 - `file`: the source file (`path`, `size`, `mtimeMs`, `atimeMs`). If every session shares one file (a database),
   give that file; per-session activity then comes from `updatedAt`;
-- `flags`: `subagent`, `no-cwd`, `only-hidden` (no real user message), `active` (updated within the last 10 minutes,
+- `flags`: `subagent`, `no-cwd`, `only-hidden` (no real user message), `no-reply` (Claude only), `active` (updated within the last 10 minutes,
   `ACTIVE_WINDOW_MS`);
 - `accountId: null` and `cwdOffsetBytes: 0` for converted sessions (the account comes from the project's rules, and
   the converted file carries its folder on the first record).

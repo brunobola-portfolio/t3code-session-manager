@@ -67,7 +67,7 @@ For each wave (at most `batch.projectsPerWave` projects, at most 90 sessions of 
 3. **Journal, then bump.** The original access and modification times of every file about to move are appended to the
    journal **before** any change. Files of the wave move to just before now, in their original order.
 4. **Park.** Every other transcript T3 Code could see for those projects (mirror and backup copies, excluded ones,
-   sessions of later waves, files that appeared since planning) gets a file time **7 days in the future**. T3 Code
+   sessions of later waves, sessions of the project's linked git worktrees, files that appeared since planning) gets a file time **7 days in the future**. T3 Code
    skips future times (S2 §3), which was verified live with a synthetic file. T3 Code reads metadata newest first, so
    parked files are read before the bumped ones and spend the same 64 MiB per source: a wave whose bumped and parked
    cost would pass 56 MiB takes fewer projects (one project over it on its own goes alone, with a warning line).
