@@ -2,15 +2,16 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { checkCompat, TESTED_VERSIONS, compatGate } from "../../src/t3/compat.ts";
 
-const TESTED_LIST = "0.1.8-nightly.20261105.4218, 0.1.9-nightly.20261110.4465, 0.1.10-nightly.20261113.4630";
+const TESTED_LIST = "0.1.8-nightly.20261105.4218, 0.1.9-nightly.20261110.4465, 0.1.10-nightly.20261113.4630, 0.1.12-nightly.20261122.5111";
 
 test("TESTED_VERSIONS holds the spike versions and the live-verified organize nightly", () => {
-  assert.deepEqual([...TESTED_VERSIONS], ["0.1.8-nightly.20261105.4218", "0.1.9-nightly.20261110.4465", "0.1.10-nightly.20261113.4630"]);
+  assert.deepEqual([...TESTED_VERSIONS], ["0.1.8-nightly.20261105.4218", "0.1.9-nightly.20261110.4465", "0.1.10-nightly.20261113.4630", "0.1.12-nightly.20261122.5111"]);
 });
 
 test("checkCompat: exact -> tested, same major.minor -> same-minor, else untested", () => {
   assert.equal(checkCompat("0.1.9-nightly.20261110.4465"), "tested");
   assert.equal(checkCompat("0.1.10-nightly.20261113.4630"), "tested");
+  assert.equal(checkCompat("0.1.12-nightly.20261122.5111"), "tested");
   assert.equal(checkCompat("0.1.8-nightly.20261201.1"), "same-minor");
   assert.equal(checkCompat("0.1.9"), "same-minor");
   assert.equal(checkCompat("0.1.10-nightly.1"), "same-minor");

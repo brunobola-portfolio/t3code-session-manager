@@ -257,7 +257,7 @@ test("rollback of an organize run on T3 Code 0.2.0 proceeds with exactly one war
   const b = fakeIo(t.state);
   assert.equal(await rollbackCommand(["--yes", "--run", "org1"], b.io, { home: t.root, connect }), 0, b.err());
   assert.deepEqual(warnings(b.err()), [
-    "Warning: T3 Code 0.2.0 has not been tested with t3sm (tested: 0.1.8-nightly.20261105.4218, 0.1.9-nightly.20261110.4465, 0.1.10-nightly.20261113.4630). Proceeding; every change is journaled and can be undone with t3sm rollback.",
+    "Warning: T3 Code 0.2.0 has not been tested with t3sm (tested: 0.1.8-nightly.20261105.4218, 0.1.9-nightly.20261110.4465, 0.1.10-nightly.20261113.4630, 0.1.12-nightly.20261122.5111). Proceeding; every change is journaled and can be undone with t3sm rollback.",
   ]);
   assert.equal(f.threads.get("import:claudeAgent:a1")!.archived, false);
   assert.equal(f.projects[0]!.pinned, false);

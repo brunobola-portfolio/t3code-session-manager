@@ -284,7 +284,7 @@ test("organize on an untested T3 Code version proceeds with exactly one warning 
     assert.equal(await organizeCommand(args, c.io, w.deps()), 0, c.err());
     const lines = c.err().split("\n").filter((l) => l.startsWith("Warning") || /untested|not tested/.test(l));
     assert.deepEqual(lines, [
-      "Warning: T3 Code 0.2.0 has not been tested with t3sm (tested: 0.1.8-nightly.20261105.4218, 0.1.9-nightly.20261110.4465, 0.1.10-nightly.20261113.4630). Proceeding; every change is journaled and can be undone with t3sm rollback.",
+      "Warning: T3 Code 0.2.0 has not been tested with t3sm (tested: 0.1.8-nightly.20261105.4218, 0.1.9-nightly.20261110.4465, 0.1.10-nightly.20261113.4630, 0.1.12-nightly.20261122.5111). Proceeding; every change is journaled and can be undone with t3sm rollback.",
     ], args.join(" "));
   }
   const quiet = world({ version: "0.2.0" });

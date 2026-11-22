@@ -91,7 +91,7 @@ function state(f: FakeT3): unknown {
 const writes = (f: FakeT3): string[] => f.calls.filter((c) => c !== "close");
 const changes = (es: JournalEntry[]) => es.filter((e): e is Extract<JournalEntry, { t: "organize-change" }> => e.t === "organize-change");
 
-const UNTESTED_WARNING = "Warning: T3 Code 0.2.0 has not been tested with t3sm (tested: 0.1.8-nightly.20261105.4218, 0.1.9-nightly.20261110.4465, 0.1.10-nightly.20261113.4630). Proceeding; every change is journaled and can be undone with t3sm rollback.";
+const UNTESTED_WARNING = "Warning: T3 Code 0.2.0 has not been tested with t3sm (tested: 0.1.8-nightly.20261105.4218, 0.1.9-nightly.20261110.4465, 0.1.10-nightly.20261113.4630, 0.1.12-nightly.20261122.5111). Proceeding; every change is journaled and can be undone with t3sm rollback.";
 
 test("organizeGate never throws: silent on the verified version and with allowUntested, one warning otherwise", () => {
   assert.ok(TESTED_VERSIONS.includes(VERIFIED));

@@ -58,6 +58,6 @@ export const FOLLOW_MODE: "refresh" | "revision" = "revision";
 
 /**
  * Whether `thread.settle` honours an optional `settledAt` (spike S8, docs/spikes/S7-followup-and-backdate.md).
- * Measured live on 2026-11-16 (T3 Code 0.1.10-nightly.20261113): `honoured`, the stored `settledAt` equals the one sent.
+ * Measured live on 2026-11-16 (T3 Code 0.1.10-nightly.20261113) and 2026-11-22 (0.1.12-nightly.20261122): `honoured`, the stored `settledAt` equals the one sent.
  */
 export const SETTLE_BACKDATE = true;
