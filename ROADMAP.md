@@ -1,6 +1,6 @@
 # Roadmap
 
-What comes after 0.4, grouped by how sure it is. Each item says the problem it solves, the approach in one line and
+What comes after 0.5, grouped by how sure it is. Each item says the problem it solves, the approach in one line and
 its status. **Next** is committed, **Later** is wanted but not scheduled, **Ideas** are open questions. Nothing here
 is a promise of a date. Suggestions and votes:
 [Discussions](https://github.com/brunobola-portfolio/t3code-session-manager/discussions/categories/ideas). What already works: the **Works with** table in the
@@ -21,7 +21,7 @@ T3 Code** (blocked on something T3 Code does not offer yet), **help wanted**.
 
 ## Done in 0.5
 
-Built, not released yet: `t3sm stats`, a local summary of the sessions per agent, account and month and of what
+Moved out of the plan: `t3sm stats`, a local summary of the sessions per agent, account and month and of what
 was imported (nothing is sent anywhere; t3sm has no telemetry); `t3sm plan --html`, which also writes `plan.html`
 with filters and a search box; `t3sm journal compact`, which drops the file-time entries of old, finished runs and
 keeps a backup (rollback, undo and recovery see the same history); and titles written by T3 Code in

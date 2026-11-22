@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-22
+
 `t3sm stats`, a plan you filter in the browser, titles written by T3 Code when you ask, and a smaller journal. On
 Windows run `t3sm update` once by hand: the automatic update of 0.3.0 to 0.4.1 never ran there.
 

@@ -69,7 +69,7 @@ is `t3code-session-manager`), `~` your home folder; on macOS or Linux use a path
 From GitHub, once `v0.3.1` is published there:
 
 ```bash
-npm install -g --install-links github:brunobola-portfolio/t3code-session-manager#v0.4.1
+npm install -g --install-links github:brunobola-portfolio/t3code-session-manager#v0.5.0
 ```
 
 (Use the tag of the release you test: the line in the README always names the current one.)

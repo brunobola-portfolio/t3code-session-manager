@@ -71,7 +71,7 @@ se chamar `t3code-session-manager`), `~` a tua pasta pessoal; no macOS ou no Lin
 A partir do GitHub, quando a `v0.3.1` lá estiver publicada:
 
 ```bash
-npm install -g --install-links github:brunobola-portfolio/t3code-session-manager#v0.4.1
+npm install -g --install-links github:brunobola-portfolio/t3code-session-manager#v0.5.0
 ```
 
 (Usa a etiqueta da versão que estás a testar: a linha do README indica sempre a atual.)

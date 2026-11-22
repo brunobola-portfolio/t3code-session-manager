@@ -37,7 +37,7 @@ npm install -g t3code-session-manager
 
 Cada versão no npm é construída pelo GitHub Actions a partir da sua etiqueta e assinada com
 [proveniência](https://docs.npmjs.com/generating-provenance-statements) (o `npm audit signatures` confirma-a). A partir
-do GitHub: `npm install -g --install-links github:brunobola-portfolio/t3code-session-manager#v0.4.1` (precisa do git).
+do GitHub: `npm install -g --install-links github:brunobola-portfolio/t3code-session-manager#v0.5.0` (precisa do git).
 
 **2. Corre:**
 
