@@ -370,6 +370,7 @@ export const pt: Record<keyof typeof en, string> = {
   "organize.interrupted": "Interrompido: parei depois da alteração em curso; corre `t3sm organize` outra vez para continuar.",
   "organize.aiWaiting": "À espera de que o T3 Code escreva {n} {n|título|títulos} (no máximo {dur})...",
   "organize.aiDone": "O T3 Code escreveu {renamed} de {requested} {requested|título|títulos}.",
+  "organize.aiFailed": "O T3 Code não conseguiu escrever {n} {n|título|títulos}: {why}. Confirma o modelo de texto nas definições do T3 Code e corre `t3sm organize --ai-titles` outra vez.",
   "organize.aiLate": "{n} ainda {n|está a ser escrito|estão a ser escritos}: o `t3sm organize --undo` não consegue repor {n|esse título|esses títulos} depois de o T3 Code {n|o escrever|os escrever}.",
 
   // ---------- erros ----------

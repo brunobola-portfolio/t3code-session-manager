@@ -54,7 +54,7 @@ export interface FakeT3 {
    * T3 Code finishes the title request it is working on for `id` (requestThreadTitle): records lastTitleRegeneration
    * with that request id and `status`, and sets `title` when renamed. No request in progress: nothing happens.
    */
-  finishTitle(id: string, title: string | null, status?: "renamed" | "unchanged" | "failed"): void;
+  finishTitle(id: string, title: string | null, status?: "renamed" | "unchanged" | "failed", message?: string): void;
   /** The model T3 Code writes titles with (settings.textGenerationModelSelection.model); undefined: not reported. */
   textModel?: string | null;
 }
@@ -66,12 +66,12 @@ export function inst(id: string, home: string | null, extra: Partial<ProviderIns
 export function fakeT3(opts: FakeOpts = {}): FakeT3 {
   const f: FakeT3 = {
     files: [], projects: [], threads: new Map(), calls: [], scanned: new Map(), opts, autoSettleDays: 7, api: null as never,
-    finishTitle(id, title, status = title === null ? "unchanged" : "renamed") {
+    finishTitle(id, title, status = title === null ? "unchanged" : "renamed", message) {
       const t = f.threads.get(id);
       const req = t?.titleRegeneration;
       if (!t || !req) return;
       t.titleRegeneration = null;
-      t.lastTitleRegeneration = { requestId: req.requestId, status, completedAt: new Date().toISOString() };
+      t.lastTitleRegeneration = { requestId: req.requestId, status, completedAt: new Date().toISOString(), ...(message === undefined ? {} : { message }) };
       if (status === "renamed" && title !== null) t.title = title;
     },
   };

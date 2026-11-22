@@ -118,7 +118,7 @@ test("shell: titleRegeneration and lastTitleRegeneration (T3 Code's own title wr
   assert.deepEqual(decodeShell(mutate(body, ["threads", 0, "titleRegeneration"], { set: pending }))[0]!.titleRegeneration, pending);
   assert.equal(decodeShell(mutate(body, ["threads", 0, "titleRegeneration"], { set: null }))[0]!.titleRegeneration, null);
   const last = { requestId: "00000000-0000-4000-8000-00000000aa01", status: "renamed", completedAt: "2026-11-14T12:00:05.000Z" };
-  assert.deepEqual(decodeShell(mutate(body, ["threads", 0, "lastTitleRegeneration"], { set: { ...last, message: "x" } }))[0]!.lastTitleRegeneration, last);
+  assert.deepEqual(decodeShell(mutate(body, ["threads", 0, "lastTitleRegeneration"], { set: { ...last, message: "x" } }))[0]!.lastTitleRegeneration, { ...last, message: "x" });
   for (const status of ["unchanged", "failed"]) {
     assert.equal(decodeShell(mutate(body, ["threads", 0, "lastTitleRegeneration"], { set: { ...last, status } }))[0]!.lastTitleRegeneration?.status, status);
   }

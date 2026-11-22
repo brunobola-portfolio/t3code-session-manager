@@ -310,6 +310,19 @@ test("ai-title: never for a native, archived, to-be-archived, automated, or unkn
   assert.deepEqual(targets(buildOrganizePlan(i).actions, "ai-title"), ["import:ok"]);
 });
 
+test("ai-title: a title T3 Code failed to write is asked for again; asked again and not failed, never a third time", () => {
+  const failed: JournalEntry = { t: "organize-failed", runId: "r", kind: "ai-title", target: "import:a", projectId: "p1", error: "x" };
+  const asked = change("ai-title", "import:a", "<x>", { requestId: "r1" });
+  const targetsWith = (journal: JournalEntry[]): string[] => {
+    const i = input({ config: { ...quiet, titles: false }, threads: [thread("import:a", { title: "<x>" })], journal });
+    i.aiTitles = { max: 5 };
+    return targets(buildOrganizePlan(i).actions, "ai-title");
+  };
+  assert.deepEqual(targetsWith([asked]), []);
+  assert.deepEqual(targetsWith([asked, failed]), ["import:a"]);
+  assert.deepEqual(targetsWith([asked, failed, asked]), []);
+});
+
 test("ai-title: never for a title the user changed by hand, nor one T3 Code was asked for before (no title action either)", () => {
   const i = input({
     config: quiet,

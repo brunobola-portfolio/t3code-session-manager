@@ -7,7 +7,8 @@
 //      transcript (entrypoint "sdk-py", technical first message) are imported with applyPlan; then buildOrganize (every
 //      change it plans for the OTHER projects of the machine is dropped, so no user project can be changed or pinned)
 //      -> archive the automated thread (its title stays: R16), show both human threads inside the project (unsettle),
-//      retitle the technical human one, pin the project; undoOrganize puts every one back.
+//      retitle the technical human one, pin the project; a conversation of one command keeps its technical title, so T3
+//      Code writes it (`--ai-titles`, synthetic text only); undoOrganize puts every one back.
 //   B. a synthetic "home-folder" conversation (cwd = the home folder, which T3 Code refuses) is copied faithfully into
 //      the target project by the real apply path, imported, and `claude --resume <copy id> -p` answers from the copied
 //      history. The original is a file in a TEMP dir (the faithful copy reads a file); it is never under ~/.claude.
@@ -163,8 +164,8 @@ test("live organize: archive / show / retitle / pin / undo on imported synthetic
     const now = Date.now();
 
     // =============== A: import, then organize and undo through the real code ===============
-    const sidH1 = randomUUID(), sidH2 = randomUUID(), sidA1 = randomUUID();
-    const files = { h1: join(encoded.a, `${sidH1}.jsonl`), h2: join(encoded.a, `${sidH2}.jsonl`), a1: join(encoded.a, `${sidA1}.jsonl`) };
+    const sidH1 = randomUUID(), sidH2 = randomUUID(), sidH3 = randomUUID(), sidA1 = randomUUID();
+    const files = { h1: join(encoded.a, `${sidH1}.jsonl`), h2: join(encoded.a, `${sidH2}.jsonl`), h3: join(encoded.a, `${sidH3}.jsonl`), a1: join(encoded.a, `${sidA1}.jsonl`) };
     const recent = now - 120_000; // user messages two minutes old: project A is the most recently active, so it is pinned
     writeTranscript(files.h1, { cwd: roots.a, sid: sidH1, entrypoint: "cli", t0: recent, texts: ["t3sm organize e2e: what is 2 + 2?", "4."] });
     writeTranscript(files.h2, { cwd: roots.a, sid: sidH2, entrypoint: "cli", t0: recent + 10_000, texts: [
@@ -173,32 +174,42 @@ test("live organize: archive / show / retitle / pin / undo on imported synthetic
     writeTranscript(files.a1, { cwd: roots.a, sid: sidA1, entrypoint: "sdk-py", t0: recent + 20_000, texts: [
       "<command-name>/model</command-name>", "Model set.", "t3sm organize e2e: nightly digest of the build.", "Digest ready.",
     ] });
+    // Only a command: no title can come from the transcript, so T3 Code is asked for one.
+    writeTranscript(files.h3, { cwd: roots.a, sid: sidH3, entrypoint: "cli", t0: recent + 30_000, texts: [
+      "<command-name>/review</command-name>\n<command-message>review</command-message>\n<command-args></command-args>",
+      "I reviewed the synthetic change to the date formatting helper: it now handles leap years.",
+    ] });
     // Old file times (outside T3's 30-day window): the wave imports them (as apply.live does); mtimes are restored.
-    for (const [i, f] of [files.h1, files.h2, files.a1].entries()) { const m = (now - (60 - i) * DAY) / 1000; utimesSync(f, m, m); }
-    const tH1 = `import:claudeAgent:${sidH1}`, tH2 = `import:claudeAgent:${sidH2}`, tA1 = `import:claudeAgent:${sidA1}`;
+    for (const [i, f] of [files.h1, files.h2, files.h3, files.a1].entries()) { const m = (now - (60 - i) * DAY) / 1000; utimesSync(f, m, m); }
+    const tH1 = `import:claudeAgent:${sidH1}`, tH2 = `import:claudeAgent:${sidH2}`, tH3 = `import:claudeAgent:${sidH3}`, tA1 = `import:claudeAgent:${sidA1}`;
 
-    // Only the three synthetic files are visible to discovery; the real adapter reads them (origin from the entrypoint).
+    // Only the four synthetic files are visible to discovery; the real adapter reads them (origin from the entrypoint).
     const real = createClaudeAdapter();
     const mine = (p: string): boolean => sameCwd(join(p, ".."), encoded.a);
     const adapterA: SourceAdapter = { ...real, discover: async function* (e) { for await (const s of real.discover(e)) if (mine(s.file.path)) yield s; } };
     const sessionsA: DiscoveredSession[] = [];
     for await (const s of adapterA.discover({ home, platform: process.platform, now: Date.now, config, stateDir: state, env: process.env })) sessionsA.push(s);
-    assert.deepEqual(sessionsA.map((s) => [s.nativeId, s.origin]).sort(), [[sidA1, "automated"], [sidH1, "human"], [sidH2, "human"]].sort(), "discovery tells human from automated");
+    assert.deepEqual(sessionsA.map((s) => [s.nativeId, s.origin]).sort(), [[sidA1, "automated"], [sidH1, "human"], [sidH2, "human"], [sidH3, "human"]].sort(), "discovery tells human from automated");
     const originalsA = sessionsA.map((s) => ({ path: s.file.path, mtimeMs: s.file.mtimeMs }));
 
     const planA = await buildPlan({ sessions: sessionsA, config, journal: [], now: Date.now(), runId: "e2e-organize-a", home, t3: await snap(t3), existsDir });
-    assert.deepEqual(planA.items.map((i) => i.action.kind), ["import", "import", "import"]);
+    assert.deepEqual(planA.items.map((i) => i.action.kind), ["import", "import", "import", "import"]);
     assert.ok(planA.projectsToCreate.some((p) => sameCwd(p.root, roots.a)), "project A is created by the apply");
     const rA = await applyPlan(planA, { ...deps, only: roots.a });
     log(`apply A: ${JSON.stringify({ status: rA.status, imported: rA.imported, failures: rA.failures, deferred: rA.deferred })}`);
     assert.equal(rA.status, "ok");
-    assert.equal(rA.imported, 3);
+    assert.equal(rA.imported, 4);
     for (const o of originalsA) assert.ok(Math.abs(statSync(o.path).mtimeMs - o.mtimeMs) <= 2, `mtime restored for ${o.path}`);
     const projA = (await t3.listProjects()).find((p) => sameCwd(p.workspaceRoot, roots.a));
     assert.ok(projA, "project A exists in T3");
     createdProjects.add(projA.id);
     const byId = (ts: T3Thread[], id: string): T3Thread | undefined => ts.find((t) => t.id === id);
-    const before = await eventually(() => t3.listThreads(), (ts) => [tH1, tH2, tA1].every((id) => byId(ts, id)), "the three imported threads appear");
+    const imported = await eventually(() => t3.listThreads(), (ts) => [tH1, tH2, tH3, tA1].every((id) => byId(ts, id)), "the four imported threads appear");
+    log(`titles T3 Code gave them: H2=${JSON.stringify(byId(imported, tH2)!.title)} H3=${JSON.stringify(byId(imported, tH3)!.title)} A1=${JSON.stringify(byId(imported, tA1)!.title)}`);
+    // T3 Code cleans these titles itself since 0.1.11: an import of an older T3 Code, with its raw markup, is what t3sm retitles.
+    for (const id of [tH2, tA1]) await t3.setThreadTitle(id, "<command-name>/model</command-name>");
+    await t3.setThreadTitle(tH3, "/review");
+    const before = await eventually(() => t3.listThreads(), (ts) => [tH2, tA1].every((id) => byId(ts, id)?.title.startsWith("<command-name>")) && byId(ts, tH3)?.title === "/review", "the old titles show in T3");
     const titleH2 = byId(before, tH2)!.title, titleA1 = byId(before, tA1)!.title;
     log(`imported titles: H2=${JSON.stringify(titleH2)} A1=${JSON.stringify(titleA1)}; settledOverride H1=${byId(before, tH1)!.settledOverride}`);
 
@@ -206,7 +217,8 @@ test("live organize: archive / show / retitle / pin / undo on imported synthetic
     // no thread, pin, unpin or other change of any other project, and no project delete at all (noDelete).
     const journal = new Journal(journalFile);
     const io: Io = { stdout: () => {}, stderr: (s) => log(`notice: ${s.trim()}`), isTTY: false, prompt: async () => "", env: { ...process.env, T3SM_HOME: state } };
-    const built = await buildOrganize(t3, journal, config, { only: null, dryRun: true, noDelete: true }, io, { adapters: [adapterA] }, home, Date.now);
+    const built = await buildOrganize(t3, journal, config, { only: null, dryRun: true, noDelete: true, aiTitles: { max: 10_000 } }, io, { adapters: [adapterA] }, home, Date.now);
+    // The cap above only lets the synthetic thread in; every other project's ai-title is dropped with the rest.
     const actions = built.plan.actions.filter((a) => a.projectId === projA.id);
     const plan: OrganizePlan = {
       ...built.plan, actions, byProject: built.plan.byProject.filter((p) => p.projectId === projA.id),
@@ -215,10 +227,11 @@ test("live organize: archive / show / retitle / pin / undo on imported synthetic
     log(`organize plan for project A: ${JSON.stringify(actions.map((a) => `${a.kind} ${a.target} (${a.reason})`))}`);
     const of = (k: string): string[] => actions.filter((a) => a.kind === k).map((a) => a.target).sort();
     assert.deepEqual(of("archive"), [tA1], "the automated thread is archived");
-    assert.deepEqual(of("unsettle"), [tH1, tH2].sort(), "both human threads are shown inside the project, the automated one is not");
+    assert.deepEqual(of("unsettle"), [tH1, tH2, tH3].sort(), "the human threads are shown inside the project, the automated one is not");
     assert.deepEqual(of("title"), [tH2], "only the human thread with a technical title is retitled (the archived automated one keeps its title: R16)");
+    assert.deepEqual(of("ai-title"), [tH3], "only the title the transcript cannot improve is handed to T3 Code");
     assert.deepEqual(of("pin"), [projA.id], "the project is pinned");
-    assert.equal(actions.length, 5, `nothing else is planned for project A: ${JSON.stringify(actions)}`);
+    assert.equal(actions.length, 7, `nothing else is planned for project A: ${JSON.stringify(actions)}`);
     const newTitle = actions.find((a) => a.kind === "title")!.next as string;
     assert.match(newTitle, /KIWI-23/, "the clean title comes from the first real message");
 
@@ -227,16 +240,16 @@ test("live organize: archive / show / retitle / pin / undo on imported synthetic
       assert.ok(lock, "state-dir lock");
       try { await recoverPendingMtimes(journal); return await fn(); } finally { await lock.release(); }
     };
-    const ro = await withLock(() => applyOrganize(plan, { api: t3, journal, runId: plan.runId, onProgress: (l) => log(l), onNotice: (l) => log(`notice: ${l}`) }));
-    log(`organize: ${JSON.stringify({ done: ro.done, skippedChanged: ro.skippedChanged, failed: ro.failed, status: ro.status })}`);
+    const ro = await withLock(() => applyOrganize(plan, { api: t3, journal, runId: plan.runId, allowAiTitles: true, onProgress: (l) => log(l), onNotice: (l) => log(`notice: ${l}`) }));
+    log(`organize: ${JSON.stringify({ done: ro.done, skippedChanged: ro.skippedChanged, failed: ro.failed, status: ro.status, ai: ro.aiTitles })}`);
     assert.equal(ro.status, "ok");
-    assert.equal(ro.done, 5);
     assert.equal(ro.skippedChanged, 0);
 
-    const after = await eventually(() => t3.listThreads(), (ts) => byId(ts, tA1)?.archived === true && byId(ts, tH2)?.title === newTitle, "the organize changes show in T3");
+    const after = await eventually(() => t3.listThreads(), (ts) => byId(ts, tA1)?.archived === true && byId(ts, tH2)?.title === newTitle && byId(ts, tH3)?.title !== "/review", "the organize changes show in T3");
+    log(`title T3 Code wrote: H3=${JSON.stringify(byId(after, tH3)!.title)}`);
     assert.equal(byId(after, tA1)!.archived, true);
     assert.equal(byId(after, tA1)!.title, titleA1, "R16: the archived automated thread keeps its (technical) title");
-    for (const id of [tH1, tH2]) {
+    for (const id of [tH1, tH2, tH3]) {
       const t = byId(after, id)!;
       assert.equal(t.archived, false);
       assert.equal(t.settledOverride, "active", `${id} unsettled`);
@@ -251,10 +264,10 @@ test("live organize: archive / show / retitle / pin / undo on imported synthetic
     const undo = await withLock(() => undoOrganize(plan.runId, { api: t3, journal, now: Date.now, onProgress: (l) => log(l), onNotice: (l) => log(`notice: ${l}`) }));
     log(`undo: ${JSON.stringify({ reverted: undo.reverted, skippedUserChanged: undo.skippedUserChanged, alreadyRestored: undo.alreadyRestored, failed: undo.failed })}`);
     assert.deepEqual(undo.failed, []);
-    assert.equal(undo.reverted, 5);
-    const restored = await eventually(() => t3.listThreads(), (ts) => byId(ts, tA1)?.archived === false && byId(ts, tH2)?.title === titleH2, "the undo shows in T3");
+    assert.equal(undo.reverted, 7);
+    const restored = await eventually(() => t3.listThreads(), (ts) => byId(ts, tA1)?.archived === false && byId(ts, tH2)?.title === titleH2 && byId(ts, tH3)?.title === "/review", "the undo shows in T3");
     assert.equal(byId(restored, tA1)!.title, titleA1);
-    for (const id of [tH1, tH2]) assert.ok(!isVisibleInProject(byId(restored, id)!), `${id} is back on the settled shelf`);
+    for (const id of [tH1, tH2, tH3]) assert.ok(!isVisibleInProject(byId(restored, id)!), `${id} is back on the settled shelf`);
     assert.equal((await t3.listProjects()).find((p) => p.id === projA.id)!.pinned, false, "project A is unpinned again");
 
     // =============== B: a faithful rehome copy of a home-folder conversation imports and resumes ===============

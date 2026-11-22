@@ -759,12 +759,13 @@ test("ai-title: T3 Code wrote nothing new (unchanged) or failed: no title change
   const f = world();
   f.threads.set(C, thread(C, { title: "[external unsupported block: image]" }));
   const j = journal();
-  const w = waiting(() => { f.finishTitle(B, null, "unchanged"); f.finishTitle(C, null, "failed"); });
+  const w = waiting(() => { f.finishTitle(B, null, "unchanged"); f.finishTitle(C, null, "failed", "Model not\nfound"); });
   const r = await applyOrganize(plan([act("ai-title", B, TECH, null), act("ai-title", C, "[external unsupported block: image]", null)]), {
     api: f.api, journal: j, runId: "org-run-1", now: w.now, sleep: w.sleep, allowAiTitles: true, newId: ids("req-1", "req-2"),
   });
-  assert.deepEqual(r.aiTitles, { requested: 2, renamed: 0, unchanged: 1, failed: 1, waiting: 0 });
+  assert.deepEqual(r.aiTitles, { requested: 2, renamed: 0, unchanged: 1, failed: 1, waiting: 0, error: "Model not found" });
   assert.deepEqual(changes(await j.readAll()).map((e) => e.kind), ["ai-title", "ai-title"]);
+  assert.deepEqual((await j.readAll()).filter((e) => e.t === "organize-failed").map((e) => [e.kind, e.target, e.error]), [["ai-title", C, "Model not found"]], "the reason is kept");
   const u = await undoOrganize("org-run-1", { api: f.api, journal: j, now: () => NOW });
   assert.deepEqual(u.items.map((x) => x.status), ["already", "already"]);
   assert.equal(u.runId, null, "nothing to put back");

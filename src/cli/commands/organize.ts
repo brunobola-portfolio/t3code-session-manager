@@ -770,6 +770,7 @@ async function organize(p: Parsed, io: Io, deps: OrganizeDeps): Promise<number> 
       if (r.aiTitles) {
         const a = r.aiTitles;
         io.stdout(ui.t("organize.aiDone", { renamed: a.renamed, requested: a.requested }) + (a.waiting > 0 ? ` ${ui.t("organize.aiLate", { n: a.waiting })}` : "") + "\n");
+        if (a.failed > 0) io.stdout(noteLines(ui.s, "warn", ui.t("organize.aiFailed", { n: a.failed, why: shownText(a.error ?? "?", 200).replace(/\.$/, "") }), ui.width).join("\n") + "\n");
       }
       if (r.status === "aborted") {
         io.stderr(`${ui.t("organize.interrupted")}\n`);

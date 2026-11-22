@@ -79,9 +79,10 @@ export interface ApplyOrganizeResult {
   status: "ok" | "partial" | "aborted";
   /**
    * Only when T3 Code was asked for titles: requests accepted; of those, titles T3 wrote (renamed), kept (unchanged, or
-   * a status this t3sm does not know), could not write (failed), and still being written when the wait ended (waiting).
+   * a status this t3sm does not know), could not write (failed, `error`: the first reason), and still being written
+   * when the wait ended (waiting).
    */
-  aiTitles?: { requested: number; renamed: number; unchanged: number; failed: number; waiting: number };
+  aiTitles?: { requested: number; renamed: number; unchanged: number; failed: number; waiting: number; error?: string };
 }
 
 /** How long organize waits for the titles T3 Code writes, at most, and how often it looks. */
@@ -299,7 +300,7 @@ export async function applyOrganize(plan: OrganizePlan, d: ApplyOrganizeDeps): P
   organizeGate(d.api.version, { allowUntested: d.allowUntested ?? false, onNotice: d.onNotice });
   const r: ApplyOrganizeResult = { done: 0, skippedChanged: 0, failed: [], status: "ok" };
   if (plan.actions.length === 0) return r;
-  const ai = { requested: 0, renamed: 0, unchanged: 0, failed: 0, waiting: 0 };
+  const ai: NonNullable<ApplyOrganizeResult["aiTitles"]> = { requested: 0, renamed: 0, unchanged: 0, failed: 0, waiting: 0 };
   /** target -> the request T3 Code accepted and the title it replaces. */
   const pending = new Map<string, { requestId: string; previous: string }>();
   const now = d.now ?? Date.now;
@@ -371,7 +372,15 @@ export async function applyOrganize(plan: OrganizePlan, d: ApplyOrganizeDeps): P
         const last = t.lastTitleRegeneration;
         if (last?.requestId !== p.requestId) continue;
         pending.delete(target);
-        if (last.status === "failed") { ai.failed++; continue; }
+        if (last.status === "failed") {
+          ai.failed++;
+          const error = failureText(last.message ?? "T3 Code gave no reason");
+          ai.error ??= error;
+          // Nothing was written: journaled so the reason is kept and a later run may ask again (src/organize/plan.ts).
+          await appendOrStop(j, { t: "organize-failed", runId: d.runId, kind: "ai-title", target, projectId: t.projectId, error },
+            `after T3 Code failed to write the title of ${target} (${error}): the reason is not journaled`);
+          continue;
+        }
         if (last.status !== "renamed" || t.title === p.previous || t.title.trim() === "") { ai.unchanged++; continue; }
         await appendOrStop(j, { t: "organize-change", runId: d.runId, kind: "title", target, previous: p.previous, next: t.title },
           `after T3 Code wrote the title of ${target}: undo cannot put that title back`);

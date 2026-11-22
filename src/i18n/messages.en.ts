@@ -361,6 +361,7 @@ export const en = {
   "organize.interrupted": "Interrupted: stopped after the current change; run `t3sm organize` again to continue.",
   "organize.aiWaiting": "Waiting for T3 Code to write {n} {n|title|titles} (at most {dur})...",
   "organize.aiDone": "T3 Code wrote {renamed} of {requested} {requested|title|titles}.",
+  "organize.aiFailed": "T3 Code could not write {n} {n|title|titles}: {why}. Check the text model in T3 Code's settings, then run `t3sm organize --ai-titles` again.",
   "organize.aiLate": "{n} still being written: `t3sm organize --undo` cannot put {n|that title|those titles} back once T3 Code writes {n|it|them}.",
 
   // ---------- errors ----------

@@ -177,10 +177,10 @@ export interface T3Thread {
   /**
    * T3 Code's own title writer (`thread.metadata.update { regenerateTitle: true }`): the request it is working on
    * (`titleRegeneration`, null when none) and the last one it finished (`lastTitleRegeneration`: renamed, unchanged,
-   * failed, or "unknown" for a status a newer T3 Code added). Absent when T3 does not send the field.
+   * failed, with T3's `message`, or "unknown" for a status a newer T3 Code added). Absent when T3 does not send the field.
    */
   titleRegeneration?: { requestId: string; startedAt: string } | null;
-  lastTitleRegeneration?: { requestId: string; status: "renamed" | "unchanged" | "failed" | "unknown"; completedAt: string } | null;
+  lastTitleRegeneration?: { requestId: string; status: "renamed" | "unchanged" | "failed" | "unknown"; completedAt: string; message?: string } | null;
 }
 
 function titleRegeneration(d: D, o: Obj, path: string): T3Thread["titleRegeneration"] | undefined {
@@ -199,7 +199,8 @@ function lastTitleRegeneration(d: D, o: Obj, path: string): T3Thread["lastTitleR
   const requestId = d.str(r, "requestId", p);
   if (typeof r.status !== "string") d.fail(key(p, "status"), "renamed, unchanged, failed or another string");
   const status = d.optEnumOrUnknown(r, "status", p, ["renamed", "unchanged", "failed"] as const)!;
-  return { requestId, status, completedAt: d.str(r, "completedAt", p) };
+  const message = d.optStr(r, "message", p, true) ?? null;
+  return { requestId, status, completedAt: d.str(r, "completedAt", p), ...(message === null ? {} : { message }) };
 }
 
 const NATIVE_THREAD_RE = /:native-thread:(.+)$/s;

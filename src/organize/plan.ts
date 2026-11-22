@@ -108,7 +108,12 @@ export function buildOrganizePlan(i: OrganizeInput): OrganizePlan {
   const title: OrganizeAction[] = [];
   const archived = new Set<string>();
   const aiCandidates: T3Thread[] = [];
-  const aiTitled = new Set(i.journal.flatMap((e) => (e.t === "organize-change" && e.kind === "ai-title" ? [e.target] : [])));
+  /** Threads T3 Code was asked to title; one it then failed to write may be asked again. */
+  const aiTitled = new Set<string>();
+  for (const e of i.journal) {
+    if (e.t === "organize-change" && e.kind === "ai-title") aiTitled.add(e.target);
+    else if (e.t === "organize-failed" && e.kind === "ai-title") aiTitled.delete(e.target);
+  }
 
   for (const t of i.threads) {
     if (!inScope(t)) continue;

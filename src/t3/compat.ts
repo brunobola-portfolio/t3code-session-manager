@@ -3,6 +3,7 @@ export const TESTED_VERSIONS: readonly string[] = Object.freeze([
   "0.1.8-nightly.20261105.4218",
   "0.1.9-nightly.20261110.4465",
   "0.1.10-nightly.20261113.4630", // spike S6 + two real imports, 2026-11-14
+  "0.1.12-nightly.20261122.5111", // live tests (apply, merge, organize with --ai-titles, S8), 2026-11-22
 ]);
 
 export type Compat = "tested" | "same-minor" | "untested";

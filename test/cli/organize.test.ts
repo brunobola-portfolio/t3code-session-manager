@@ -867,7 +867,7 @@ test("organize --ai-titles --dry-run: how many titles T3 Code would write, with 
 test("organize --ai-titles --yes: requests journaled, the titles T3 Code wrote journaled and reported; --undo puts the old titles back", async () => {
   const w = aiWorld();
   const c = io(w.state);
-  const sleep = async () => { w.f.finishTitle(tid(X1), "Review the screenshot"); w.f.finishTitle(tid(GONE), null, "failed"); };
+  const sleep = async () => { w.f.finishTitle(tid(X1), "Review the screenshot"); w.f.finishTitle(tid(GONE), null, "failed", "Codex CLI command failed"); };
   assert.equal(await organizeCommand(["--ai-titles", "--yes"], c.io, w.deps({ sleep })), 0, c.err());
   assert.deepEqual(writes(w.f).filter((x) => x.startsWith("ai-title:")).sort(), [`ai-title:${tid(GONE)}`, `ai-title:${tid(X1)}`].sort());
   assert.equal(w.f.threads.get(tid(X1))!.title, "Review the screenshot");
@@ -876,6 +876,7 @@ test("organize --ai-titles --yes: requests journaled, the titles T3 Code wrote j
   assert.deepEqual(es.filter((e) => e.kind === "title" && e.target === tid(X1)).map((e) => [e.previous, e.next]), [[IMG, "Review the screenshot"]]);
   assert.match(flat(c.out()), /Waiting for T3 Code to write 2 titles \(at most 2m?\b.*\)\.\.\./);
   assert.match(flat(c.out()), /T3 Code wrote 1 of 2 titles\./);
+  assert.match(flat(c.out()), /T3 Code could not write 1 title: Codex CLI command failed\. Check the text model in T3 Code's settings/);
 
   const runId = es[0]!.runId;
   const u = io(w.state);
