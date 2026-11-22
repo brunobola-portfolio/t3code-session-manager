@@ -42,4 +42,11 @@ Look for lines that start with `{"case":`:
 
 ## Results
 
-Not run yet.
+Run on 2026-11-16 against T3 Code 0.1.10-nightly.20261113.4630 on Windows (claudeAgent instance):
+
+- **S7a: `nothing-happened`.** The second `agentSessions.import` returned `importedCount: 0, skippedCount: 1`; the thread
+  kept its 2 messages (the appended word was not there) and no second thread appeared.
+- **S7b: `nothing-happened`.** The same after a turn sent in T3 Code (4 messages before and after).
+- **S8: `honoured`.** Sent `2026-01-01T00:00:00.000Z`, stored `2026-01-01T00:00:00.000Z`.
+
+So `FOLLOW_MODE` stays `"revision"` and `SETTLE_BACKDATE` is now `true`.

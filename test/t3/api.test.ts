@@ -693,6 +693,15 @@ test("settle sends settledAt only when backdating is supported", async () => {
   ]);
 });
 
+test("settle is backdated by default: spike S8 measured T3 Code storing the settledAt it is sent", async () => {
+  const when = "2026-08-01T10:00:00.000Z";
+  const dflt = await makeApi({ replies: { "orchestration.dispatchCommand": { sequence: 3 } }, newId: ids("e") });
+  await dflt.api.settleThread(UID, when);
+  assert.deepEqual(dispatchPayloads(dflt.rpc), [
+    ["orchestration.dispatchCommand", JSON.stringify({ type: "thread.settle", commandId: "e", threadId: UID, settledAt: when })],
+  ]);
+});
+
 test("connectT3: writeSettings adds settings:write (and only that); without it the session never has it", async () => {
   const h = await connectHarness();
   try {

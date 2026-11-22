@@ -426,7 +426,9 @@ test("history rule (90 days, at least 10): per project, recent shown, older sett
   assert.deepEqual(targets(p.actions, "settle"), ["import:q211", "import:q210"]);
   assert.equal(p.counts.settle, 2);
   assert.deepEqual(of(p.actions, "settle")[0], {
-    kind: "settle", target: "import:q211", projectId: "p2", previous: "active", next: "settled", reason: "history: older than 90 days",
+    // Backdated by default (SETTLE_BACKDATE): T3 Code records the conversation's own last activity.
+    kind: "settle", target: "import:q211", projectId: "p2", previous: "active", next: { settledAt: iso(NOW - 211 * DAY) },
+    reason: "history: older than 90 days",
   });
   assert.deepEqual(p.byProject.map((r) => [r.projectId, r.visibleBefore, r.visibleAfter]), [["p1", 0, 10], ["p2", 12, 10]]);
   const kinds = p.actions.map((a) => a.kind);
