@@ -540,7 +540,7 @@ What t3sm reads and writes, and where: [SECURITY.md](SECURITY.md).
 | **Pi** | 🟡 verified with fixtures | T3 Code's importer | Plus discovery on real files; imported only when T3 Code has a Pi instance (enable Pi in T3 Code's settings, under providers; see [T3 Code's docs](https://github.com/pingdotgg/t3code/tree/main/docs/user)); not run live |
 | Gemini CLI, Cursor, Copilot CLI, Cline, Crush, goose, Amp, Grok Build, Qwen Code, Kilo, Antigravity | ⏳ planned | conversion | [Help add one](docs/adding-a-harness.md) |
 
-Tested live: T3 Code `0.1.9-nightly.20261110`, `.20261111` and `0.1.10-nightly.20261113` on Windows 11; `0.1.8` is
+Tested live: T3 Code `0.1.9-nightly.20261110`, `.20261111`, `0.1.10-nightly.20261113` and `0.1.12-nightly.20261122` on Windows 11; `0.1.8` is
 supported from reading its source; stable releases are not tested yet. Any other build runs
 with a one-line warning (`--allow-untested` hides it); a changed response shape stops with exit 4. macOS
 and Linux are covered by unit tests in CI only. Versions, storage formats and caveats per

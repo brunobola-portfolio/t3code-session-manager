@@ -19,6 +19,8 @@ background sync never asks T3 Code for titles.
 
 - See it first: `t3sm organize --ai-titles --dry-run`.
 - Fewer per run: `t3sm organize --ai-titles --ai-titles-max 20`.
+- A title T3 Code could not write: t3sm shows its reason. Check the text model in T3 Code's settings, then run
+  `t3sm organize --ai-titles` again; that conversation is asked for again.
 - Always on for `t3sm organize`: set `organize.aiTitles.enabled` to `true` in config.json (`maxPerRun` sets the cap);
   `--no-ai-titles` skips it for one run.
 - `t3sm organize --undo` puts back the old titles t3sm recorded. A title T3 Code wrote after the wait ended stays as

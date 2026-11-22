@@ -19,7 +19,7 @@ then imported as Claude threads.
 something was written). 🟡 verified with fixtures, plus read-only discovery on real files. ⏳ planned: not
 implemented. Only Windows 11 was used live; macOS and Linux run the unit tests in CI.
 
-T3 Code versions: tested live with `0.1.9-nightly.20261110`, `0.1.9-nightly.20261111` and `0.1.10-nightly.20261113.4630` on Windows 11; `0.1.8`
+T3 Code versions: tested live with `0.1.9-nightly.20261110`, `0.1.9-nightly.20261111`, `0.1.10-nightly.20261113.4630` and `0.1.12-nightly.20261122.5111` on Windows 11; `0.1.8`
 (`0.1.8-nightly.20261105`) is supported from reading its source, not run live; stable releases are not tested yet.
 `src/t3/compat.ts` lists the builds t3sm was tested with. Any other build runs with a one-line warning (hidden with
 `--allow-untested`); a changed response shape still stops the command with exit code 4 before any write. macOS and Linux are

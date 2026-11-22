@@ -17,7 +17,7 @@ Windows run `t3sm update` once by hand: the automatic update of 0.3.0 to 0.4.1 n
   project, account, action and skip reason and a search box; it loads nothing from the network.
 - **T3 Code can write the titles that stay technical.** `t3sm organize --ai-titles` first says how many, with which
   model and the cap per run (`--ai-titles-max`, 50), since it spends your provider's tokens; `--undo` puts the old
-  titles back, and sync never asks. See `t3sm help ai-titles`.
+  titles back, sync never asks, and a title T3 Code cannot write shows its reason.
 - **`t3sm journal compact` makes journal.jsonl smaller.** It folds runs that ended more than 90 days ago
   (`--older-than <days>`), never one with anything pending, keeps the old journal as a backup next to it, and asks
   first; `--dry-run` shows how much it saves.

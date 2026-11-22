@@ -20,6 +20,8 @@ regista cada título que ele escreveu. A sincronização em segundo plano nunca 
 
 - Vê primeiro: `t3sm organize --ai-titles --dry-run`.
 - Menos por execução: `t3sm organize --ai-titles --ai-titles-max 20`.
+- Um título que o T3 Code não conseguiu escrever: o t3sm mostra o motivo. Confirma o modelo de texto nas definições do
+  T3 Code e corre `t3sm organize --ai-titles` outra vez; essa conversa volta a ser pedida.
 - Sempre ligado no `t3sm organize`: põe `organize.aiTitles.enabled` a `true` no config.json (`maxPerRun` define o
   limite); `--no-ai-titles` salta-o numa execução.
 - O `t3sm organize --undo` repõe os títulos antigos que o t3sm registou. Um título que o T3 Code escreveu depois de a

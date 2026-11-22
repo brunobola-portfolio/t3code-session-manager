@@ -26,7 +26,7 @@ was imported (nothing is sent anywhere; t3sm has no telemetry); `t3sm plan --htm
 with filters and a search box; `t3sm journal compact`, which drops the file-time entries of old, finished runs and
 keeps a backup (rollback, undo and recovery see the same history); and titles written by T3 Code in
 `t3sm organize --ai-titles` (opt-in, a cap per run, the count and the model shown first, undone like any organize
-title, never in unattended sync; a live check against T3 Code is still due before the release). Fixed: the automatic
+title, never in unattended sync; checked live on T3 Code 0.1.12). Fixed: the automatic
 update on Windows, sessions of git worktrees, and empty sessions that failed in every run. The largest
 modules (`apply`, `importer`, `merge`, `rollback`, `doctor`) are split by step, with no change in behaviour. See the
 [CHANGELOG](CHANGELOG.md).

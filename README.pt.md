@@ -504,7 +504,7 @@ O que o t3sm lê e escreve, e onde: [SECURITY.md](SECURITY.md) (em inglês).
 | **Pi** | 🟡 verificado com fixtures | importador do T3 Code | Mais a descoberta em ficheiros reais; só é importado quando o T3 Code tem uma instância Pi (ativa o Pi nas definições do T3 Code, nos fornecedores; vê a [documentação do T3 Code](https://github.com/pingdotgg/t3code/tree/main/docs/user)); não corrido ao vivo |
 | Gemini CLI, Cursor, Copilot CLI, Cline, Crush, goose, Amp, Grok Build, Qwen Code, Kilo, Antigravity | ⏳ planeado | conversão | [Ajuda a acrescentar um](docs/adding-a-harness.md) |
 
-Testado ao vivo: T3 Code `0.1.9-nightly.20261110`, `.20261111` e `0.1.10-nightly.20261113` no Windows 11; a `0.1.8` é suportada a partir da
+Testado ao vivo: T3 Code `0.1.9-nightly.20261110`, `.20261111`, `0.1.10-nightly.20261113` e `0.1.12-nightly.20261122` no Windows 11; a `0.1.8` é suportada a partir da
 leitura do código-fonte; as versões estáveis ainda não foram testadas. Qualquer outra build
 corre com um aviso (`--allow-untested` esconde-o); uma resposta com formato alterado pára com o código 4. O macOS e o Linux estão cobertos apenas pelos
 testes unitários da CI. Versões, formatos de armazenamento e ressalvas por agente:
