@@ -13,7 +13,9 @@ export type SessionFlag = "corrupt-lines" | "no-cwd" | "cwd-unreadable" | "non-u
   | "duplicate-file"
   // A Claude transcript whose records carry another session id than its file name: nativeId is the id inside (T3's
   // rule), which is what T3 Code names the thread after.
-  | "id-mismatch";
+  | "id-mismatch"
+  // A Claude transcript T3 Code imports nothing of: bare commands with no reply, or only Claude Code's own errors.
+  | "no-reply";
 export interface SourceFile { path: string; size: number; mtimeMs: number; atimeMs: number }
 export interface DiscoveredSession {
   harness: HarnessId; accountId: string | null; nativeId: string;

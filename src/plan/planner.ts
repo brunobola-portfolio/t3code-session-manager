@@ -595,6 +595,9 @@ export async function buildPlan(input: PlanInput): Promise<Plan> {
       }
       return skip(hold.reason);
     }
+    // T3 Code imports nothing of it (a bare command no reply followed): planned, it would fail in every run. After the
+    // already-in-t3 checks: a session an older T3 Code did import stays one.
+    if (has("no-reply")) return skip("only-hidden");
     const { root, share } = await resolveTarget();
     rootsUsed.set(rootKey(root), root);
     if (s.harness === "claude" && unmergedRevisions.has(pathKey(s.file.path))) return skip("revision");

@@ -65,6 +65,7 @@ const skipCases: { name: string; s: () => DiscoveredSession; over?: Partial<Over
   { name: "non-uuid-id (claude)", s: () => sess({ nativeId: "not-a-uuid", flags: ["non-uuid-id", "no-session-id"] }), want: "non-uuid-id" },
   { name: "no-session-id", s: () => sess({ harness: "codex", flags: ["no-session-id", "only-hidden"] }), want: "no-session-id" },
   { name: "only-hidden", s: () => sess({ flags: ["only-hidden", "over-4gib"] }), want: "only-hidden" },
+  { name: "no-reply (T3 Code imports nothing of it)", s: () => sess({ flags: ["no-reply"] }), want: "only-hidden" },
   { name: "over-4gib", s: () => sess({ flags: ["over-4gib", "no-cwd"], cwd: null }), want: "over-4gib" },
   { name: "no-cwd", s: () => sess({ cwd: null, flags: ["no-cwd", "cwd-unreadable"] }), want: "no-cwd" },
   { name: "cwd-unreadable", s: () => sess({ flags: ["cwd-unreadable"] }), want: "cwd-unreadable" },
@@ -79,6 +80,12 @@ for (const c of skipCases) {
     assert.deepEqual(it.action, { kind: "skip", reason: c.want });
   });
 }
+
+test("buildPlan: a no-reply session an older T3 Code imported stays already-in-t3", async () => {
+  const s = sess({ flags: ["no-reply"] });
+  const it = only(await plan({ sessions: [s], threads: [thread(`import:claudeAgent:${s.nativeId}`)] }));
+  assert.deepEqual(it.action, { kind: "skip", reason: "already-in-t3" });
+});
 
 test("buildPlan: a compressed Codex rollout is skipped without a copy compare against its uncompressed twin, and is not counted toward the T3 cap", async () => {
   const id = uuid(77);

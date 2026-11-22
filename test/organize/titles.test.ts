@@ -145,3 +145,25 @@ test("isTechnicalTitle: tags, external blocks, caveats and tag-only text", () =>
   ]) assert.equal(isTechnicalTitle(t), true, t);
   for (const t of ["Fix the login", "Use <div> in React", "External API notes", "Caveats of the design"]) assert.equal(isTechnicalTitle(t), false, t);
 });
+
+test("task notifications and shell runs are not titles; a wake envelope is titled after the prompt inside it", async () => {
+  assert.equal(await proposed([
+    user("<task-notification>\n<task-id>b1</task-id>\n</task-notification>"), user("<bash-input>npm test</bash-input>"),
+    user("<bash-stdout>ok</bash-stdout><bash-stderr></bash-stderr>"), user("Fix the flaky test"),
+  ]), "Fix the flaky test");
+  assert.equal(await proposed([user('<wake reason="timer" current-time="2026-01-01">Check the deploy</wake>')]), "Check the deploy");
+  assert.equal(await proposed([user('<wake reason="timer">Check the deploy')]), "Check the deploy");
+});
+
+test("only commands: the arguments typed with the first one are kept", async () => {
+  assert.equal(await proposed([user(cmd("/review", "the login page"))]), "/review the login page");
+});
+
+test("a saved title that is raw markup falls through to the next source", async () => {
+  assert.equal(await proposed([user("Plan the release"), JSON.stringify({ type: "ai-title", aiTitle: "<command-message>clear</command-message>" })]), "Plan the release");
+});
+
+test("T3 Code's fallback title and a bare command are technical; a command with words is not", () => {
+  for (const t of ["Imported thread", "/clear", "/t3sm:organize"]) assert.equal(isTechnicalTitle(t), true, t);
+  for (const t of ["Imported thread list", "/review the login page", "/ routes", "/home/demo is full"]) assert.equal(isTechnicalTitle(t), false, t);
+});

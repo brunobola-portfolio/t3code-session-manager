@@ -455,7 +455,7 @@ test("an older cache file (version 1 or 2: before the shared scanner, before ses
     await collect(ad.discover(c.env));
     const file = join(c.env.stateDir, "cache", "claude-discovery.json");
     const cache = JSON.parse(await readFile(file, "utf8"));
-    assert.equal(cache.version, 5);
+    assert.equal(cache.version, 6);
     cache.version = 3;
     await writeFile(file, JSON.stringify(cache));
     opened.length = 0;
@@ -591,4 +591,25 @@ test("cache v4 entries are rescanned", async () => {
     await collect(ad.discover(c.env));
     assert.equal(opened.length, 14);
   } finally { await rm(c.dir, { recursive: true, force: true }); }
+});
+
+test("a session T3 Code imports nothing of (bare commands without a reply, only Claude Code's own errors) -> no-reply", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "t3sm-noreply-"));
+  try {
+    const rec = (type: string, text: string, extra: Record<string, unknown> = {}): string =>
+      JSON.stringify({ type, cwd: "C:/work/demo", sessionId: uid(1), message: { role: type, content: text, ...extra } });
+    const cmd = (args = ""): string => `<command-name>/clear</command-name>\n<command-message>clear</command-message>\n<command-args>${args}</command-args>`;
+    const scan = async (...lines: string[]): Promise<boolean> => {
+      const f = join(dir, "s.jsonl");
+      await writeFile(f, lines.join("\n") + "\n");
+      return (await scanTranscript(f)).noReply;
+    };
+    assert.equal(await scan(rec("user", cmd()), rec("user", "<local-command-stdout>ok</local-command-stdout>")), true);
+    assert.equal(await scan(rec("user", "hi"), rec("assistant", "Invalid API key", { model: "<synthetic>" })), true);
+    assert.equal(await scan(rec("user", cmd("the login page"))), false, "its arguments are a request");
+    assert.equal(await scan(rec("user", cmd()), rec("assistant", "done", { model: "m" })), false);
+    assert.equal(await scan(rec("user", "hi")), false, "a request without a reply yet");
+    assert.equal(await scan(rec("user", "hi"), rec("assistant", "API error", { model: "<synthetic>" }), rec("assistant", "hello", { model: "m" })), false);
+    assert.equal(await scan(rec("user", "", { content: [{ type: "image" }] })), true, "no text and no reply");
+  } finally { await rm(dir, { recursive: true, force: true }); }
 });

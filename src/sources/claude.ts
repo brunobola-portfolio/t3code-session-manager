@@ -15,12 +15,13 @@ import {
   type FileTime,
   type SourceAdapter,
 } from "./types.ts";
+import { CLAUDE_SYNTHETIC_MODEL, claudeUserText } from "./claudeUi.ts";
 
 const MIB = 1024 * 1024;
 const OVER_32MIB = 32 * MIB;
 const OVER_4GIB = 4 * 1024 * MIB;
 const BACKUP_DIR = /\.bak(-\d{8}-\d{6})?$/;
-const CACHE_VERSION = 5; // 5: ScanResult.handoffThreadId and t3Native (4: entrypoint)
+const CACHE_VERSION = 6; // 6: ScanResult.noReply (5: handoffThreadId and t3Native, 4: entrypoint)
 const CACHE_FILE = "claude-discovery.json";
 
 /** Result of scanning one transcript; everything that does not depend on `now`. */
@@ -45,7 +46,12 @@ export interface ScanResult {
   t3Native: boolean;
   /** First `Thread: <uuid>` in user or system message text within the first 200 records (T3's handoff message); else null. */
   handoffThreadId: string | null;
+  /** It shows something, but T3 Code imports nothing of it: bare commands with no reply, or only Claude Code's own errors. */
+  noReply: boolean;
 }
+
+/** T3 Code keeps the last 200 messages: with more, its "only errors" rule does not apply. */
+const T3_MESSAGE_WINDOW = 200;
 
 const HANDOFF_MAX_RECORDS = 200;
 const HANDOFF_THREAD_RE = /\bThread: ([0-9a-f-]{36})\b/;
@@ -79,8 +85,9 @@ export async function scanTranscriptChunks(chunks: AsyncIterable<Buffer>): Promi
   const r: ScanResult = {
     cwd: null, startedAt: null, updatedAt: null, messageCount: 0, visibleUserCount: 0,
     corruptLines: 0, cwdOffsetBytes: 0, cwdReadable: false, sessionId: null,
-    entrypoint: null, t3Native: false, handoffThreadId: null,
+    entrypoint: null, t3Native: false, handoffThreadId: null, noReply: false,
   };
+  let request = false, modelReply = false, syntheticReply = false;
   const totals = await scanJsonlChunks(chunks, (o, info) => {
     if (r.cwd === null && typeof o.cwd === "string" && o.cwd !== "") {
       r.cwd = o.cwd;
@@ -111,10 +118,17 @@ export async function scanTranscriptChunks(chunks: AsyncIterable<Buffer>): Promi
         if (isToolResultOnly((o.message as { content?: unknown } | undefined)?.content)) return;
         r.visibleUserCount++;
       }
+      const message = o.message as { content?: unknown; model?: unknown } | undefined;
+      const text = extractText(message?.content);
+      if (text !== "" && o.type === "user") request ||= claudeUserText(text).request !== "";
+      else if (text !== "" && message?.model === CLAUDE_SYNTHETIC_MODEL) syntheticReply = true;
+      else if (text !== "") modelReply = true;
       r.messageCount++;
     }
   });
   r.corruptLines = totals.corruptLines;
+  r.noReply = r.visibleUserCount > 0 && !modelReply
+    && (syntheticReply ? r.messageCount <= T3_MESSAGE_WINDOW : !request);
   if (r.cwd === null) r.cwdOffsetBytes = totals.totalBytes;
   return r;
 }
@@ -139,7 +153,7 @@ function isValidResult(r: unknown): r is ScanResult {
   return isStrOrNull(o.cwd) && isStrOrNull(o.startedAt) && isStrOrNull(o.updatedAt) &&
     isNum(o.messageCount) && isNum(o.visibleUserCount) && isNum(o.corruptLines) &&
     isNum(o.cwdOffsetBytes) && typeof o.cwdReadable === "boolean" && isStrOrNull(o.sessionId) && isStrOrNull(o.entrypoint) &&
-    typeof o.t3Native === "boolean" && isStrOrNull(o.handoffThreadId);
+    typeof o.t3Native === "boolean" && isStrOrNull(o.handoffThreadId) && typeof o.noReply === "boolean";
 }
 
 export type { ReadOptions };
@@ -261,6 +275,7 @@ export function createClaudeAdapter(opts: ClaudeAdapterOptions = {}): ClaudeAdap
           if (!result.cwdReadable) flags.push("cwd-unreadable");
           if (!isUuid(nativeId)) flags.push("non-uuid-id");
           if (result.visibleUserCount === 0) flags.push("only-hidden");
+          if (result.noReply) flags.push("no-reply");
           if (file.size > OVER_32MIB) flags.push("over-32mib");
           if (file.size > OVER_4GIB) flags.push("over-4gib");
           if (c.backup) flags.push("backup-copy");
