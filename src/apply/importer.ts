@@ -290,6 +290,21 @@ export async function runWaves(ctx: WaveCtx, waves: Wave[]): Promise<WavesResult
     }
     if (ready.length === 0) continue;
 
+    // T3 imports a linked worktree's sessions with its main checkout: in one wave with it, a worktree's own items would
+    // land in the main checkout's project. They wait for a later wave (parked in this one, like any other exposed file).
+    const keysNow = new Set(ready.map((r) => key(itemRoot(r.item))));
+    const waits = new Set<PlanItem>();
+    for (const { item } of ready) {
+      const cwd = item.action.kind === "import" ? item.session.cwd ?? itemRoot(item) : itemRoot(item);
+      const main = await exposure.mainKeyOf(cwd);
+      if (main !== null && main !== key(itemRoot(item)) && keysNow.has(main)) waits.add(item);
+    }
+    if (waits.size > 0 && waits.size < ready.length) { // never all of them: a wave always makes progress
+      pool.push(...waits);
+      pool.sort(byOriginalMtime);
+      ready.splice(0, ready.length, ...ready.filter((r) => !waits.has(r.item)));
+    }
+
     // T3 imports every in-window transcript of a project, from every instance (S2 §3). Per wave root, the EXPOSED set
     // is every transcript of that root (discovered, or listed now: created after planning) inside the window, not in
     // the future and not already in T3. One of them in use: T3 would import it now (live mtime, maybe half-written),

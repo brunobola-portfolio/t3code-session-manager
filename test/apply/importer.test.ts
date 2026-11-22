@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { appendFileSync, mkdirSync, statSync, truncateSync, utimesSync } from "node:fs";
+import { appendFileSync, mkdirSync, statSync, truncateSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { PARK_AHEAD_MS, runWaves, type Progress, type WaveCtx } from "../../src/apply/importer.ts";
 import { exposureOf } from "../../src/apply/apply.ts";
@@ -951,4 +951,70 @@ test("runWaves: a file busy for a moment is retried and imported", async () => {
   const r = await runWaves(s.ctx({ utimes: blip, busyRetryMs: [1, 1, 1] }), waves([a]));
   assert.equal(r.imported.length, 1);
   assert.deepEqual(r.deferred, []);
+});
+
+// ---------- linked git worktrees: T3 Code imports their sessions with the main checkout (upstream 2026-11-13) ----------
+
+/** A main checkout with one linked worktree under `home` (the two files git writes for it). */
+function withWorktree(home: string): { main: string; wt: string } {
+  const main = join(home, "work", "demo"), wt = join(home, "work", "demo-wt"), gitDir = join(main, ".git", "worktrees", "demo-wt");
+  mkdirSync(gitDir, { recursive: true });
+  mkdirSync(wt, { recursive: true });
+  writeFileSync(join(wt, ".git"), `gitdir: ${gitDir}\n`);
+  writeFileSync(join(gitDir, "commondir"), "../..\n");
+  writeFileSync(join(gitDir, "gitdir"), `${join(wt, ".git")}\n`);
+  return { main, wt };
+}
+const platform = process.platform;
+
+test("runWaves: a session of a linked worktree is parked while its main checkout imports (T3 would take it too)", async () => {
+  const f = fakeT3();
+  const s = setup(f);
+  const { main, wt } = withWorktree(s.home);
+  f.projects[0]!.workspaceRoot = main;
+  const now = Date.now();
+  const a = transcript(f, s.dir, main, now - 60 * DAY);
+  const b = transcript(f, s.dir, wt, now - 3 * DAY);
+  f.files.find((x) => x.path === b.session.file.path)!.root = main; // what T3 does with it
+  const o = originals([a, b]);
+  const exposure = [{ path: b.session.file.path, cwd: wt, threadIds: [`import:claudeAgent:${b.session.nativeId}`], refs: [] }];
+  const r = await runWaves(s.ctx({ exposure, platform, projectIds: new Map([[main, "p-1"]]) }), waves([a]));
+  assert.deepEqual(r.imported, [a]);
+  assert.equal(r.parked, 1);
+  assert.ok(!f.threads.has(`import:claudeAgent:${b.session.nativeId}`), "never imported unplanned");
+  assertRestored(o);
+});
+
+test("runWaves: a worktree session in use holds its main checkout's project", async () => {
+  const f = fakeT3();
+  const s = setup(f);
+  const { main, wt } = withWorktree(s.home);
+  f.projects[0]!.workspaceRoot = main;
+  const now = Date.now();
+  const a = transcript(f, s.dir, main, now - 60 * DAY);
+  const live = transcript(null, s.dir, wt, now - 60_000);
+  const exposure = [{ path: live.session.file.path, cwd: wt, threadIds: ["import:claudeAgent:live"], refs: [] }];
+  const r = await runWaves(s.ctx({ exposure, platform, projectIds: new Map([[main, "p-1"]]) }), waves([a]));
+  assert.deepEqual(r.imported, []);
+  assert.deepEqual(r.deferred.map((d) => d.reason), ["project-in-use"]);
+  assert.ok(!f.calls.includes("import:p-1"));
+});
+
+test("runWaves: a worktree's own project never shares a wave with its main checkout; each session lands in its planned project", async () => {
+  const f = fakeT3();
+  const s = setup(f, [ROOT, ROOT2]);
+  const { main, wt } = withWorktree(s.home);
+  f.projects[0]!.workspaceRoot = main;
+  f.projects[1]!.workspaceRoot = wt;
+  const now = Date.now();
+  const a = transcript(f, s.dir, main, now - 60 * DAY);
+  const b = transcript(f, s.dir, wt, now - 50 * DAY);
+  f.files.push({ path: b.session.file.path, root: main, threadId: `import:claudeAgent:${b.session.nativeId}` });
+  const o = originals([a, b]);
+  const r = await runWaves(s.ctx({ platform, projectIds: new Map([[main, "p-1"], [wt, "p-2"]]) }), waves([a, b]));
+  assert.equal(r.imported.length, 2);
+  assert.equal(r.waves, 2);
+  assert.equal(f.threads.get(`import:claudeAgent:${a.session.nativeId}`)!.projectId, "p-1");
+  assert.equal(f.threads.get(`import:claudeAgent:${b.session.nativeId}`)!.projectId, "p-2");
+  assertRestored(o);
 });

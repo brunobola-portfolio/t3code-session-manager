@@ -1,5 +1,5 @@
 // Exposure: what T3 Code could import into a project besides the run's own items (T3 imports EVERY in-window
-// transcript of a root, from every instance; S2 §3). exposureOf / liveExposure list the transcripts, exposureIndex scans
+// transcript of a root, from every instance; S2 §3; those of its linked git worktrees included). exposureOf / liveExposure list the transcripts, exposureIndex scans
 // a root's at wave time (the importer parks them or holds the root), futureLeftovers finds transcripts left in the future.
 
 import { readdir } from "node:fs/promises";
@@ -11,6 +11,7 @@ import { inImportWindow, isActive } from "../core/activity.ts";
 import { pendingMtimePaths } from "../core/journal.ts";
 import { statSafe } from "../core/fsutil.ts";
 import { encodeClaudeProjectDir, normalizeCwd, pathKey, pathKey as pathKeyOf } from "../core/paths.ts";
+import { linkedWorktreesOf, mainCheckoutOf } from "../core/worktree.ts";
 import { readClaudeNativeId } from "../sources/claude.ts";
 import type { ProviderInstanceInfo } from "../t3/api.ts";
 import { rootKey } from "./waves.ts";
@@ -36,7 +37,7 @@ export interface ExposedTranscript {
 }
 
 export interface Identity { harness: HarnessId; nativeId: string; threadId: string }
-interface Candidate { path: string; keys: Set<string>; threadIds: string[]; refs: string[]; id: Identity | null; cost: number | null; harness: HarnessId | null }
+interface Candidate { path: string; keys: Set<string>; cwds: Set<string>; threadIds: string[]; refs: string[]; id: Identity | null; cost: number | null; harness: HarnessId | null }
 /** A transcript parked for a wave: fresh stat, identity, and what it costs T3's metadata pass of its source. */
 export interface Parked { st: SourceFile; id: Identity | null; cost: number; source: MetadataSource }
 
@@ -54,6 +55,8 @@ export interface ExposureIndex {
    */
   scan(k: string, root: string, clock: () => number, exclude: ReadonlySet<string>, wave: number): Promise<{ inUse: boolean; busy?: boolean; active?: ActiveFile; park: Parked[] }>;
   pathKey(p: string): string;
+  /** The key of the main checkout `cwd` is a linked worktree of, or null (read once per folder). */
+  mainKeyOf(cwd: string): Promise<string | null>;
 }
 
 /** Static exposure (plan items of any action + `entries`) plus the optional wave-time listing `live` (new files). */
@@ -66,11 +69,25 @@ export function exposureIndex(o: {
 }): ExposureIndex {
   const key = (r: string): string => rootKey(r, o.platform);
   const pathKey = (p: string): string => pathKeyOf(p, o.platform);
+  const mains = new Map<string, Promise<string | null>>();
+  const mainKeyOf = (cwd: string): Promise<string | null> => {
+    const k = key(cwd);
+    const known = mains.get(k) ?? mainCheckoutOf(cwd).then((m) => (m === null ? null : key(m)));
+    mains.set(k, known);
+    return known;
+  };
+  /** T3 imports it with root `k`: its own folder, or a linked worktree of that root. */
+  const belongsTo = async (c: Candidate, k: string): Promise<boolean> => {
+    if (c.keys.has(k)) return true;
+    for (const cwd of c.cwds) if ((await mainKeyOf(cwd)) === k) return true;
+    return false;
+  };
   const byPath = new Map<string, Candidate>();
-  const add = (path: string, k: string, threadIds: string[], refs: string[], id: Identity | null, cost: number | null, harness: HarnessId | null): void => {
+  const add = (path: string, cwd: string, threadIds: string[], refs: string[], id: Identity | null, cost: number | null, harness: HarnessId | null): void => {
     const pk = pathKey(path);
-    const c = byPath.get(pk) ?? { path, keys: new Set<string>(), threadIds: [], refs: [], id: null, cost: null, harness: null };
-    c.keys.add(k);
+    const c = byPath.get(pk) ?? { path, keys: new Set<string>(), cwds: new Set<string>(), threadIds: [], refs: [], id: null, cost: null, harness: null };
+    c.keys.add(key(cwd));
+    c.cwds.add(cwd);
     c.threadIds.push(...threadIds);
     c.refs.push(...refs);
     c.id ??= id;
@@ -80,20 +97,22 @@ export function exposureIndex(o: {
   };
   const idOf = (x: ExposedTranscript): Identity | null =>
     x.harness && x.nativeId && x.threadIds[0] ? { harness: x.harness, nativeId: x.nativeId, threadId: x.threadIds[0] } : null;
-  for (const x of o.entries) add(x.path, key(x.cwd), x.threadIds, x.refs, idOf(x), x.cost ?? null, x.harness ?? null);
+  for (const x of o.entries) add(x.path, x.cwd, x.threadIds, x.refs, idOf(x), x.cost ?? null, x.harness ?? null);
   for (const it of o.items) {
     if (it.action.kind === "skip") continue;
     const s = it.session;
     const id = { harness: s.harness, nativeId: s.nativeId, threadId: it.action.expectedThreadId };
-    add(s.file.path, key(it.action.projectRoot), [it.action.expectedThreadId], [], id, s.cwdOffsetBytes, itemSource(it));
-    if (s.cwd) add(s.file.path, key(s.cwd), [], [], id, s.cwdOffsetBytes, itemSource(it));
+    add(s.file.path, it.action.projectRoot, [it.action.expectedThreadId], [], id, s.cwdOffsetBytes, itemSource(it));
+    if (s.cwd) add(s.file.path, s.cwd, [], [], id, s.cwdOffsetBytes, itemSource(it));
   }
   return {
     pathKey,
+    mainKeyOf,
     async scan(k, root, clock, exclude, wave) {
-      const cands = [...byPath.values()].filter((c) => c.keys.has(k));
+      const cands: Candidate[] = [];
+      for (const c of byPath.values()) if (await belongsTo(c, k)) cands.push(c);
       for (const x of (await o.live?.(root, wave).catch(() => [])) ?? []) {
-        if (!byPath.has(pathKey(x.path))) cands.push({ path: x.path, keys: new Set([k]), threadIds: x.threadIds, refs: x.refs, id: idOf(x), cost: x.cost ?? null, harness: x.harness ?? null });
+        if (!byPath.has(pathKey(x.path))) cands.push({ path: x.path, keys: new Set([k]), cwds: new Set([x.cwd]), threadIds: x.threadIds, refs: x.refs, id: idOf(x), cost: x.cost ?? null, harness: x.harness ?? null });
       }
       const park: Parked[] = [];
       const seen = new Set<string>();
@@ -184,8 +203,8 @@ export function exposureOf(items: PlanItem[], providers: ProviderInstanceInfo[],
 }
 
 /**
- * Wave-time listing of a root's transcripts, for files created after planning. Claude: `<home>/projects/<encoded
- * root>/*.jsonl` in every Claude instance home (the encoded folder matched case-insensitively on Windows and macOS, so
+ * Wave-time listing of a root's transcripts (its linked worktrees' too), for files created after planning. Claude:
+ * `<home>/projects/<encoded root>/*.jsonl` in every Claude instance home (the encoded folder matched case-insensitively on Windows and macOS, so
  * drive-letter case variants are included), each under the id T3 imports it as (claudeNativeId: `knownId` for files
  * discovery already read, else the file is streamed once). Codex / Pi: `rediscover` (the adapters' cached
  * discovery), at most once per wave, filtered to that cwd.
@@ -200,8 +219,13 @@ export function liveExposure(
   const warned = new Set<string>();
   return async (root, wave) => {
     const out: ExposedTranscript[] = [];
-    const enc = encodeClaudeProjectDir(normalizeCwd(root, platform));
-    const want = fold ? enc.toLowerCase() : enc;
+    const roots = [root, ...await linkedWorktreesOf(root)];
+    const want = new Map<string, string>(); // encoded folder -> the cwd it stands for
+    for (const r of roots) {
+      const enc = encodeClaudeProjectDir(normalizeCwd(r, platform));
+      const w = fold ? enc.toLowerCase() : enc;
+      if (!want.has(w)) want.set(w, r);
+    }
     for (const p of getProviders()) {
       if (p.driver !== "claudeAgent") continue;
       // T3 reports no home for an implicit instance it has not resolved: the config account of that id names it.
@@ -213,20 +237,21 @@ export function liveExposure(
       const projects = join(home, "projects");
       const dirs = await readdir(projects).catch(() => [] as string[]);
       for (const d of dirs) {
-        if ((fold ? d.toLowerCase() : d) !== want) continue;
+        const cwd = want.get(fold ? d.toLowerCase() : d);
+        if (cwd === undefined) continue;
         for (const f of await readdir(join(projects, d)).catch(() => [] as string[])) {
           if (!f.endsWith(".jsonl")) continue;
           // T3's id rule, as discovery applies it (claudeNativeId): a file named after one session can carry another.
           const path = join(projects, d, f);
           const id = o.knownId?.(path) ?? await readClaudeNativeId(path);
-          out.push({ path, cwd: root, threadIds: [`import:${p.instanceId}:${id}`], refs: [`${p.instanceId}:${id}`], harness: "claude", nativeId: id });
+          out.push({ path, cwd, threadIds: [`import:${p.instanceId}:${id}`], refs: [`${p.instanceId}:${id}`], harness: "claude", nativeId: id });
         }
       }
     }
     if (rediscover && getProviders().some((p) => p.driver !== "claudeAgent" && p.enabled && p.availability === "available")) {
       if (natWave !== wave) { natWave = wave; nat = rediscover().catch(() => []); }
-      const k = rootKey(root, platform);
-      const mine = (await nat).filter((s) => s.harness !== "claude" && s.cwd !== null && rootKey(s.cwd, platform) === k);
+      const ks = new Set(roots.map((r) => rootKey(r, platform)));
+      const mine = (await nat).filter((s) => s.harness !== "claude" && s.cwd !== null && ks.has(rootKey(s.cwd, platform)));
       out.push(...exposureOf(mine.map((session) => ({ session, action: { kind: "skip", reason: "excluded" }, notes: [] })), getProviders(), platform));
     }
     return out;

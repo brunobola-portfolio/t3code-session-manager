@@ -1117,6 +1117,24 @@ test("liveExposure: a transcript created after planning whose sessionId differs 
   ]);
 });
 
+test("liveExposure: new transcripts of the root's linked worktrees are listed too", async () => {
+  const { liveExposure } = await import("../../src/apply/apply.ts");
+  const { encodeClaudeProjectDir, normalizeCwd } = await import("../../src/core/paths.ts");
+  const t = tempHome();
+  const main = join(t.home, "work", "demo"), wt = join(t.home, "work", "demo-wt"), gitDir = join(main, ".git", "worktrees", "demo-wt");
+  mkdirSync(gitDir, { recursive: true });
+  mkdirSync(wt, { recursive: true });
+  writeFileSync(join(wt, ".git"), `gitdir: ${gitDir}\n`);
+  writeFileSync(join(gitDir, "commondir"), "../..\n");
+  writeFileSync(join(gitDir, "gitdir"), `${join(wt, ".git")}\n`);
+  const dir = join(t.home, ".claude", "projects", encodeClaudeProjectDir(normalizeCwd(wt, process.platform)));
+  mkdirSync(dir, { recursive: true });
+  const id = "55555555-5555-4555-8555-555555555555";
+  writeFileSync(join(dir, `${id}.jsonl`), JSON.stringify({ type: "user", cwd: wt, sessionId: id, message: { role: "user", content: "hi" } }) + "\n");
+  const out = await liveExposure(() => [inst("claudeAgent", join(t.home, ".claude"))], process.platform)(main, 1);
+  assert.deepEqual(out.map((x) => x.nativeId), [id]);
+});
+
 // ---------- rehome destination folders (spec §4.3: the General folder, a `rehome:<folder>` override) ----------
 
 /** A copy of an OpenCode session from a refused folder (the home folder) into `root`, which may not exist on disk. */
