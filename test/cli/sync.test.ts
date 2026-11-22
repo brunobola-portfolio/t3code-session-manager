@@ -258,7 +258,8 @@ renameSync(process.argv[3] + ".tmp", process.argv[3]);
   const exited = new Promise<void>((resolve) => {
     spawnSuccessor({
       nodePath: process.execPath, binPath: bin, argv: ["update", out],
-      spawn: (cmd, args, opts) => { const c = nodeSpawn(cmd, args, opts); c.on("exit", () => resolve()); return c; },
+      // Not unref'd here: the test waits for it.
+      spawn: (cmd, args, opts) => { const c = nodeSpawn(cmd, args, opts); c.on("exit", () => resolve()); return { unref: () => {}, on: (ev, fn) => c.on(ev, fn) }; },
     });
   });
   await exited;
