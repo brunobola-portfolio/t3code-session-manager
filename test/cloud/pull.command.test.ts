@@ -161,5 +161,5 @@ test("cloud pull --dry-run: a branch's worktree is announced only for when the b
   const dry = io(t.state);
   assert.equal(await cloudCommand(["pull", "01PqRsTu", "--base", base, "--dry-run"], dry, deps), 0, dry.text());
   assert.match(dry.text(), /Worktree/);
-  assert.match(dry.text().replace(/ ?\| ?/g, " ").replace(/\s+/g, " "), /only if that branch is not checked out already/);
+  assert.match(dry.text().replace(/ ?[|│] ?/g, " ").replace(/\s+/g, " "), /only if that branch is not checked out already/);
 });
