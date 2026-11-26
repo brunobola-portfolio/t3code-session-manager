@@ -14,7 +14,7 @@ and can undo a run. This skill runs it for the user. It never decides for them.
 Use `t3sm` if `t3sm --version` works. Otherwise use the pinned release:
 
 ```bash
-npx -y github:brunobola-portfolio/t3code-session-manager#v0.5.0 <command>
+npx -y github:brunobola-portfolio/t3code-session-manager#v0.6.0 <command>
 ```
 
 Below, `t3sm` means whichever of the two works. T3 Code must be open (exit code 3 means

@@ -1,6 +1,6 @@
 {
   "name": "t3code-session-manager",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Bring every Claude Code, Codex, Pi and OpenCode session into T3 Code: resumable, under the right Claude subscription, each project showing its recent history, kept in sync by a background watcher that updates itself.",
   "type": "module",
   "license": "MIT",

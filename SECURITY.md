@@ -5,7 +5,7 @@
 Only the latest release receives fixes. Update with `t3sm update` (an `npm install -g` of the newest release), or run
 `npx -y t3code-session-manager@<version> …` with the newer version. Every npm release is published from its GitHub tag
 by the Release workflow, with provenance; from GitHub, the pinned command is
-`npx -y github:brunobola-portfolio/t3code-session-manager#v0.5.0 …`.
+`npx -y github:brunobola-portfolio/t3code-session-manager#v0.6.0 …`.
 
 ## Reporting a vulnerability
 

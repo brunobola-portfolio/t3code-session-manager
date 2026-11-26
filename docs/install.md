@@ -36,7 +36,7 @@ depends on it) or the package page on npmjs.com shows which commit and workflow 
 ### From GitHub instead
 
 ```bash
-npm install -g --install-links github:brunobola-portfolio/t3code-session-manager#v0.5.0
+npm install -g --install-links github:brunobola-portfolio/t3code-session-manager#v0.6.0
 ```
 
 npm clones the release (the `#v…` suffix is npm's syntax for a git tag) and builds it with Node alone (no TypeScript

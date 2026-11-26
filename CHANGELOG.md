@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-26
+
+Sessions you started on claude.ai/code or in the Claude app come to this PC: the code on its branch, the
+conversation in T3 Code, ready to continue. No tokens are spent.
+
 ### Added
 
 - **Cloud sessions come to this PC.** `t3sm cloud` lists the sessions that ran on claude.ai/code or in the Claude
