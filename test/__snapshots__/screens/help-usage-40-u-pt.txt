@@ -47,6 +47,9 @@ Manter sincronizado
   t3sm recover <id>
     Traz de volta uma conversa começada
     no T3 Code cuja thread desapareceu
+  t3sm cloud
+    Traz para este PC sessões do Claude
+    Code da cloud (pull <id>, --all)
 
 Arrumar o T3 Code
   t3sm organize

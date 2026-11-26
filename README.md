@@ -443,6 +443,29 @@ show it inside its project.
 t3sm does not refuse a T3 Code version it was not tested with: it warns once and goes ahead.
 Every change is journaled and undoable.
 
+## Sessions from the cloud
+
+Started something on claude.ai/code or in the Claude app on your phone? Those sessions run in Anthropic's cloud, so
+T3 Code never sees them. `t3sm cloud` lists them per account, with where each one stands on this PC:
+
+```text
+t3sm cloud                       # read-only: every account's cloud sessions
+t3sm cloud pull 01AbCdEfGhIj     # bring one here (asks first; --dry-run shows what it would do)
+t3sm cloud pull --all            # every session not on this PC yet, or newer in the cloud
+```
+
+A pull puts the code in your checkout of the repository (found by its `origin`) or clones it into
+`<folder>/<owner>/<repository>`. The folder is asked once and saved as `cloud.baseDir`. The session's branch gets
+its own git worktree, so your working trees are never touched. The conversation becomes a normal local Claude Code
+session, imported into T3 Code under its project and ready for `claude --resume`. Pull again after the session went
+on in the cloud: the new turns arrive as a new revision, and the old thread is archived.
+
+- Your own `claude` does the talking, with each account's login. t3sm never sees a token.
+- No model is asked anything, so it costs no tokens. This differs from `claude --teleport`, which can.
+- A session that was compacted in the cloud starts at its last compaction. The cloud no longer has the turns before it.
+- Undo with `t3sm rollback --run <id> --archive-threads`. Clones and worktrees stay, because they may hold your work.
+- Something went wrong (sign-in, git, a session that waits)? `t3sm help cloud` says what to do.
+
 ## Other commands
 
 | Command | What it does |

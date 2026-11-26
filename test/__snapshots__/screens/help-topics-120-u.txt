@@ -13,6 +13,7 @@ Help topics: what a message means and what to do
   project-mismatch      Project mismatch: T3 Code filed a conversation elsewhere
   convert               Conversion: sessions t3sm converts before importing
   ai-titles             Titles written by T3 Code: the ones that stay technical
+  cloud                 Cloud sessions: claude.ai/code and the Claude app on this PC
   errors                Errors: when a t3sm command stops
 
 Open one with t3sm help <topic>. Every command explains itself with t3sm <command> --help.

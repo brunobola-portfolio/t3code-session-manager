@@ -1313,7 +1313,7 @@ function donePanel(ctx: Ctx): void {
   }
   body.push("", head("doneNext"));
   body.push(t(ctx, ctx.syncOn ? "doneNextSync" : ctx.fullDone ? "doneNextNoSync" : "doneNextImport"));
-  body.push(...rows(ctx, [["t3sm status", t(ctx, "doneCmdStatus")], ["t3sm projects", t(ctx, "doneCmdProjects")], ["t3sm merge", t(ctx, "doneCmdMerge")]]));
+  body.push(...rows(ctx, [["t3sm status", t(ctx, "doneCmdStatus")], ["t3sm projects", t(ctx, "doneCmdProjects")], ["t3sm merge", t(ctx, "doneCmdMerge")], ["t3sm cloud", t(ctx, "doneCmdCloud")]]));
   if (ctx.plan) body.push("", s("muted", t(ctx, "doneReport", { path: shown(ctx, ctx.plan.planPath, Math.max(10, width(ctx) - 20)) })));
   blank(ctx);
   lines(ctx, box(ctx, { title: t(ctx, "doneTitle"), tone: ctx.worst > 0 ? "warn" : "ok", body }));

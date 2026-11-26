@@ -31,7 +31,7 @@ export const TASKKILL_TIMEOUT_MS = 30_000;
  * loop for as long as taskkill takes (usually well under a second; seconds on a loaded machine), and a stop request
  * arriving meanwhile is answered only afterwards (stopWatcher waits 30 s for it before it falls back to the verified pid).
  */
-function killTree(child: ChildProcess): void {
+export function killTree(child: ChildProcess): void {
   if (child.exitCode !== null || child.signalCode !== null) return;
   const plain = () => { try { child.kill(); } catch { /* ignore */ } };
   if (child.pid === undefined) return plain();

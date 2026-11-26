@@ -40,6 +40,9 @@ quer dizer e o que fazer
   ai-titles
     Títulos escritos pelo T3 Code: os
     que continuam técnicos
+  cloud
+    Sessões da cloud: o claude.ai/code e
+    a app Claude neste PC
   errors
     Erros: quando um comando do t3sm
     para

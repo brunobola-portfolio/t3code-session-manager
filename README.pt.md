@@ -411,6 +411,30 @@ ciclo seguinte; o `/t3sm:organize` não espera por ela e pode dar-lhe um título
 O t3sm não recusa uma versão do T3 Code que não testou: avisa uma vez e segue. Cada mudança fica no journal e pode ser
 desfeita.
 
+## Sessões da cloud
+
+Começaste algo no claude.ai/code ou na app Claude do telemóvel? Essas sessões correm na cloud da Anthropic, por isso o
+T3 Code nunca as vê. O `t3sm cloud` lista-as por conta, com o estado de cada uma neste PC:
+
+```text
+t3sm cloud                       # só leitura: as sessões na cloud de todas as contas
+t3sm cloud pull 01AbCdEfGhIj     # traz uma para aqui (pergunta primeiro; --dry-run mostra o que faria)
+t3sm cloud pull --all            # todas as que ainda não estão neste PC, ou são mais recentes na cloud
+```
+
+O pull põe o código no teu checkout do repositório (encontrado pela `origin`) ou clona-o para
+`<pasta>/<dono>/<repositório>`. A pasta é perguntada uma vez e guardada como `cloud.baseDir`. O branch da sessão fica
+numa worktree do git própria, por isso as tuas pastas de trabalho nunca são tocadas. A conversa passa a ser uma sessão
+local normal do Claude Code, importada para o T3 Code no seu projeto e pronta para `claude --resume`. Se a sessão
+continuar na cloud, volta a fazer pull: os turnos novos chegam como revisão nova, e a conversa antiga é arquivada.
+
+- Quem fala com a cloud é o teu próprio `claude`, com a sessão iniciada de cada conta. O t3sm nunca vê um token.
+- Nenhum modelo é chamado, por isso não gasta tokens. O `claude --teleport` pode gastar.
+- Uma sessão compactada na cloud começa na última compactação. A cloud já não tem os turnos anteriores.
+- Desfaz-se com `t3sm rollback --run <id> --archive-threads`. Os clones e worktrees ficam, porque podem ter trabalho
+  teu.
+- Algo correu mal (sessão iniciada, git, uma sessão à espera)? O `t3sm help cloud` diz o que fazer.
+
 ## Outros comandos
 
 | Comando | O que faz |

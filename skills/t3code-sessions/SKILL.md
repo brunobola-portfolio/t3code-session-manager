@@ -68,7 +68,7 @@ conversation a new title or show it inside its project.
 ## The rule that matters most
 
 These commands change files or T3 Code: `apply`, `dedupe`, `quarantine`, `merge --all`,
-`merge --session <id>`, `recover <session id>`, `rollback`, `accounts --apply`, `accounts --rename`,
+`merge --session <id>`, `recover <session id>`, `cloud pull <id...>` (or `cloud pull --all`: clones repositories and writes sessions), `rollback`, `accounts --apply`, `accounts --rename`,
 `accounts --init`, `schedule install`, `schedule remove`, `schedule restart`, `sync` (without `--dry-run`),
 `organize` (with or without `--ai-titles`), `organize --undo`, `projects rename --suggest`, `projects set`, `projects unset`,
 `doctor --repair`, `journal compact` (it rewrites t3sm's journal, keeping a backup) and `update` without `--check` or
@@ -81,7 +81,7 @@ but still ask first).
 - Your shell is not a terminal, so they need `--yes` to proceed. Add `--yes` only after
   that explicit yes. `--allow-untested` only hides the untested-version warning; add it
   only if the user asks.
-- Before `dedupe`, `quarantine`, `recover`, `rollback`, `organize`, `organize --undo`, `journal compact` or
+- Before `dedupe`, `quarantine`, `recover`, `cloud pull`, `rollback`, `organize`, `organize --undo`, `journal compact` or
   `projects rename --suggest`, run the same command with `--dry-run` and show the user
   what would move, change or be undone.
 - `rollback --yes` needs `--run <id>` and `organize --undo --yes` needs the run id
@@ -89,7 +89,7 @@ but still ask first).
   run it is.
 
 Read-only, safe to run without asking: `doctor`, `scan`, `stats` (or `stats --json`), `plan` (or `plan --html`), `apply --dry-run`,
-`accounts` (no option; emails are masked, do not add `--show-emails` unless asked), `runs`, `status` (or `status --json`), `merge` (no option) or `merge --dry-run`, `recover <session id> --dry-run`, `sync --dry-run`,
+`accounts` (no option; emails are masked, do not add `--show-emails` unless asked), `runs`, `status` (or `status --json`), `merge` (no option) or `merge --dry-run`, `recover <session id> --dry-run`, `cloud` (or `cloud --json`: lists cloud sessions through the user's own `claude`; no tokens), `cloud pull ... --dry-run`, `sync --dry-run`,
 `organize --dry-run` (also with `--ai-titles`: a dry run asks T3 Code for nothing), `organize --undo --dry-run`, `projects` (no option),
 `projects rename --suggest --dry-run`, `journal compact --dry-run`, `schedule status`, `schedule install|remove|restart --dry-run`, `update --check`, `update --dry-run`, `changelog`
 (or `changelog --since <version>`), `help` (or `help <topic>`: what a message means and what to do, in the user's

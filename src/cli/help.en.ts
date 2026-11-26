@@ -39,6 +39,7 @@ Keep in sync
   t3sm schedule          Run sync in the background: install [--watch], remove, restart, status
   t3sm merge             Bring sessions continued in a terminal into T3 Code
   t3sm recover <id>      Bring back a conversation started in T3 Code whose thread is gone
+  t3sm cloud             Bring Claude Code sessions from the cloud to this PC (pull <id>, --all)
 
 Tidy T3 Code
   t3sm organize          Tidy the imported history: archive, retitle, show, pin (--undo)
@@ -209,6 +210,41 @@ Options:
 Examples:
   t3sm recover 1a2b3c4d --dry-run
   t3sm recover 1a2b3c4d
+`,
+  cloud: `Usage: t3sm cloud [--account <id>] [--all] [--json]
+       t3sm cloud pull <id>... | --all [--account <id>] [--base <folder>] [--yes | --dry-run] [--allow-untested]
+
+Claude Code sessions that ran in the cloud (claude.ai/code, the Claude app), brought to this PC. Your own \`claude\`
+lists and reads them, with the login of each account: t3sm never sees a token, and no model is asked anything, so
+nothing costs tokens. Remote Control sessions are left out (they are on a PC already).
+
+t3sm cloud
+    Lists each account's cloud sessions and where each one stands here: cloud only, on this PC, newer in the
+    cloud, or continued here. Read-only.
+
+t3sm cloud pull <id>...
+    Brings the named sessions here (the id as t3sm cloud shows it, at least 8 characters). The code goes into your
+    checkout of the repository, found by its origin, or a clone in <folder>/<owner>/<repository>. The session's
+    branch gets its own worktree in <folder>/.worktrees: your working trees are never changed. The conversation is
+    written as a local Claude Code session, then imported into T3 Code under its project, ready for
+    \`claude --resume\`. A session that went on in the cloud comes again as a new revision, and its old thread is
+    archived. Undo with \`t3sm rollback --run <id> --archive-threads\`. Clones and worktrees stay.
+
+Options:
+  --account <id>     Only this account
+  --all              List: archived sessions too. Pull: every session not on this PC or newer in the cloud
+  --json             The list as JSON
+  --base <folder>    Where repositories are cloned, for this run (default: cloud.baseDir in config.json, asked once)
+  --yes              Skip the confirmation (required when not on a terminal)
+  --dry-run          Only show what it would do
+  --allow-untested   No warning on a T3 Code version t3sm was not tested with (it never blocks)
+
+Examples:
+  t3sm cloud
+  t3sm cloud pull 01AbCdEfGhIj --dry-run
+  t3sm cloud pull --all
+
+More: t3sm help cloud (what can go wrong and what to do).
 `,
   rollback: `Usage: t3sm rollback [--run <id>] [--yes | --dry-run] [--instances] [--archive-threads] [--allow-untested]
 

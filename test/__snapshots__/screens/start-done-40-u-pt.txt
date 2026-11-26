@@ -39,6 +39,9 @@
 │ t3sm merge     traz o trabalho       │
 │                continuado num        │
 │                terminal              │
+│ t3sm cloud     traz as sessões da    │
+│                cloud                 │
+│                (claude.ai/code, app) │
 │                                      │
 │ Relatório do plano:                  │
 │ ~/.t3code-…3/plan.md                 │

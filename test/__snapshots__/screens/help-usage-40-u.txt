@@ -46,6 +46,9 @@ Keep in sync
   t3sm recover <id>
     Bring back a conversation started in
     T3 Code whose thread is gone
+  t3sm cloud
+    Bring Claude Code sessions from the
+    cloud to this PC (pull <id>, --all)
 
 Tidy T3 Code
   t3sm organize

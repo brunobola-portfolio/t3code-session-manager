@@ -40,6 +40,9 @@ what to do
   ai-titles
     Titles written by T3 Code: the ones
     that stay technical
+  cloud
+    Cloud sessions: claude.ai/code and
+    the Claude app on this PC
   errors
     Errors: when a t3sm command stops
 

@@ -427,6 +427,7 @@ export const pt: Record<keyof typeof en, string> = {
   doneCmdStatus: "está tudo bem? o que precisa de ti?",
   doneCmdProjects: "que conta usa cada projeto",
   doneCmdMerge: "traz o trabalho continuado num terminal",
+  doneCmdCloud: "traz as sessões da cloud (claude.ai/code, app)",
   doneReport: "Relatório do plano: {path}",
   doneBye: "É tudo. Corre t3sm outra vez quando quiseres.",
   pluginTitle: "Opcional: o plugin t3sm para o Claude Code",

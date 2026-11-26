@@ -109,7 +109,7 @@ export interface DoctorDeps {
   mergePending?(): Promise<{ count: number; orphaned: number; at: string } | null>;
 }
 
-function findOnPath(name: string, platform: NodeJS.Platform, pathEnv: string, pathExt: string | undefined): string | null {
+export function findOnPath(name: string, platform: NodeJS.Platform, pathEnv: string, pathExt: string | undefined): string | null {
   const win = platform === "win32";
   const exts = win ? (pathExt ?? ".COM;.EXE;.BAT;.CMD").split(";").filter(Boolean) : [""];
   for (const dir of pathEnv.split(win ? ";" : ":").filter(Boolean)) {

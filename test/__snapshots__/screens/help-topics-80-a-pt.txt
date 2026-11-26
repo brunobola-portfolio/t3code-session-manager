@@ -17,6 +17,8 @@ Tópicos de ajuda: o que uma mensagem quer dizer e o que fazer
                         sítio
   convert               Conversão: sessões que o t3sm converte antes de importar
   ai-titles             Títulos escritos pelo T3 Code: os que continuam técnicos
+  cloud                 Sessões da cloud: o claude.ai/code e a app Claude neste
+                        PC
   errors                Erros: quando um comando do t3sm para
 
 Abre um com t3sm help <tópico>. Cada comando explica-se com

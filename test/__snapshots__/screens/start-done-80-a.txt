@@ -24,6 +24,7 @@
 | t3sm status    is everything fine? what needs you?                     |
 | t3sm projects  which account each project uses                         |
 | t3sm merge     bring in work continued in a terminal                   |
+| t3sm cloud     bring cloud sessions here (claude.ai/code, app)         |
 |                                                                        |
 | Plan report: ~/.t3code-session-manager/runs/P3/plan.md                 |
 +------------------------------------------------------------------------+

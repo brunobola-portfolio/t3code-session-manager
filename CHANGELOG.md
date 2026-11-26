@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Cloud sessions come to this PC.** `t3sm cloud` lists the sessions that ran on claude.ai/code or in the Claude
+  app. `t3sm cloud pull <id>` puts the code on its branch in a worktree and imports the conversation into T3 Code,
+  ready for `claude --resume`. It costs no tokens.
+- **Help for when a pull goes wrong.** `t3sm help cloud` covers sign-in, git, a session that waits, and undo.
+
 ## [0.5.0] - 2026-11-22
 
 `t3sm stats`, a plan you filter in the browser, titles written by T3 Code when you ask, and a smaller journal. On

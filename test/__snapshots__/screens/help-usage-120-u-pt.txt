@@ -21,6 +21,7 @@ Manter sincronizado
   t3sm schedule          Sincroniza em segundo plano: install [--watch], remove, restart, status
   t3sm merge             Traz para o T3 Code as sessões continuadas num terminal
   t3sm recover <id>      Traz de volta uma conversa começada no T3 Code cuja thread desapareceu
+  t3sm cloud             Traz para este PC sessões do Claude Code da cloud (pull <id>, --all)
 
 Arrumar o T3 Code
   t3sm organize          Arruma o histórico importado: arquiva, muda títulos, mostra, fixa (--undo)

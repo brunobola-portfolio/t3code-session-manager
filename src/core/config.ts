@@ -404,6 +404,9 @@ export function validateConfig(
   const update = u["update"];
   if (!has(u, "update")) { /* default: automatic updates on */ } else if (!isObj(update)) errors.push("update: must be an object");
   else if (has(update, "auto") && typeof update["auto"] !== "boolean") errors.push("update.auto: must be a boolean");
+  const cloud = u["cloud"];
+  if (!has(u, "cloud")) { /* default: asked on the first pull */ } else if (!isObj(cloud)) errors.push("cloud: must be an object");
+  else if (has(cloud, "baseDir") && (typeof cloud["baseDir"] !== "string" || cloud["baseDir"].trim() === "")) errors.push("cloud.baseDir: must be a folder path");
   if (has(u, "organize")) validateOrganize(u["organize"], errors, platform, home);
 
   if (errors.length > 0) return { ok: false, errors };

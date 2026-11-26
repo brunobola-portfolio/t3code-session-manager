@@ -6,7 +6,7 @@
 /** Every topic a screen may name. */
 export const HELP_TOPICS = [
   "not-imported", "t3-native", "orphaned", "held", "decisions", "history", "updates", "watcher", "cwd-unreadable",
-  "instance-unavailable", "project-mismatch", "convert", "ai-titles", "errors",
+  "instance-unavailable", "project-mismatch", "convert", "ai-titles", "cloud", "errors",
 ] as const;
 
 export type HelpTopic = (typeof HELP_TOPICS)[number];
@@ -47,6 +47,7 @@ export function helpTopicFor(reason: string): HelpTopic {
   if (r === "held" || r === "project-in-use" || r === "active" || r === "in-use") return "held";
   if (r === "undecided" || r === "decisions") return "decisions";
   if (r === "history" || r.startsWith("history:")) return "history";
+  if (r === "cloud" || r.startsWith("cloud")) return "cloud";
   if (r === "updates" || r.startsWith("update")) return "updates";
   if (r === "watcher" || r.startsWith("watcher") || r === "sync-failing") return "watcher";
   return "errors";

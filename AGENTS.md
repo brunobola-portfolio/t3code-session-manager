@@ -93,6 +93,10 @@ and the other agents' folders from the home folder, so `T3SM_HOME` alone still r
 - `scripts/release.js` (`--check`, version bump), `scripts/build-assets.js` (all README art, deterministic),
   `scripts/build.js` (`npm run build`: dist/ by stripping types with Node alone; no TypeScript needed, so a global
   install from git works).
+- `src/cloud/`: `t3sm cloud` (user guide: `docs/help/cloud.md`): `client.ts` (the user's `claude` child and its
+  control requests), `decode.ts` (strict decoders), `transcript.ts` (cloud entries to a local transcript),
+  `checkout.ts` (clone, branch, worktree), `state.ts` (where each session stands), `pull.ts` (preview and the
+  journaled write).
 - `src/organize/`: `t3sm organize`: `plan.ts` (pure), `history.ts` (the history rule), `sessions.ts`, `titles.ts`, `rename.ts`
   (`projects rename --suggest`), `apply.ts` (apply and undo), `types.ts`.
 - `docs/`: user docs; `docs/help/` holds the help topics (`t3sm help <topic>`, English and `.pt.md`, copied into
@@ -145,7 +149,9 @@ Each names where it is enforced, then the test that pins it.
    (`issueSessionToken`, `revokeSession`), `src/t3/errors.ts` (`pinSecret`, `redact`); `test/t3/auth.test.ts`.
 10. Accept only a loopback T3 Code origin. `src/t3/runtime.ts` (`parseLocalOrigin`); `test/t3/runtime.test.ts`.
 11. Child processes never inherit `CLAUDE_CONFIG_DIR`. `src/t3/auth.ts` (`childEnv`), `src/ops/doctorDeps.ts`;
-    `test/t3/auth.test.ts`.
+    `test/t3/auth.test.ts`. Two children get it set on purpose to one account's own home, never inherited: the
+    plugin install (`src/ops/plugin.ts`) and the `claude` child of `t3sm cloud` (`src/cloud/client.ts`,
+    `cloudChildEnv`: unset for `~/.claude`), approved by the owner on 2026-11-26; `test/cloud/cloud.test.ts`.
 12. Writes ask: a writing command on a non-terminal without `--yes` exits 2; `--dry-run` writes nothing.
     `src/cli/commands/*.ts`; `test/cli/ops.test.ts`, `test/apply/dry-run.test.ts`.
 13. Unattended `sync` stays conservative and never asks: at most `sync.maxUnattendedImports`, no new instances, no
@@ -237,7 +243,9 @@ Read [docs/adding-a-harness.md](docs/adding-a-harness.md); `src/sources/opencode
   changes config.json.
 - Pushing, tagging, publishing or running `node scripts/release.js <version>`.
 - Changing a safety invariant above, or the tests that pin one.
-- Adding a runtime dependency, or any network call beyond T3 Code on loopback.
+- Adding a runtime dependency, or any network call beyond T3 Code on loopback. The one approved exception
+  (2026-11-26): `t3sm cloud` runs the user's `claude` and `git` (clone, fetch), only when the user starts it; the
+  watcher and `sync` never do.
 
 ## Common traps
 

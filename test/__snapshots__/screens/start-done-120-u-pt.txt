@@ -25,6 +25,7 @@
 │ t3sm status    está tudo bem? o que precisa de ti?                         │
 │ t3sm projects  que conta usa cada projeto                                  │
 │ t3sm merge     traz o trabalho continuado num terminal                     │
+│ t3sm cloud     traz as sessões da cloud (claude.ai/code, app)              │
 │                                                                            │
 │ Relatório do plano: ~/.t3code-session-manager/runs/P3/plan.md              │
 ╰────────────────────────────────────────────────────────────────────────────╯

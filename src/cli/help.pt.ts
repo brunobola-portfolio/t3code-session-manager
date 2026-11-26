@@ -34,6 +34,7 @@ Manter sincronizado
   t3sm schedule          Sincroniza em segundo plano: install [--watch], remove, restart, status
   t3sm merge             Traz para o T3 Code as sessões continuadas num terminal
   t3sm recover <id>      Traz de volta uma conversa começada no T3 Code cuja thread desapareceu
+  t3sm cloud             Traz para este PC sessões do Claude Code da cloud (pull <id>, --all)
 
 Arrumar o T3 Code
   t3sm organize          Arruma o histórico importado: arquiva, muda títulos, mostra, fixa (--undo)
@@ -212,6 +213,41 @@ Opções:
 Exemplos:
   t3sm recover 1a2b3c4d --dry-run
   t3sm recover 1a2b3c4d
+`,
+  cloud: `Uso: t3sm cloud [--account <id>] [--all] [--json]
+     t3sm cloud pull <id>... | --all [--account <id>] [--base <pasta>] [--yes | --dry-run] [--allow-untested]
+
+Traz para este PC as sessões do Claude Code que correram na cloud (claude.ai/code, a app Claude). É o teu próprio
+\`claude\` que as lista e lê, com a sessão iniciada de cada conta: o t3sm nunca vê um token e nenhum modelo é chamado,
+por isso não gasta tokens. As sessões de Remote Control ficam de fora (já estão num PC).
+
+t3sm cloud
+    Lista as sessões na cloud de cada conta e o estado de cada uma aqui: só na cloud, neste PC, mais recente
+    na cloud, ou continuada aqui. Só leitura.
+
+t3sm cloud pull <id>...
+    Traz as sessões indicadas (o id como o t3sm cloud o mostra, pelo menos 8 caracteres). O código fica no teu
+    checkout do repositório, encontrado pela origin, ou num clone em <pasta>/<dono>/<repositório>. O branch da sessão
+    fica numa worktree própria em <pasta>/.worktrees: as tuas pastas de trabalho nunca são alteradas. A conversa é
+    escrita como sessão local do Claude Code e importada para o T3 Code no seu projeto, pronta para
+    \`claude --resume\`. Uma sessão que continuou na cloud volta como revisão nova, e a conversa antiga é arquivada.
+    Desfaz-se com \`t3sm rollback --run <id> --archive-threads\`. Os clones e worktrees ficam.
+
+Opções:
+  --account <id>     Só esta conta
+  --all              Listar: também as arquivadas. Trazer: todas as que não estão neste PC ou são mais recentes na cloud
+  --json             A lista em JSON
+  --base <pasta>     Onde os repositórios são clonados, nesta execução (por omissão: cloud.baseDir no config.json, perguntado uma vez)
+  --yes              Não pergunta (obrigatório quando não há terminal)
+  --dry-run          Só mostra o que faria
+  --allow-untested   Sem aviso numa versão do T3 Code que o t3sm não testou (nunca bloqueia)
+
+Exemplos:
+  t3sm cloud
+  t3sm cloud pull 01AbCdEfGhIj --dry-run
+  t3sm cloud pull --all
+
+Mais: t3sm help cloud (o que pode correr mal e o que fazer).
 `,
   rollback: `Uso: t3sm rollback [--run <id>] [--yes | --dry-run] [--instances] [--archive-threads] [--allow-untested]
 

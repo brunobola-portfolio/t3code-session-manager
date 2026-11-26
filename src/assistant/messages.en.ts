@@ -426,6 +426,7 @@ export const en = {
   doneCmdStatus: "is everything fine? what needs you?",
   doneCmdProjects: "which account each project uses",
   doneCmdMerge: "bring in work continued in a terminal",
+  doneCmdCloud: "bring cloud sessions here (claude.ai/code, app)",
   doneReport: "Plan report: {path}",
   doneBye: "That is all. Run t3sm again any time.",
   pluginTitle: "Optional: the t3sm plugin for Claude Code",

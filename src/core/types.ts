@@ -120,7 +120,9 @@ export type JournalEntry =
      * A faithful copy (spec §4.3) of the Claude transcript at `path` (session `nativeId`, folder `cwd`, which T3 Code
      * refuses). size / mtimeMs: that file as copied (the planner's baseline for "continued outside T3").
      */
-    rehomeOf?: { path: string; nativeId: string; cwd: string; size: number; mtimeMs: number } }
+    rehomeOf?: { path: string; nativeId: string; cwd: string; size: number; mtimeMs: number };
+    /** A cloud session written by `t3sm cloud pull` (spec 2026-11-26 §4.3): which one, and how far it went then. */
+    cloudOf?: { account: string; sessionId: string; lastEventAt: string | null; entries: number } }
   // A `file-written` whose file was never published (the target appeared meanwhile, or a refresh was skipped at the
   // last moment): cancels the latest `file-written` of the same run and path (journal.effectiveWrites).
   | { t: "file-write-aborted"; runId: string; path: string }
@@ -174,6 +176,9 @@ export type JournalEntry =
   | { t: "run-end"; runId: string; at: string; status: "ok" | "partial" | "aborted"; held?: number }
   // One t3sm update (src/ops/updater.ts runUpdate): "pending" before anything is installed, then the outcome in a
   // second entry of the same run. error: one line, why it failed or was rolled back.
+  // `t3sm cloud pull` created a clone or a worktree for a cloud session (spec 2026-11-26 §3.6). Rollback never deletes
+  // code: it lists these with the command that removes them.
+  | { t: "cloud-checkout"; runId: string; sessionId: string; cloned: string | null; worktree: string | null; main: string | null }
   | { t: "update"; runId: string; from: string; to: string; source: UpdateSource; outcome: "pending" | "installed" | "rolled-back" | "failed"; error?: string }
   // One `t3sm journal compact` (src/core/compact.ts), inside its own run (run-start "journal compact" ... run-end):
   // `runs` finished runs older than `olderThanDays` lost their `entries` mtime-bump / mtime-restore entries (nothing
@@ -233,6 +238,8 @@ export interface Config {
   notify?: "attention" | "all" | "off";
   /** Optional in config.json. auto (default true): the watcher installs newer patch and minor releases by itself. */
   update?: { auto?: boolean };
+  /** Optional in config.json. baseDir: where `t3sm cloud pull` clones repositories (spec 2026-11-26 §3.7). */
+  cloud?: { baseDir?: string };
 }
 /**
  * Where t3sm updates come from (remembered in `<state>/update.json`): the npm registry's published versions, GitHub's
